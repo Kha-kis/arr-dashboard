@@ -1323,39 +1323,52 @@ describe("Session snapshot scheduler lifetime", () => {
 			}
 		}
 	}
-	it.each(["subscription", "send", "notificationLog", "channel"] as const)(
-		"retains accepted notification %s until processing settles",
-		async (phase) => {
-			const gate = deferred();
-			const f = await boot({ hold: { phase, gate: gate.promise } });
-			f.callback("startup")();
-			await f.entered;
-			expect(
-				await waitForNative(() =>
-					allowedEvents.every((event) => f.subscriptionEntries.includes(event)),
-				),
-			).toBe(true);
-			expect([...f.subscriptionEntries].sort()).toEqual([...allowedEvents].sort());
-			let closed = false;
-			const close = f.app.close().then(() => {
-				closed = true;
+	// Native database setup belongs to the setup hook; the default five-second
+	// test budget still covers shutdown and durable notification recovery.
+	describe.each(["subscription", "send", "notificationLog", "channel"] as const)(
+		"accepted notification completed (%s)",
+		(phase) => {
+			let gate: ReturnType<typeof deferred>;
+			let f: Awaited<ReturnType<typeof boot>>;
+			beforeEach(async () => {
+				gate = deferred();
+				f = await boot({ hold: { phase, gate: gate.promise } });
 			});
-			await f.closing;
-			await settle();
-			expect(closed).toBe(false);
-			expect(f.state.teardown).toBe(0);
-			gate.resolve();
-			await close;
-			const completed = await f.completeAccepted();
-			expect(f.sent.sort()).toEqual([
-				"JELLYFIN_CONCURRENT_PEAK:owner-a",
-				"JELLYFIN_CONCURRENT_PEAK:owner-b",
-				"PLEX_CONCURRENT_PEAK:owner-a",
-				"PLEX_CONCURRENT_PEAK:owner-b",
-			]);
-			expect(completed.history.map((row) => row.status)).toEqual(["sent", "sent", "sent", "sent"]);
-			expect(f.state.pendingAtTeardown).toBe(0);
-			expect(f.state.afterTeardown).toBe(0);
+			it(`retains accepted notification ${phase} until processing settles`, async () => {
+				f.callback("startup")();
+				await f.entered;
+				expect(
+					await waitForNative(() =>
+						allowedEvents.every((event) => f.subscriptionEntries.includes(event)),
+					),
+				).toBe(true);
+				expect([...f.subscriptionEntries].sort()).toEqual([...allowedEvents].sort());
+				let closed = false;
+				const close = f.app.close().then(() => {
+					closed = true;
+				});
+				await f.closing;
+				await settle();
+				expect(closed).toBe(false);
+				expect(f.state.teardown).toBe(0);
+				gate.resolve();
+				await close;
+				const completed = await f.completeAccepted();
+				expect(f.sent.sort()).toEqual([
+					"JELLYFIN_CONCURRENT_PEAK:owner-a",
+					"JELLYFIN_CONCURRENT_PEAK:owner-b",
+					"PLEX_CONCURRENT_PEAK:owner-a",
+					"PLEX_CONCURRENT_PEAK:owner-b",
+				]);
+				expect(completed.history.map((row) => row.status)).toEqual([
+					"sent",
+					"sent",
+					"sent",
+					"sent",
+				]);
+				expect(f.state.pendingAtTeardown).toBe(0);
+				expect(f.state.afterTeardown).toBe(0);
+			});
 		},
 	);
 	it.each([false, true])(
@@ -1383,31 +1396,37 @@ describe("Session snapshot scheduler lifetime", () => {
 			expect(f.state.afterTeardown).toBe(0);
 		},
 	);
-	it("preserves accepted child admission after preClose without admitting ordinary notifications", async () => {
-		const gate = deferred();
-		const f = await boot({
-			hold: { phase: "subscription", eventType: "PLEX_CONCURRENT_PEAK", gate: gate.promise },
+	describe("accepted child admission", () => {
+		let gate: ReturnType<typeof deferred>;
+		let f: Awaited<ReturnType<typeof boot>>;
+		beforeEach(async () => {
+			gate = deferred();
+			f = await boot({
+				hold: { phase: "subscription", eventType: "PLEX_CONCURRENT_PEAK", gate: gate.promise },
+			});
 		});
-		f.callback("startup")();
-		await f.entered;
-		const close = f.app.close();
-		await f.closing;
-		await settle();
-		await expect(
-			f.app.notificationService.notify({
-				eventType: "PLEX_CONCURRENT_PEAK",
-				title: "Synthetic",
-				body: "Synthetic",
-			}),
-		).rejects.toThrow("shutting down");
-		gate.resolve();
-		await close;
-		await f.completeAccepted();
-		expect(f.sent.filter((s) => s.startsWith("PLEX_")).sort()).toEqual([
-			"PLEX_CONCURRENT_PEAK:owner-a",
-			"PLEX_CONCURRENT_PEAK:owner-b",
-		]);
-		expect(f.state.afterTeardown).toBe(0);
+		it("preserves accepted child admission after preClose without admitting ordinary notifications", async () => {
+			f.callback("startup")();
+			await f.entered;
+			const close = f.app.close();
+			await f.closing;
+			await settle();
+			await expect(
+				f.app.notificationService.notify({
+					eventType: "PLEX_CONCURRENT_PEAK",
+					title: "Synthetic",
+					body: "Synthetic",
+				}),
+			).rejects.toThrow("shutting down");
+			gate.resolve();
+			await close;
+			await f.completeAccepted();
+			expect(f.sent.filter((s) => s.startsWith("PLEX_")).sort()).toEqual([
+				"PLEX_CONCURRENT_PEAK:owner-a",
+				"PLEX_CONCURRENT_PEAK:owner-b",
+			]);
+			expect(f.state.afterTeardown).toBe(0);
+		});
 	});
 	it("refuses captured startup callback during sibling preClose and after teardown", async () => {
 		const gate = deferred();
@@ -1562,32 +1581,38 @@ describe("Session snapshot scheduler lifetime", () => {
 		await f.idle();
 		await expect(withCleanupMaintenanceGuard(async () => undefined)).resolves.toBeUndefined();
 	});
-	it.each(["subscription", "send", "notificationLog", "channel"] as const)(
-		"drains accepted notification %s rejection without stranding capture",
-		async (phase) => {
-			const gate = deferred();
-			const f = await boot({ hold: { phase, gate: gate.promise, reject: true } });
-			f.callback("startup")();
-			await f.entered;
-			expect(
-				await waitForNative(() =>
-					allowedEvents.every((event) => f.subscriptionEntries.includes(event)),
-				),
-			).toBe(true);
-			expect([...f.subscriptionEntries].sort()).toEqual([...allowedEvents].sort());
-			let closed = false;
-			const close = f.app.close().then(() => {
-				closed = true;
+	describe.each(["subscription", "send", "notificationLog", "channel"] as const)(
+		"accepted notification rejected (%s)",
+		(phase) => {
+			let gate: ReturnType<typeof deferred>;
+			let f: Awaited<ReturnType<typeof boot>>;
+			beforeEach(async () => {
+				gate = deferred();
+				f = await boot({ hold: { phase, gate: gate.promise, reject: true } });
 			});
-			await f.closing;
-			await settle();
-			expect(closed).toBe(false);
-			gate.resolve();
-			await close;
-			expect(f.records.length).toBe(4);
-			await f.rejectedAccepted(phase);
-			expect(f.state.pendingAtTeardown).toBe(0);
-			expect(f.state.afterTeardown).toBe(0);
+			it(`drains accepted notification ${phase} rejection without stranding capture`, async () => {
+				f.callback("startup")();
+				await f.entered;
+				expect(
+					await waitForNative(() =>
+						allowedEvents.every((event) => f.subscriptionEntries.includes(event)),
+					),
+				).toBe(true);
+				expect([...f.subscriptionEntries].sort()).toEqual([...allowedEvents].sort());
+				let closed = false;
+				const close = f.app.close().then(() => {
+					closed = true;
+				});
+				await f.closing;
+				await settle();
+				expect(closed).toBe(false);
+				gate.resolve();
+				await close;
+				expect(f.records.length).toBe(4);
+				await f.rejectedAccepted(phase);
+				expect(f.state.pendingAtTeardown).toBe(0);
+				expect(f.state.afterTeardown).toBe(0);
+			});
 		},
 	);
 

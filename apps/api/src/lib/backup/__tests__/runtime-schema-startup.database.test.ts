@@ -29,6 +29,17 @@ import * as startup from "../runtime-schema-startup.js";
 const connectionString = process.env.RUNTIME_SCHEMA_TEST_DATABASE_URL;
 const namespaceKey = 1095914052;
 let sequence = 0;
+const startupCliTimeoutMs = 10000;
+// Leave time to join physical child closure and check the result after its watchdog.
+const startupCliTestTimeoutMs = startupCliTimeoutMs + 5000;
+const startupCliActors = new Map<ChildProcess, Promise<void>>();
+
+async function closeStartupCliActors() {
+	for (const [child, closed] of startupCliActors) {
+		if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+		await closed;
+	}
+}
 
 async function runStartupCli(databaseUrl?: string, args: readonly string[] = []) {
 	const child = spawn(
@@ -50,6 +61,15 @@ async function runStartupCli(databaseUrl?: string, args: readonly string[] = [])
 			},
 		},
 	);
+	startupCliActors.set(
+		child,
+		new Promise<void>((resolve) => {
+			child.once("close", () => {
+				startupCliActors.delete(child);
+				resolve();
+			});
+		}),
+	);
 	let stdout = "",
 		stderr = "";
 	child.stdout.setEncoding("utf8").on("data", (chunk: string) => {
@@ -66,7 +86,7 @@ async function runStartupCli(databaseUrl?: string, args: readonly string[] = [])
 		stdout: string;
 		stderr: string;
 	}>((done, reject) => {
-		const timer = setTimeout(() => child.kill("SIGKILL"), 10000);
+		const timer = setTimeout(() => child.kill("SIGKILL"), startupCliTimeoutMs);
 		child.once("error", (error) => {
 			clearTimeout(timer);
 			reject(error);
@@ -155,6 +175,7 @@ describe.skipIf(process.platform !== "linux")("native SQLite schema startup writ
 		url = `file:${path}`;
 	});
 	afterEach(async () => {
+		await closeStartupCliActors();
 		for (const [actor, closed] of actors) {
 			if (actor.exitCode === null && actor.signalCode === null) actor.kill("SIGKILL");
 			await closed;
@@ -251,54 +272,78 @@ describe.skipIf(process.platform !== "linux")("native SQLite schema startup writ
 		await checkpoint;
 		return { actor, closed };
 	};
-	it("actual CLI commits fresh SQLite before reporting the exact missing-settings projection and closing locks", async () => {
-		expect(validateSqliteCliDiagnostics(await runStartupCli(url), true)).toEqual({
-			code: 0,
-			signal: null,
-			stdout: '{"apiPort":null,"webPort":null,"listenAddress":null}\n',
-			stderr: "",
-		});
-		expect(rows("ArrSchemaMigrationReceipt")).toHaveLength(1);
-		const owner = await acquireSqliteRestoreRuntimeOwnership(url);
-		try {
-			expect(await owner.tryAcquireExclusive()).toBe(true);
-		} finally {
-			await owner.close();
-		}
-	});
-	it("actual CLI returns configured SQLite settings, not invented first-run defaults", async () => {
-		await synchronize();
-		database((db) =>
-			db.exec(`INSERT INTO system_settings(id,apiPort,webPort,listenAddress,createdAt,updatedAt)
+	it(
+		"joins an interrupted CLI child before fixture teardown can remove its database",
+		async () => {
+			const result = runStartupCli(url);
+			expect(startupCliActors.size).toBe(1);
+			await closeStartupCliActors();
+			expect(await result).toMatchObject({ code: null, signal: "SIGKILL" });
+			expect(startupCliActors.size).toBe(0);
+		},
+		startupCliTestTimeoutMs,
+	);
+	it(
+		"actual CLI commits fresh SQLite before reporting the exact missing-settings projection and closing locks",
+		async () => {
+			expect(validateSqliteCliDiagnostics(await runStartupCli(url), true)).toEqual({
+				code: 0,
+				signal: null,
+				stdout: '{"apiPort":null,"webPort":null,"listenAddress":null}\n',
+				stderr: "",
+			});
+			expect(rows("ArrSchemaMigrationReceipt")).toHaveLength(1);
+			const owner = await acquireSqliteRestoreRuntimeOwnership(url);
+			try {
+				expect(await owner.tryAcquireExclusive()).toBe(true);
+			} finally {
+				await owner.close();
+			}
+		},
+		startupCliTestTimeoutMs,
+	);
+	it(
+		"actual CLI returns configured SQLite settings, not invented first-run defaults",
+		async () => {
+			await synchronize();
+			database((db) =>
+				db.exec(`INSERT INTO system_settings(id,apiPort,webPort,listenAddress,createdAt,updatedAt)
 				VALUES(1,43101,43102,'127.0.0.1','2026-10-08T00:00:00.000+00:00','2026-10-08T00:00:00.000+00:00')`),
-		);
-		expect(validateSqliteCliDiagnostics(await runStartupCli(url), true, true)).toEqual({
-			code: 0,
-			signal: null,
-			stdout: '{"apiPort":43101,"webPort":43102,"listenAddress":"127.0.0.1"}\n',
-			stderr: "",
-		});
-	});
-	it("actual CLI fails privately rather than defaulting or committing a failed SQLite settings read", async () => {
-		await synchronize();
-		database((db) =>
-			db.exec(`INSERT INTO system_settings(id,apiPort,createdAt,updatedAt)
+			);
+			expect(validateSqliteCliDiagnostics(await runStartupCli(url), true, true)).toEqual({
+				code: 0,
+				signal: null,
+				stdout: '{"apiPort":43101,"webPort":43102,"listenAddress":"127.0.0.1"}\n',
+				stderr: "",
+			});
+		},
+		startupCliTestTimeoutMs,
+	);
+	it(
+		"actual CLI fails privately rather than defaulting or committing a failed SQLite settings read",
+		async () => {
+			await synchronize();
+			database((db) =>
+				db.exec(`INSERT INTO system_settings(id,apiPort,createdAt,updatedAt)
 				VALUES(1,0,'2026-10-08T00:00:00.000+00:00','2026-10-08T00:00:00.000+00:00')`),
-		);
-		const before = rows("RestoreRuntimeControl"),
-			receipt = rows("ArrSchemaMigrationReceipt");
-		expect(validateSqliteCliDiagnostics(await runStartupCli(url), false, true)).toEqual(
-			cliUnavailable,
-		);
-		expect(rows("RestoreRuntimeControl")).toEqual(before);
-		expect(rows("ArrSchemaMigrationReceipt")).toEqual(receipt);
-	});
+			);
+			const before = rows("RestoreRuntimeControl"),
+				receipt = rows("ArrSchemaMigrationReceipt");
+			expect(validateSqliteCliDiagnostics(await runStartupCli(url), false, true)).toEqual(
+				cliUnavailable,
+			);
+			expect(rows("RestoreRuntimeControl")).toEqual(before);
+			expect(rows("ArrSchemaMigrationReceipt")).toEqual(receipt);
+		},
+		startupCliTestTimeoutMs,
+	);
 	it.each([undefined, "unsupported://synthetic.invalid/no-database"])(
 		"actual CLI rejects missing or unsupported database configuration without a schema file or defaults",
 		async (databaseUrl) => {
 			expect(await runStartupCli(databaseUrl)).toEqual(cliUnavailable);
 			expect(existsSync(path)).toBe(false);
 		},
+		startupCliTestTimeoutMs,
 	);
 	it.each(["--accept-data-loss", "--force-reset", "--ownership"])(
 		"actual CLI rejects the unsupported %s flag before opening a destination",
@@ -306,6 +351,7 @@ describe.skipIf(process.platform !== "linux")("native SQLite schema startup writ
 			expect(await runStartupCli(url, [flag])).toEqual(cliUnavailable);
 			expect(existsSync(path)).toBe(false);
 		},
+		startupCliTestTimeoutMs,
 	);
 	it("creates a fresh private file and commits schema, original binding, journal and receipt together", async () => {
 		expect(existsSync(path)).toBe(false);
@@ -792,6 +838,7 @@ describe.skipIf(!connectionString)("native PostgreSQL schema startup writer", ()
 	});
 	afterEach(async () => {
 		try {
+			await closeStartupCliActors();
 			for (const [actor, closed] of actors) {
 				if (actor.exitCode === null && actor.signalCode === null) actor.kill("SIGKILL");
 				await closed;
@@ -982,36 +1029,48 @@ describe.skipIf(!connectionString)("native PostgreSQL schema startup writer", ()
 		};
 	};
 
-	it("actual CLI completes PostgreSQL dispatch and physical backend closure before its exact JSON projection", async () => {
-		expect(await runStartupCli(url)).toEqual({
-			code: 0,
-			signal: null,
-			stdout: '{"apiPort":null,"webPort":null,"listenAddress":null}\n',
-			stderr: "",
-		});
-		expect(await countTables()).toBe(102);
-		expect(await receipts()).toHaveLength(1);
-		const ownerPid = (await journal())[0].ownerBackendPid;
-		expect(
-			(await database.query("SELECT pid FROM pg_stat_activity WHERE pid=$1", [ownerPid])).rows,
-		).toEqual([]);
-	});
-	it("actual CLI reports a failed PostgreSQL settings read without stdout, defaults or recovery-evidence changes", async () => {
-		await synchronize();
-		await database.query(`INSERT INTO system_settings(id,"apiPort","updatedAt")
+	it(
+		"actual CLI completes PostgreSQL dispatch and physical backend closure before its exact JSON projection",
+		async () => {
+			expect(await runStartupCli(url)).toEqual({
+				code: 0,
+				signal: null,
+				stdout: '{"apiPort":null,"webPort":null,"listenAddress":null}\n',
+				stderr: "",
+			});
+			expect(await countTables()).toBe(102);
+			expect(await receipts()).toHaveLength(1);
+			const ownerPid = (await journal())[0].ownerBackendPid;
+			expect(
+				(await database.query("SELECT pid FROM pg_stat_activity WHERE pid=$1", [ownerPid])).rows,
+			).toEqual([]);
+		},
+		startupCliTestTimeoutMs,
+	);
+	it(
+		"actual CLI reports a failed PostgreSQL settings read without stdout, defaults or recovery-evidence changes",
+		async () => {
+			await synchronize();
+			await database.query(`INSERT INTO system_settings(id,"apiPort","updatedAt")
 			VALUES(1,0,CURRENT_TIMESTAMP)`);
-		const before = await journal(),
-			receipt = await receipts();
-		expect(await runStartupCli(url)).toEqual(cliUnavailable);
-		expect(await journal()).toEqual(before);
-		expect(await receipts()).toEqual(receipt);
-	});
-	it("actual CLI keeps an unreachable PostgreSQL connection private and never prints healthy defaults", async () => {
-		const unreachable = new URL(url);
-		unreachable.port = "1";
-		expect(await runStartupCli(unreachable.toString())).toEqual(cliUnavailable);
-		expect(await countTables()).toBe(0);
-	});
+			const before = await journal(),
+				receipt = await receipts();
+			expect(await runStartupCli(url)).toEqual(cliUnavailable);
+			expect(await journal()).toEqual(before);
+			expect(await receipts()).toEqual(receipt);
+		},
+		startupCliTestTimeoutMs,
+	);
+	it(
+		"actual CLI keeps an unreachable PostgreSQL connection private and never prints healthy defaults",
+		async () => {
+			const unreachable = new URL(url);
+			unreachable.port = "1";
+			expect(await runStartupCli(unreachable.toString())).toEqual(cliUnavailable);
+			expect(await countTables()).toBe(0);
+		},
+		startupCliTestTimeoutMs,
+	);
 	it("commits the entire fresh target, starting journal and positive receipt before returning closed", async () => {
 		expect(await synchronize()).toEqual({ apiPort: null, webPort: null, listenAddress: null });
 		expect(await countTables()).toBe(102);
