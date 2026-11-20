@@ -494,12 +494,13 @@ function ChannelFormContent({ channelId, onSave, onSaved, onCancel }: ChannelFor
 									? "Stored value retained; enter a replacement"
 									: field.placeholder;
 							return field.type === "boolean" ? (
-								<div key={field.key}>
+								<div key={field.key} className="flex items-center gap-2">
 									<ToggleSwitch
 										label={field.label}
 										checked={!!config[field.key]}
 										onChange={(v) => setConfig((previous) => ({ ...previous, [field.key]: v }))}
 									/>
+									<span className="text-sm text-foreground">{field.label}</span>
 								</div>
 							) : (
 								<div key={field.key} className="space-y-1">
@@ -558,12 +559,13 @@ function ChannelFormContent({ channelId, onSave, onSaved, onCancel }: ChannelFor
 				)}
 
 				<div className="flex items-center justify-between pt-2">
-					<fieldset disabled={repairEditing}>
+					<fieldset disabled={repairEditing} className="flex items-center gap-2">
 						<ToggleSwitch
 							label="Enabled"
 							checked={incognitoMode ? false : enabled}
 							onChange={(v) => setEnabled(v)}
 						/>
+						<span className="text-sm text-foreground">Enabled</span>
 					</fieldset>
 
 					<button
