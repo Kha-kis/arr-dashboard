@@ -88,9 +88,111 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 		};
 
 		// Cache known platforms to avoid fetching 10K+ snapshots every 5-min tick
-		let cachedKnownPlatforms: Set<string> | null = null;
+		type PlatformBaseline = { platforms: Set<string>; complete: boolean };
+		let cachedKnownPlatforms: PlatformBaseline | null = null;
+		let platformRebuild: Promise<PlatformBaseline> | null = null;
+		let observedDuringRebuild: Set<string> | null = null;
 		let platformCacheBuiltAt = 0;
 		const PLATFORM_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // Rebuild every 6 hours
+
+		/** Resolve history before either provider can persist the current tick. */
+		async function loadKnownPlatforms(): Promise<PlatformBaseline> {
+			if (platformRebuild) return platformRebuild;
+			if (cachedKnownPlatforms && Date.now() - platformCacheBuiltAt <= PLATFORM_CACHE_TTL_MS)
+				return cachedKnownPlatforms;
+
+			cachedKnownPlatforms ??= { platforms: new Set(), complete: false };
+			const baseline = cachedKnownPlatforms;
+			baseline.complete = false;
+			const observed = new Set<string>();
+			observedDuringRebuild = observed;
+			platformRebuild = (async () => {
+				const platforms = new Set<string>();
+				let complete = true;
+				try {
+					const platformCutoff = new Date(
+						Date.now() - NEW_DEVICE_LOOKBACK_DAYS * 24 * 60 * 60 * 1000,
+					);
+					const PLATFORM_BATCH_SIZE = 500;
+					let cursor: string | undefined;
+					let exhausted = false;
+					let parseFailures = 0;
+					// Preserve the bounded 20-batch/10K-record scan. Hitting the cap
+					// without exhaustion establishes positives, never absence.
+					for (let batchCount = 0; batchCount < 20; batchCount++) {
+						const batch = await app.prisma.sessionSnapshot.findMany({
+							where: { capturedAt: { gte: platformCutoff } },
+							select: { id: true, sessionsJson: true },
+							orderBy: { id: "asc" },
+							take: PLATFORM_BATCH_SIZE,
+							...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+						});
+						if (admissionClosed) return baseline;
+						for (const snap of batch) {
+							try {
+								const sessions: unknown = JSON.parse(snap.sessionsJson);
+								if (!Array.isArray(sessions)) throw new Error("Invalid session history");
+								for (const session of sessions) {
+									if (
+										!session ||
+										typeof session !== "object" ||
+										typeof session.platform !== "string" ||
+										!session.platform.trim()
+									) {
+										complete = false;
+										continue;
+									}
+									platforms.add(session.platform);
+								}
+							} catch {
+								complete = false;
+								parseFailures++;
+							}
+						}
+						if (batch.length < PLATFORM_BATCH_SIZE) {
+							exhausted = true;
+							break;
+						}
+						cursor = batch[batch.length - 1]!.id;
+					}
+					complete &&= exhausted;
+					if (parseFailures > 0)
+						app.log.warn(
+							{ parseFailures },
+							"Invalid session history during platform cache rebuild",
+						);
+					platformCacheBuiltAt = Date.now();
+				} catch (err) {
+					complete = false;
+					app.log.warn({ err }, "Session snapshot: failed to rebuild known-platforms cache");
+				}
+				// Incomplete history retains positive knowledge, but cannot prove novelty.
+				if (!complete) for (const platform of baseline.platforms) platforms.add(platform);
+				for (const platform of observed) platforms.add(platform);
+				baseline.platforms = platforms;
+				baseline.complete = complete;
+				return baseline;
+			})();
+			try {
+				return await platformRebuild;
+			} finally {
+				platformRebuild = null;
+				observedDuringRebuild = null;
+			}
+		}
+
+		function claimNewPlatforms(platforms: Set<string>, baseline: PlatformBaseline): string[] {
+			const unseen = baseline.complete
+				? [...platforms].filter((platform) => !baseline.platforms.has(platform))
+				: [];
+			// Compare then merge synchronously, before any threshold alert awaits.
+			// Overlapping joined ticks share these claims without blocking capture.
+			for (const platform of platforms) {
+				baseline.platforms.add(platform);
+				observedDuringRebuild?.add(platform);
+			}
+			return unseen;
+		}
 
 		async function recordFailedRead(
 			instanceId: string,
@@ -112,8 +214,9 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 			totalSessions: number,
 			methodCoverageComplete: boolean,
 			enrichedPlatforms: Set<string>,
-			knownPlatforms: Set<string>,
+			knownPlatforms: PlatformBaseline,
 		) {
+			const newPlatforms = claimNewPlatforms(enrichedPlatforms, knownPlatforms);
 			if (!app.notificationService) return;
 
 			// PLEX_CONCURRENT_PEAK: concurrent streams exceed threshold
@@ -156,27 +259,25 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 			}
 
 			// PLEX_NEW_DEVICE: platform not seen in recent snapshots
-			for (const platform of enrichedPlatforms) {
-				if (!knownPlatforms.has(platform)) {
-					const safePlatform = platform.replace(/[<>&"']/g, "").slice(0, 50);
-					await app.notificationService
-						.notify({
-							eventType: "PLEX_NEW_DEVICE",
-							title: "New device detected",
-							body: `A new platform "${safePlatform}" was seen streaming for the first time in ${NEW_DEVICE_LOOKBACK_DAYS} days.`,
-							url: "/statistics",
-						})
-						.catch((err) =>
-							app.log.warn(
-								{ err, eventType: "PLEX_NEW_DEVICE" },
-								"Non-fatal: notification delivery failed",
-							),
-						);
-				}
+			for (const platform of newPlatforms) {
+				const safePlatform = platform.replace(/[<>&"']/g, "").slice(0, 50);
+				await app.notificationService
+					.notify({
+						eventType: "PLEX_NEW_DEVICE",
+						title: "New device detected",
+						body: `A new platform "${safePlatform}" was seen streaming for the first time in ${NEW_DEVICE_LOOKBACK_DAYS} days.`,
+						url: "/statistics",
+					})
+					.catch((err) =>
+						app.log.warn(
+							{ err, eventType: "PLEX_NEW_DEVICE" },
+							"Non-fatal: notification delivery failed",
+						),
+					);
 			}
 		}
 
-		async function captureSnapshots() {
+		async function captureSnapshots(knownPlatforms: PlatformBaseline) {
 			if (admissionClosed) return;
 			if (isRunning) {
 				app.log.warn("Session snapshot capture already running, skipping");
@@ -195,68 +296,6 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 					app.log.debug("Session snapshot: no enabled Plex instances, skipping");
 					return;
 				}
-
-				// Use cached known platforms (rebuilt every 6 hours instead of every 5-min tick)
-				if (!cachedKnownPlatforms || Date.now() - platformCacheBuiltAt > PLATFORM_CACHE_TTL_MS) {
-					try {
-						const platformCutoff = new Date(
-							Date.now() - NEW_DEVICE_LOOKBACK_DAYS * 24 * 60 * 60 * 1000,
-						);
-
-						// Paginate through snapshots in batches to avoid loading
-						// thousands of JSON strings into memory at once (#239)
-						const PLATFORM_BATCH_SIZE = 500;
-						const platforms = new Set<string>();
-						let platformParseFailures = 0;
-						let cursor: string | undefined;
-						let batchCount = 0;
-
-						for (;;) {
-							const batch = await app.prisma.sessionSnapshot.findMany({
-								where: { capturedAt: { gte: platformCutoff } },
-								select: { id: true, sessionsJson: true },
-								orderBy: { id: "asc" },
-								take: PLATFORM_BATCH_SIZE,
-								...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
-							});
-							if (admissionClosed) return;
-
-							if (batch.length === 0) break;
-
-							for (const snap of batch) {
-								try {
-									const sessions: Array<{ platform?: string }> = JSON.parse(snap.sessionsJson);
-									for (const s of sessions) {
-										if (s.platform) platforms.add(s.platform);
-									}
-								} catch {
-									platformParseFailures++;
-								}
-							}
-
-							cursor = batch[batch.length - 1]!.id;
-							batchCount++;
-
-							// Safety cap: stop after 20 batches (10K records) to match prior behavior
-							if (batchCount >= 20) break;
-						}
-
-						if (platformParseFailures > 0) {
-							app.log.warn(
-								{ parseFailures: platformParseFailures },
-								"Failed to parse sessionsJson during platform cache rebuild — possible data corruption",
-							);
-						}
-						cachedKnownPlatforms = platforms;
-						platformCacheBuiltAt = Date.now();
-						app.log.debug({ platformCount: platforms.size }, "Rebuilt known-platforms cache");
-					} catch (err) {
-						if (admissionClosed) return;
-						app.log.warn({ err }, "Session snapshot: failed to rebuild known-platforms cache");
-						if (!cachedKnownPlatforms) cachedKnownPlatforms = new Set();
-					}
-				}
-				const knownPlatforms = cachedKnownPlatforms;
 
 				// Track totals across all instances for notification checks
 				let tickTotalConcurrent = 0;
@@ -337,12 +376,6 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 						knownPlatforms,
 					).catch((err) => app.log.warn({ err }, "Session snapshot: notification check failed"));
 
-					// Merge current tick's platforms into cache to prevent repeat new-device notifications
-					if (cachedKnownPlatforms) {
-						for (const p of tickPlatforms) {
-							cachedKnownPlatforms.add(p);
-						}
-					}
 					// Release capture's guard in finally, but retain notification completion
 					// in the outer tick. A slow alert must not suppress the next snapshot.
 					return notification.then(() => {
@@ -370,8 +403,9 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 			totalSessions: number,
 			methodCoverageComplete: boolean,
 			platforms: Set<string>,
-			knownPlatforms: Set<string>,
+			knownPlatforms: PlatformBaseline,
 		) {
+			const newPlatforms = claimNewPlatforms(platforms, knownPlatforms);
 			if (!app.notificationService) return;
 
 			if (totalConcurrent >= CONCURRENT_PEAK_THRESHOLD) {
@@ -411,23 +445,21 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 					);
 			}
 
-			for (const platform of platforms) {
-				if (!knownPlatforms.has(platform)) {
-					const safePlatform = platform.replace(/[<>&"']/g, "").slice(0, 50);
-					await app.notificationService
-						.notify({
-							eventType: "JELLYFIN_NEW_DEVICE",
-							title: "New media server device detected",
-							body: `A new client "${safePlatform}" was seen streaming for the first time in ${NEW_DEVICE_LOOKBACK_DAYS} days.`,
-							url: "/statistics",
-						})
-						.catch((err) =>
-							app.log.warn(
-								{ err, eventType: "JELLYFIN_NEW_DEVICE" },
-								"Non-fatal: notification delivery failed",
-							),
-						);
-				}
+			for (const platform of newPlatforms) {
+				const safePlatform = platform.replace(/[<>&"']/g, "").slice(0, 50);
+				await app.notificationService
+					.notify({
+						eventType: "JELLYFIN_NEW_DEVICE",
+						title: "New media server device detected",
+						body: `A new client "${safePlatform}" was seen streaming for the first time in ${NEW_DEVICE_LOOKBACK_DAYS} days.`,
+						url: "/statistics",
+					})
+					.catch((err) =>
+						app.log.warn(
+							{ err, eventType: "JELLYFIN_NEW_DEVICE" },
+							"Non-fatal: notification delivery failed",
+						),
+					);
 			}
 		}
 
@@ -435,7 +467,7 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 		 * Capture Jellyfin session snapshots into the shared SessionSnapshot table.
 		 * Only explicit native measurements are persisted; absent fields remain unknown.
 		 */
-		async function captureJellyfinSnapshots() {
+		async function captureJellyfinSnapshots(knownPlatforms: PlatformBaseline) {
 			if (admissionClosed) return;
 			const captureErrors: unknown[] = [];
 			try {
@@ -523,15 +555,11 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 						tickTotalSessions,
 						methodCoverageComplete,
 						tickPlatforms,
-						cachedKnownPlatforms ?? new Set(),
+						knownPlatforms,
 					).catch((err) =>
 						app.log.warn({ err }, "Jellyfin session snapshot: notification check failed"),
 					);
 
-					// Merge current platforms into known cache
-					if (cachedKnownPlatforms) {
-						for (const p of tickPlatforms) cachedKnownPlatforms.add(p);
-					}
 					return notification.then(() => {
 						if (captureErrors.length > 0)
 							throw new AggregateError(captureErrors, "Native session capture incomplete");
@@ -573,9 +601,11 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 			runAccepted(() =>
 				app.notificationService.runProducer(() =>
 					app.schedulerRegistry.track(JOB_ID.sessionSnapshot, async () => {
+						const knownPlatforms = await loadKnownPlatforms();
+						if (admissionClosed) return;
 						const results = await Promise.allSettled([
-							captureSnapshots(),
-							captureJellyfinSnapshots(),
+							captureSnapshots(knownPlatforms),
+							captureJellyfinSnapshots(knownPlatforms),
 						]);
 						const failures = results.filter(
 							(r): r is PromiseRejectedResult => r.status === "rejected",
