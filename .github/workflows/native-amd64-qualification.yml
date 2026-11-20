@@ -1,27 +1,27 @@
-name: Unpublished native ARM64 candidate qualification
+name: Unpublished native AMD64 candidate qualification
 'on':
   push:
     branches:
-      - qa/893-native-arm64-3be77e34
+      - qa/902-native-amd64-c8d16e15
 permissions:
   contents: read
 jobs:
   qualify:
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
-      CANDIDATE: 3be77e34307ae83234e531f23c3fa4bb168e5e95
+      CANDIDATE: c8d16e15a42caf9668c5e47fe2c5795fd986a829
     steps:
       - name: Check out the immutable candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 3be77e34307ae83234e531f23c3fa4bb168e5e95
+          ref: c8d16e15a42caf9668c5e47fe2c5795fd986a829
           persist-credentials: false
-      - name: Build, start, and scan the same local ARM64 image
+      - name: Build, start, and scan the same local AMD64 image
         shell: bash
         run: |
           set -euo pipefail
-          test "$(uname -m)" = aarch64
+          test "$(uname -m)" = x86_64
           test "$(git rev-parse HEAD)" = "$CANDIDATE"
           test -z "$(git status --porcelain)"
           tmp="$(mktemp -d)"
@@ -35,11 +35,11 @@ jobs:
           }
           trap cleanup EXIT
           version="$(jq -er .version package.json)"
-          docker build --platform linux/arm64 --tag arr-dashboard:arm64-qualification \
+          docker build --platform linux/amd64 --tag arr-dashboard:amd64-qualification \
             --build-arg "VERSION=$version" --build-arg "COMMIT_SHA=$CANDIDATE" .
-          image="$(docker image inspect --format '{{.Id}}' arr-dashboard:arm64-qualification)"
+          image="$(docker image inspect --format '{{.Id}}' arr-dashboard:amd64-qualification)"
           [[ "$image" =~ ^sha256:[0-9a-f]{64}$ ]]
-          test "$(docker image inspect --format '{{.Architecture}}' "$image")" = arm64
+          test "$(docker image inspect --format '{{.Architecture}}' "$image")" = amd64
           test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")" = "$CANDIDATE"
           cid="$(docker run -d --network none -e PUID=1000 -e PGID=1000 "$image")"
           test "$(docker inspect --format '{{.Image}}' "$cid")" = "$image"
@@ -65,10 +65,10 @@ jobs:
           test "$(docker inspect --format '{{.State.Status}} {{.State.ExitCode}} {{.State.OOMKilled}}' "$cid")" = 'exited 0 false'
           docker rm -v "$cid" >/dev/null
           cid=
-          curl -fsSL --max-time 90 https://github.com/aquasecurity/trivy/releases/download/v0.76.2/trivy_0.76.2_Linux-ARM64.tar.gz -o "$tmp/trivy.tgz"
-          printf '%s  %s\n' ab9d51f86e6a5fb936f605faff6b593ac51bc378fff4d3e8b9d58358b9c367c3 "$tmp/trivy.tgz" | sha256sum --check --status
+          curl -fsSL --max-time 90 https://github.com/aquasecurity/trivy/releases/download/v0.76.2/trivy_0.76.2_Linux-64bit.tar.gz -o "$tmp/trivy.tgz"
+          printf '%s  %s\n' bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf "$tmp/trivy.tgz" | sha256sum --check --status
           tar -xzf "$tmp/trivy.tgz" -C "$tmp" trivy
-          "$tmp/trivy" --cache-dir "$tmp/cache" image --image-src docker --platform linux/arm64 \
+          "$tmp/trivy" --cache-dir "$tmp/cache" image --image-src docker --platform linux/amd64 \
             --scanners vuln --severity HIGH,CRITICAL --timeout 8m --format json --output "$tmp/scan.json" "$image"
           jq -e --arg image "$image" '.Metadata.ImageID == $image and
             any(.Results[]; .Class == "os-pkgs" and .Type == "alpine") and
@@ -76,7 +76,7 @@ jobs:
           jq -e '.Metadata.OS.Family == "alpine" and (.Metadata.OS.EOSL // false | not)' "$tmp/scan.json" >/dev/null
           count="$(jq '[.Results[] | .Vulnerabilities[]?] | length' "$tmp/scan.json")"
           {
-            printf 'Candidate: %s\n\nImage ID: %s\n\nPlatform: linux/arm64\n\nAPI and Web readiness and graceful service exit: PASS\n\n' "$CANDIDATE" "$image"
+            printf 'Candidate: %s\n\nImage ID: %s\n\nPlatform: linux/amd64\n\nAPI and Web readiness and graceful service exit: PASS\n\n' "$CANDIDATE" "$image"
             printf 'High/critical findings: %s\n' "$count"
             jq -r '.Results[] | .Vulnerabilities[]? | [.Severity,.VulnerabilityID,.PkgName,.InstalledVersion,.FixedVersion] | @tsv' "$tmp/scan.json"
           } >> "$GITHUB_STEP_SUMMARY"
