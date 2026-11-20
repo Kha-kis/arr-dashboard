@@ -9,6 +9,10 @@ export const formatDateOnly = (date: Date): string => {
 	return index === -1 ? iso : iso.slice(0, index);
 };
 
+/** Represent a current instant's viewer-local day as a canonical UTC grid date. */
+export const getViewerCalendarDate = (date: Date): Date =>
+	new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+
 export interface CalendarDateRange {
 	start: string;
 	end: string;

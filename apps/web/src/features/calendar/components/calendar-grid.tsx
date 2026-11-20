@@ -6,7 +6,7 @@ import { getLinuxIsoName, useIncognitoMode } from "../../../lib/incognito";
 import { cn } from "../../../lib/utils";
 import { getServiceGradient } from "../../../lib/theme-gradients";
 import type { DeduplicatedCalendarItem } from "../hooks/use-calendar-data";
-import { formatDateOnly } from "../lib/calendar-formatters";
+import { formatDateOnly, getViewerCalendarDate } from "../lib/calendar-formatters";
 
 interface CalendarGridProps {
 	readonly days: Date[];
@@ -163,7 +163,7 @@ export const CalendarGrid = ({
 	className,
 }: CalendarGridProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
-	const todayKey = formatDateOnly(new Date());
+	const todayKey = formatDateOnly(getViewerCalendarDate(new Date()));
 
 	const rotatedLabels = [...WEEKDAY_LABELS.slice(weekStart), ...WEEKDAY_LABELS.slice(0, weekStart)];
 	// Weekend column indices after rotation
