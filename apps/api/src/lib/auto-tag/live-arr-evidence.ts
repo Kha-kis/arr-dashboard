@@ -1,6 +1,39 @@
 import { arrPolicyEvidenceFromRaw } from "../library-cleanup/arr-policy-evidence.js";
 import type { CacheItemForEval } from "../library-cleanup/types.js";
 
+/** Normalize only evaluation evidence; never use this projection as a PUT body. */
+export function normalizeLiveMovieFile(file: Record<string, unknown>): Record<string, unknown> {
+	const info =
+		typeof file.mediaInfo === "object" && file.mediaInfo !== null && !Array.isArray(file.mediaInfo)
+			? (file.mediaInfo as Record<string, unknown>)
+			: {};
+	const normalized = { ...file };
+	for (const key of ["videoCodec", "audioCodec", "resolution", "videoDynamicRange"] as const) {
+		const direct = file[key];
+		const nested = info[key];
+		normalized[key] =
+			typeof direct === "string" && direct.trim()
+				? direct
+				: typeof nested === "string" && nested.trim()
+					? nested
+					: undefined;
+	}
+	if (!normalized.resolution) {
+		if (typeof info.screenSize === "string" && info.screenSize.trim())
+			normalized.resolution = info.screenSize;
+		else if (
+			typeof info.width === "number" &&
+			Number.isFinite(info.width) &&
+			info.width > 0 &&
+			typeof info.height === "number" &&
+			Number.isFinite(info.height) &&
+			info.height > 0
+		)
+			normalized.resolution = `${info.width}x${info.height}`;
+	}
+	return normalized;
+}
+
 export function adaptLiveArrItemForAutoTag(
 	raw: Record<string, unknown>,
 	target: {
@@ -62,6 +95,12 @@ export function adaptLiveArrItemForAutoTag(
 		arrAddedAt: addedAt && !Number.isNaN(addedAt.getTime()) ? addedAt : null,
 		data: JSON.stringify({
 			...raw,
+			...(target.itemType === "movie" &&
+			typeof raw.movieFile === "object" &&
+			raw.movieFile !== null &&
+			!Array.isArray(raw.movieFile)
+				? { movieFile: normalizeLiveMovieFile(raw.movieFile as Record<string, unknown>) }
+				: {}),
 			service,
 			_arrDashboardEvidence: arrPolicyEvidenceFromRaw(raw, service),
 		}),

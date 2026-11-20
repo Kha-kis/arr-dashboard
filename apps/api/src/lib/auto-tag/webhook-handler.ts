@@ -29,15 +29,16 @@ import {
 	loadNativePresenceContext,
 	type NativePresenceContext,
 } from "../provider-observation/native-presence-evidence.js";
-import {
-	evaluateSingleConditionState,
-	type RuleEvaluationState,
-} from "../library-cleanup/rule-evaluators.js";
+import type { RuleEvaluationState } from "../library-cleanup/rule-evaluators.js";
 import type { CacheItemForEval } from "../library-cleanup/types.js";
 import type { AutoTagRule, PrismaClient, ServiceInstance, User } from "../prisma.js";
 import { safeJsonParse } from "../utils/json.js";
 import { loadCompleteListEvidence } from "./list-evidence-loader.js";
-import { adaptLiveArrItemForAutoTag } from "./live-arr-evidence.js";
+import {
+	autoTagRuleUsesFileEvidence,
+	evaluateAutoTagConditionState,
+	loadLiveArrItemForAutoTag,
+} from "./live-file-evidence.js";
 import { acquireAutoTagTargetLock } from "./target-lock.js";
 import { AutoTagAuthorityChangedError, isCurrentAutoTagTarget } from "./target-authorization.js";
 
@@ -126,15 +127,6 @@ export async function processWebhook(opts: {
 		return { status: "error", message: "Failed to initialize *arr client." };
 	}
 
-	let cacheItem: CacheItemForEval;
-	try {
-		cacheItem = await fetchAndAdaptItem(arrClient, event, instance.id);
-	} catch (err) {
-		const reason = err instanceof ArrError ? err.message : String(err);
-		log.warn({ err: reason, arrItemId: event.arrItemId }, "Failed to fetch item from *arr");
-		return { status: "error", message: `Failed to fetch item: ${reason}` };
-	}
-
 	// Load all enabled auto-tag rules for this user that scope to this instance.
 	const allRules = await deps.prisma.autoTagRule.findMany({
 		where: { userId: user.id, enabled: true },
@@ -146,6 +138,33 @@ export async function processWebhook(opts: {
 
 	if (applicable.length === 0) {
 		return { status: "ok", message: "No enabled rules apply to this instance.", rulesEvaluated: 0 };
+	}
+
+	const assertCurrent = async () => {
+		if (!(await isCurrentAutoTagTarget(deps.prisma, user.id, instance)))
+			throw new AutoTagAuthorityChangedError();
+	};
+	const loadCurrentItem = (rules: AutoTagRule[]) =>
+		loadLiveArrItemForAutoTag({
+			client: arrClient,
+			target: { instanceId: instance.id, arrItemId: event.arrItemId, itemType: event.mediaType },
+			rules: rules.map(adaptRuleForEval),
+			assertCurrent,
+		});
+	let cacheItem: CacheItemForEval;
+	try {
+		cacheItem = (await loadCurrentItem(applicable)).item;
+	} catch (err) {
+		if (err instanceof AutoTagAuthorityChangedError)
+			return {
+				status: "ignored",
+				message: "ARR connection changed; no tags applied.",
+				tagsApplied: 0,
+				rulesEvaluated: applicable.length,
+			};
+		const reason = err instanceof ArrError ? err.message : String(err);
+		log.warn({ err: reason, arrItemId: event.arrItemId }, "Failed to fetch item from *arr");
+		return { status: "error", message: `Failed to fetch item: ${reason}` };
 	}
 
 	// Build prefetch context once, in case any rule needs Plex/Jellyfin/Seerr
@@ -184,12 +203,7 @@ export async function processWebhook(opts: {
 		const accessor = event.mediaType === "series" ? "series" : "movie";
 		// biome-ignore lint/suspicious/noExplicitAny: SDK union typing requires runtime accessor
 		const resource = (arrClient as any)[accessor];
-		const fullItem = (await resource.getById(event.arrItemId)) as Record<string, unknown>;
-		const latestItem = adaptLiveArrItemForAutoTag(fullItem, {
-			instanceId: instance.id,
-			arrItemId: event.arrItemId,
-			itemType: event.mediaType,
-		});
+		let { fullItem, item: latestItem } = await loadCurrentItem(candidateRules);
 		const latestEvidence = await safeBuildContext(
 			deps,
 			user.id,
@@ -199,7 +213,15 @@ export async function processWebhook(opts: {
 		);
 		const usesNativePresence =
 			collectNativePresenceInstances(candidateRules.map(adaptRuleForEval)).length > 0;
-		if (usesNativePresence && !(await isCurrentAutoTagTarget(deps.prisma, user.id, instance))) {
+		const usesFileEvidence =
+			instance.service === "RADARR" &&
+			candidateRules.some((rule) => autoTagRuleUsesFileEvidence(adaptRuleForEval(rule)));
+		const usesWriteEvidence = usesNativePresence || usesFileEvidence;
+		const refreshFileEvidence = async () => {
+			if (usesFileEvidence)
+				({ fullItem, item: latestItem } = await loadCurrentItem(candidateRules));
+		};
+		if (usesWriteEvidence && !(await isCurrentAutoTagTarget(deps.prisma, user.id, instance))) {
 			return {
 				status: "ignored",
 				message: "ARR connection changed; no tags applied.",
@@ -220,6 +242,7 @@ export async function processWebhook(opts: {
 		const tagIds = new Map<string, number>();
 		for (const tagName of new Set(matchingRules.map((rule) => rule.tagName))) {
 			const assertTagAuthority = async () => {
+				await refreshFileEvidence();
 				const tagRules = matchingRules.filter((rule) => rule.tagName === tagName);
 				const evidence = await safeBuildContext(
 					deps,
@@ -245,17 +268,18 @@ export async function processWebhook(opts: {
 			try {
 				tagIds.set(
 					tagName,
-					await ensureTag(arrClient, tagName, usesNativePresence ? assertTagAuthority : undefined),
+					await ensureTag(arrClient, tagName, usesWriteEvidence ? assertTagAuthority : undefined),
 				);
 			} catch (error) {
 				if (error instanceof AutoTagAuthorityChangedError) unresolved++;
 				else throw error;
 			}
 		}
-		const boundaryEvidence = usesNativePresence
+		await refreshFileEvidence();
+		const boundaryEvidence = usesWriteEvidence
 			? await safeBuildContext(deps, user.id, matchingRules, log, latestEvidence.ctx.nativePresence)
 			: latestEvidence;
-		if (usesNativePresence && !(await isCurrentAutoTagTarget(deps.prisma, user.id, instance))) {
+		if (usesWriteEvidence && !(await isCurrentAutoTagTarget(deps.prisma, user.id, instance))) {
 			return {
 				status: "ignored",
 				message: "ARR connection changed; no item tags applied.",
@@ -359,25 +383,6 @@ function parseConnectEvent(payload: unknown): ConnectEvent {
 // *arr item → CacheItemForEval adapter
 // ============================================================================
 
-async function fetchAndAdaptItem(
-	arrClient: ArrClient,
-	event: Extract<ConnectEvent, { kind: "import" }>,
-	instanceId: string,
-): Promise<CacheItemForEval> {
-	const accessor = event.mediaType === "series" ? "series" : "movie";
-	// biome-ignore lint/suspicious/noExplicitAny: SDK union typing requires runtime accessor
-	const resource = (arrClient as any)[accessor];
-	const raw = await resource.getById(event.arrItemId);
-
-	// CacheItemForEval mirrors LibraryCache. We synthesize what the evaluator
-	// needs from the live API response.
-	return adaptLiveArrItemForAutoTag(raw as Record<string, unknown>, {
-		instanceId,
-		arrItemId: event.arrItemId,
-		itemType: event.mediaType,
-	});
-}
-
 // ============================================================================
 // Rule scope + evaluation (mirrors the executor's logic)
 // ============================================================================
@@ -453,7 +458,7 @@ function matchesRule(
 		if (rule.operator === "AND") {
 			let unknown = false;
 			for (const cond of rule.conditions) {
-				const evaluation = evaluateSingleConditionState(
+				const evaluation = evaluateAutoTagConditionState(
 					item,
 					cond.ruleType,
 					cond.parameters,
@@ -469,7 +474,7 @@ function matchesRule(
 		// OR
 		let unknown = false;
 		for (const cond of rule.conditions) {
-			const evaluation = evaluateSingleConditionState(
+			const evaluation = evaluateAutoTagConditionState(
 				item,
 				cond.ruleType,
 				cond.parameters,
@@ -483,7 +488,7 @@ function matchesRule(
 		return unknown ? "unknown" : "false";
 	}
 
-	return evaluateSingleConditionState(
+	return evaluateAutoTagConditionState(
 		item,
 		rule.ruleType,
 		rule.parameters,
