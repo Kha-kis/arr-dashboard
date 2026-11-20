@@ -1,8 +1,9 @@
 import { performance } from "node:perf_hooks";
 import Fastify, { type FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, vi } from "vitest";
 import { registerSchedulers } from "../../bootstrap/schedulers.js";
+import { nativeLifecycleTest } from "../../lib/__tests__/native-lifecycle-test.js";
 import {
 	registerRestoreBootstrapPlugin,
 	registerRestoreRuntimeActivation,
@@ -906,340 +907,426 @@ describe("Plex episode scheduler accepted lifetimes", () => {
 					: ["round", "page", "retryState", "stale", "evidence"];
 		for (const phase of phases)
 			for (const reject of [false, true]) {
-				it(`drains ${origin} ${phase} ${reject ? "failure" : "completion"} before database teardown`, async () => {
-					const gate = deferred();
-					const f = await boot({
-						origin,
-						stale: true,
-						hold: {
-							phase,
-							gate: gate.promise,
-							reject,
-							call:
-								origin === "interval" || (origin === "continuation" && phase === "page") ? 2 : 1,
-						},
-					});
-					await f.start(origin);
-					expect(await f.waitUntilHeld()).toBe(true);
-					expect(f.state.pending).toBe(1);
-					const closing = await f.closePending();
-					expect(closing.settled()).toBe(false);
-					expect(f.state.teardown).toBe(false);
-					gate.resolve();
-					await closing.promise;
-					await f.manual();
-					expect(f.state.pendingAtTeardown).toBe(0);
-					expect(f.state.afterTeardown).toBe(0);
-					const before = { ...f.counts };
-					await f.advance(24 * 60 * 60_000);
-					expect(f.counts).toEqual(before);
-				});
+				nativeLifecycleTest(
+					`drains ${origin} ${phase} ${reject ? "failure" : "completion"} before database teardown`,
+					async () => {
+						const gate = deferred();
+						const f = await boot({
+							origin,
+							stale: true,
+							hold: {
+								phase,
+								gate: gate.promise,
+								reject,
+								call:
+									origin === "interval" || (origin === "continuation" && phase === "page") ? 2 : 1,
+							},
+						});
+						return { gate, f } as const;
+					},
+					async ({ gate, f }) => {
+						await f.start(origin);
+						expect(await f.waitUntilHeld()).toBe(true);
+						expect(f.state.pending).toBe(1);
+						const closing = await f.closePending();
+						expect(closing.settled()).toBe(false);
+						expect(f.state.teardown).toBe(false);
+						gate.resolve();
+						await closing.promise;
+						await f.manual();
+						expect(f.state.pendingAtTeardown).toBe(0);
+						expect(f.state.afterTeardown).toBe(0);
+						const before = { ...f.counts };
+						await f.advance(24 * 60 * 60_000);
+						expect(f.counts).toEqual(before);
+					},
+				);
 			}
 	}
 	for (const phase of ["stale", "evidence", "subscription", "send", "log", "channel"] as const) {
 		for (const reject of [false, true]) {
-			it(`retains stale-alert delivery through held ${phase} ${reject ? "failure" : "completion"}`, async () => {
-				const gate = deferred();
-				const f = await boot({ stale: true, hold: { phase, gate: gate.promise, reject } });
-				await f.start("startup");
-				expect(await f.waitUntilHeld()).toBe(true);
-				expect(f.state.pending).toBe(1);
-				const closing = await f.closePending();
-				expect(closing.settled()).toBe(false);
-				gate.resolve();
-				await closing.promise;
-				expect(f.state.afterTeardown).toBe(0);
-				expect(f.state.pendingAtTeardown).toBe(0);
-				if (["send", "log", "channel"].includes(phase)) {
-					expect(f.sendOwners).toHaveLength(1);
-					const issued = f.sendOwners[0]!;
-					const states = f.ownerRows.map((owner) =>
-						owner.userId !== issued
-							? ("ready" as const)
-							: !reject
-								? ("sent" as const)
-								: phase === "send"
-									? ("uncertain" as const)
-									: ("submitting" as const),
-					);
-					await assertGraphs(f, states);
-					expect(f.sent).toEqual(phase === "send" && reject ? [] : ["CACHE_REFRESH_STALE"]);
-					expect(f.deliveries).toEqual(
-						reject && (phase === "send" || phase === "log") ? [] : ["sent"],
-					);
-				} else {
-					if (!reject) await assertGraphs(f, ["ready", "ready"]);
-					else {
-						const graph = await f.outcome();
-						expect(graph.events).toHaveLength(0);
-						expect(graph.deliveries).toHaveLength(0);
+			nativeLifecycleTest(
+				`retains stale-alert delivery through held ${phase} ${reject ? "failure" : "completion"}`,
+				async () => {
+					const gate = deferred();
+					const f = await boot({ stale: true, hold: { phase, gate: gate.promise, reject } });
+					return { gate, f } as const;
+				},
+				async ({ gate, f }) => {
+					await f.start("startup");
+					expect(await f.waitUntilHeld()).toBe(true);
+					expect(f.state.pending).toBe(1);
+					const closing = await f.closePending();
+					expect(closing.settled()).toBe(false);
+					gate.resolve();
+					await closing.promise;
+					expect(f.state.afterTeardown).toBe(0);
+					expect(f.state.pendingAtTeardown).toBe(0);
+					if (["send", "log", "channel"].includes(phase)) {
+						expect(f.sendOwners).toHaveLength(1);
+						const issued = f.sendOwners[0]!;
+						const states = f.ownerRows.map((owner) =>
+							owner.userId !== issued
+								? ("ready" as const)
+								: !reject
+									? ("sent" as const)
+									: phase === "send"
+										? ("uncertain" as const)
+										: ("submitting" as const),
+						);
+						await assertGraphs(f, states);
+						expect(f.sent).toEqual(phase === "send" && reject ? [] : ["CACHE_REFRESH_STALE"]);
+						expect(f.deliveries).toEqual(
+							reject && (phase === "send" || phase === "log") ? [] : ["sent"],
+						);
+					} else {
+						if (!reject) await assertGraphs(f, ["ready", "ready"]);
+						else {
+							const graph = await f.outcome();
+							expect(graph.events).toHaveLength(0);
+							expect(graph.deliveries).toHaveLength(0);
+						}
+						expect(f.sent).toEqual([]);
+						expect(f.deliveries).toEqual([]);
 					}
-					expect(f.sent).toEqual([]);
-					expect(f.deliveries).toEqual([]);
-				}
-			});
+				},
+			);
 		}
 	}
-	it("closes admission during preClose before sibling hooks wait", async () => {
-		const gate = deferred(),
-			f = await boot({ preCloseGate: gate.promise });
-		const closing = await f.closePending();
-		f.callback("startup")();
-		await expect(f.retained()).resolves.toEqual({ status: "unavailable" });
-		await settle();
-		expect(f.counts.round).toBe(0);
-		expect(f.counts.owner).toBe(0);
-		gate.resolve();
-		await closing.promise;
-	});
-	it("never reopens retired startup, interval, continuation or manual callbacks", async () => {
-		const f = await boot({ origin: "continuation" });
-		await f.start("startup");
-		await f.idle();
-		const startup = f.callback("startup"),
-			interval = f.callback("interval"),
-			continuation = f.callback("continuation");
-		await f.app.close();
-		const before = { ...f.counts },
-			installed = f.intervals.mock.calls.length;
-		startup();
-		interval();
-		continuation();
-		await expect(f.retained()).resolves.toEqual({ status: "unavailable" });
-		await expect(f.retry()).resolves.toEqual({
-			status: "unavailable",
-		});
-		await f.advance(24 * 60 * 60_000);
-		expect(f.counts).toEqual(before);
-		expect(f.intervals.mock.calls.length).toBe(installed);
-	});
-	it("joins duplicate close calls while the initial lookup is pending", async () => {
-		const gate = deferred(),
-			f = await boot({ hold: { phase: "round", gate: gate.promise } });
-		await f.start("startup");
-		expect(await f.waitUntilHeld()).toBe(true);
-		const closing = await f.closePending();
-		let secondSettled = false;
-		const second = f.app.close().then(() => {
-			secondSettled = true;
-		});
-		await settle();
-		expect(closing.settled()).toBe(false);
-		expect(secondSettled).toBe(false);
-		gate.resolve();
-		await Promise.all([closing.promise, second]);
-		expect(f.state.afterTeardown).toBe(0);
-	});
-	it("rejects a held owner admission after close without starting a page", async () => {
-		const gate = deferred(),
-			f = await boot({ hold: { phase: "owner", gate: gate.promise } });
-		await f.start("manual");
-		expect(await f.waitUntilHeld()).toBe(true);
-		const closing = await f.closePending();
-		expect(closing.settled()).toBe(false);
-		gate.resolve();
-		await expect(f.manual()).resolves.toEqual({ status: "unavailable" });
-		await closing.promise;
-		expect(f.counts.page).toBe(0);
-		expect(f.state.afterTeardown).toBe(0);
-	});
-	for (const phase of ["round", "owner", "page", "retryState", "stale", "evidence"] as const) {
-		it(`blocks maintenance throughout accepted ${phase}`, async () => {
+	nativeLifecycleTest(
+		"closes admission during preClose before sibling hooks wait",
+		async () => {
 			const gate = deferred(),
-				origin = phase === "owner" ? "manual" : "startup";
-			const f = await boot({ origin, stale: true, hold: { phase, gate: gate.promise } });
-			await f.start(origin);
+				f = await boot({ preCloseGate: gate.promise });
+			return { gate, f } as const;
+		},
+		async ({ gate, f }) => {
+			const closing = await f.closePending();
+			f.callback("startup")();
+			await expect(f.retained()).resolves.toEqual({ status: "unavailable" });
+			await settle();
+			expect(f.counts.round).toBe(0);
+			expect(f.counts.owner).toBe(0);
+			gate.resolve();
+			await closing.promise;
+		},
+	);
+	nativeLifecycleTest(
+		"never reopens retired startup, interval, continuation or manual callbacks",
+		async () => {
+			const f = await boot({ origin: "continuation" });
+			return { f } as const;
+		},
+		async ({ f }) => {
+			await f.start("startup");
+			await f.idle();
+			const startup = f.callback("startup"),
+				interval = f.callback("interval"),
+				continuation = f.callback("continuation");
+			await f.app.close();
+			const before = { ...f.counts },
+				installed = f.intervals.mock.calls.length;
+			startup();
+			interval();
+			continuation();
+			await expect(f.retained()).resolves.toEqual({ status: "unavailable" });
+			await expect(f.retry()).resolves.toEqual({
+				status: "unavailable",
+			});
+			await f.advance(24 * 60 * 60_000);
+			expect(f.counts).toEqual(before);
+			expect(f.intervals.mock.calls.length).toBe(installed);
+		},
+	);
+	nativeLifecycleTest(
+		"joins duplicate close calls while the initial lookup is pending",
+		async () => {
+			const gate = deferred(),
+				f = await boot({ hold: { phase: "round", gate: gate.promise } });
+			return { gate, f } as const;
+		},
+		async ({ gate, f }) => {
+			await f.start("startup");
+			expect(await f.waitUntilHeld()).toBe(true);
+			const closing = await f.closePending();
+			let secondSettled = false;
+			const second = f.app.close().then(() => {
+				secondSettled = true;
+			});
+			await settle();
+			expect(closing.settled()).toBe(false);
+			expect(secondSettled).toBe(false);
+			gate.resolve();
+			await Promise.all([closing.promise, second]);
+			expect(f.state.afterTeardown).toBe(0);
+		},
+	);
+	nativeLifecycleTest(
+		"rejects a held owner admission after close without starting a page",
+		async () => {
+			const gate = deferred(),
+				f = await boot({ hold: { phase: "owner", gate: gate.promise } });
+			return { gate, f } as const;
+		},
+		async ({ gate, f }) => {
+			await f.start("manual");
+			expect(await f.waitUntilHeld()).toBe(true);
+			const closing = await f.closePending();
+			expect(closing.settled()).toBe(false);
+			gate.resolve();
+			await expect(f.manual()).resolves.toEqual({ status: "unavailable" });
+			await closing.promise;
+			expect(f.counts.page).toBe(0);
+			expect(f.state.afterTeardown).toBe(0);
+		},
+	);
+	for (const phase of ["round", "owner", "page", "retryState", "stale", "evidence"] as const) {
+		nativeLifecycleTest(
+			`blocks maintenance throughout accepted ${phase}`,
+			async () => {
+				const gate = deferred(),
+					origin = phase === "owner" ? "manual" : "startup";
+				const f = await boot({ origin, stale: true, hold: { phase, gate: gate.promise } });
+				return { gate, origin, f } as const;
+			},
+			async ({ gate, origin, f }) => {
+				await f.start(origin);
+				expect(await f.waitUntilHeld()).toBe(true);
+				expect(f.state.pending).toBe(1);
+				await expect(withCleanupMaintenanceGuard(async () => undefined)).rejects.toMatchObject({
+					statusCode: 409,
+				});
+				gate.resolve();
+				await f.manual();
+				await settle();
+				await f.app.close();
+				await expect(withCleanupMaintenanceGuard(async () => "released")).resolves.toBe("released");
+			},
+		);
+	}
+	nativeLifecycleTest(
+		"retains a detached manual page guard after its parent request returns",
+		async () => {
+			const gate = deferred(),
+				f = await boot({ hold: { phase: "page", gate: gate.promise } });
+			return { gate, f } as const;
+		},
+		async ({ gate, f }) => {
+			const admission = await f.app.restoreRuntime.runOperation(() =>
+				withCleanupOperationGuard(() => f.retry()),
+			);
+			expect(admission.status).toBe("accepted");
 			expect(await f.waitUntilHeld()).toBe(true);
 			expect(f.state.pending).toBe(1);
 			await expect(withCleanupMaintenanceGuard(async () => undefined)).rejects.toMatchObject({
 				statusCode: 409,
 			});
 			gate.resolve();
-			await f.manual();
-			await settle();
+			if (admission.status !== "accepted") throw new Error("Synthetic page not admitted");
+			await admission.backgroundTask;
 			await f.app.close();
 			await expect(withCleanupMaintenanceGuard(async () => "released")).resolves.toBe("released");
-		});
-	}
-	it("retains a detached manual page guard after its parent request returns", async () => {
-		const gate = deferred(),
-			f = await boot({ hold: { phase: "page", gate: gate.promise } });
-		const admission = await f.app.restoreRuntime.runOperation(() =>
-			withCleanupOperationGuard(() => f.retry()),
-		);
-		expect(admission.status).toBe("accepted");
-		expect(await f.waitUntilHeld()).toBe(true);
-		expect(f.state.pending).toBe(1);
-		await expect(withCleanupMaintenanceGuard(async () => undefined)).rejects.toMatchObject({
-			statusCode: 409,
-		});
-		gate.resolve();
-		if (admission.status !== "accepted") throw new Error("Synthetic page not admitted");
-		await admission.backgroundTask;
-		await f.app.close();
-		await expect(withCleanupMaintenanceGuard(async () => "released")).resolves.toBe("released");
-	});
-	it("rejects manual admission during maintenance without querying an owner", async () => {
-		const f = await boot();
-		await withCleanupMaintenanceGuard(async () => {
-			await expect(f.retry()).resolves.toEqual({
-				status: "unavailable",
+		},
+	);
+	nativeLifecycleTest(
+		"rejects manual admission during maintenance without querying an owner",
+		async () => {
+			const f = await boot();
+			return { f } as const;
+		},
+		async ({ f }) => {
+			await withCleanupMaintenanceGuard(async () => {
+				await expect(f.retry()).resolves.toEqual({
+					status: "unavailable",
+				});
+				expect(f.counts.owner).toBe(0);
+				expect(f.counts.page).toBe(0);
 			});
-			expect(f.counts.owner).toBe(0);
-			expect(f.counts.page).toBe(0);
-		});
-		await expect(f.retry()).resolves.toMatchObject({
-			status: "accepted",
-		});
-		await f.idle();
-		expect(f.counts.page).toBe(1);
-	});
+			await expect(f.retry()).resolves.toMatchObject({
+				status: "accepted",
+			});
+			await f.idle();
+			expect(f.counts.page).toBe(1);
+		},
+	);
 	for (const failure of ["exception", "dependency"] as const)
 		for (const rung of [0, 1, 2]) {
-			it(`defers maintenance-denied ${failure} rung ${rung} without spending its retry budget`, async () => {
-				const f = await boot({ failure });
-				const admission = await f.retry();
-				if (admission.status !== "accepted") throw new Error("Synthetic page not admitted");
-				await admission.backgroundTask;
-				const delays = [30_000, 120_000, 600_000];
-				for (let i = 0; i < rung; i++) await f.advance(delays[i]!);
-				expect(f.counts.page).toBe(rung + 1);
-				const before = f.counts.page;
-				await withCleanupMaintenanceGuard(async () => {
-					await f.advance(delays[rung]!);
+			nativeLifecycleTest(
+				`defers maintenance-denied ${failure} rung ${rung} without spending its retry budget`,
+				async () => {
+					const f = await boot({ failure });
+					return { f } as const;
+				},
+				async ({ f }) => {
+					const admission = await f.retry();
+					if (admission.status !== "accepted") throw new Error("Synthetic page not admitted");
+					await admission.backgroundTask;
+					const delays = [30_000, 120_000, 600_000];
+					for (let i = 0; i < rung; i++) await f.advance(delays[i]!);
+					expect(f.counts.page).toBe(rung + 1);
+					const before = f.counts.page;
+					await withCleanupMaintenanceGuard(async () => {
+						await f.advance(delays[rung]!);
+						expect(f.counts.page).toBe(before);
+						expect(f.timeouts.mock.calls.at(-1)?.[1]).toBe(delays[rung]);
+					});
+					await f.advance(delays[rung]! - 1);
 					expect(f.counts.page).toBe(before);
-					expect(f.timeouts.mock.calls.at(-1)?.[1]).toBe(delays[rung]);
-				});
-				await f.advance(delays[rung]! - 1);
-				expect(f.counts.page).toBe(before);
-				await f.advance(1);
-				expect(f.counts.page).toBe(before + 1);
-				for (let i = rung + 1; i < 3; i++) await f.advance(delays[i]!);
-				await f.advance(600_000);
-				expect(f.counts.page).toBe(4);
-			});
+					await f.advance(1);
+					expect(f.counts.page).toBe(before + 1);
+					for (let i = rung + 1; i < 3; i++) await f.advance(delays[i]!);
+					await f.advance(600_000);
+					expect(f.counts.page).toBe(4);
+				},
+			);
 		}
-	it("uses a positive delay when maintenance denies an already-due persisted retry", async () => {
-		const f = await boot({ overdue: true });
-		const first = await f.retry();
-		if (first.status !== "accepted") throw new Error("Synthetic page not admitted");
-		await first.backgroundTask;
-		expect(f.counts.page).toBe(1);
-		expect(f.timeouts.mock.calls.at(-1)?.[1]).toBe(0);
-		await withCleanupMaintenanceGuard(async () => {
-			await f.advance(0);
+	nativeLifecycleTest(
+		"uses a positive delay when maintenance denies an already-due persisted retry",
+		async () => {
+			const f = await boot({ overdue: true });
+			return { f } as const;
+		},
+		async ({ f }) => {
+			const first = await f.retry();
+			if (first.status !== "accepted") throw new Error("Synthetic page not admitted");
+			await first.backgroundTask;
 			expect(f.counts.page).toBe(1);
-			expect(boundaries.refresh).toHaveBeenCalledOnce();
-			expect(f.timeouts.mock.calls.at(-1)?.[1]).toBe(30_000);
-		});
-	});
-	it("retains a parent-wait attempt and resume flag across a maintenance pause", async () => {
-		const f = await boot({ failure: "parent" });
-		const first = await f.retry();
-		if (first.status !== "accepted") throw new Error("Synthetic page not admitted");
-		await first.backgroundTask;
-		await withCleanupMaintenanceGuard(async () => {
+			expect(f.timeouts.mock.calls.at(-1)?.[1]).toBe(0);
+			await withCleanupMaintenanceGuard(async () => {
+				await f.advance(0);
+				expect(f.counts.page).toBe(1);
+				expect(boundaries.refresh).toHaveBeenCalledOnce();
+				expect(f.timeouts.mock.calls.at(-1)?.[1]).toBe(30_000);
+			});
+		},
+	);
+	nativeLifecycleTest(
+		"retains a parent-wait attempt and resume flag across a maintenance pause",
+		async () => {
+			const f = await boot({ failure: "parent" });
+			return { f } as const;
+		},
+		async ({ f }) => {
+			const first = await f.retry();
+			if (first.status !== "accepted") throw new Error("Synthetic page not admitted");
+			await first.backgroundTask;
+			await withCleanupMaintenanceGuard(async () => {
+				await f.advance(30_000);
+			});
+			expect(f.counts.page).toBe(1);
 			await f.advance(30_000);
-		});
-		expect(f.counts.page).toBe(1);
-		await f.advance(30_000);
-		expect(f.pageInputs[1]).toEqual({
-			id: f.request.instanceId,
-			userId: f.request.userId,
-			resume: false,
-			attempt: f.attempt,
-		});
-		for (let i = 0; i < 4; i++) await f.advance(30_000);
-		expect(f.counts.page).toBe(6);
-		expect(
-			f.pageInputs.slice(1).every((input) => input.attempt === f.attempt && input.resume === false),
-		).toBe(true);
-		boundaries.refresh.mockResolvedValue({
-			complete: false,
-			errors: 0,
-			errorMessages: [],
-			upserted: 0,
-			eligibleShows: 1,
-			refreshedShows: 0,
-			coverageIncomplete: true,
-			capacityDegraded: false,
-			superseded: true,
-		});
-		await f.advance(30_000);
-		const pages = f.counts.page;
-		await f.advance(30_000);
-		expect(f.counts.page).toBe(pages);
-		expect(f.retryDelay()).toBe(STARTUP_MS);
-		boundaries.refresh.mockResolvedValue({
-			complete: false,
-			errors: 1,
-			errorMessages: [],
-			upserted: 0,
-			eligibleShows: 1,
-			refreshedShows: 0,
-			coverageIncomplete: true,
-			capacityDegraded: false,
-		});
-		const unavailable = await f.retry();
-		if (unavailable.status !== "accepted") throw new Error("Synthetic page not admitted");
-		await unavailable.backgroundTask;
-		expect(f.retryDelay()).toBe(STARTUP_MS);
-	});
-	it("preserves current owner selection and independent simultaneous instances", async () => {
-		const gate = deferred(),
-			f = await boot({ instances: 2, hold: { phase: "page", gate: gate.promise } });
-		await expect(f.retry({ ...f.request, userId: f.ownerRows[1]!.userId })).resolves.toEqual({
-			status: "ineligible",
-		});
-		await expect(f.retry({ ...f.request, instanceId: "synthetic-missing" })).resolves.toEqual({
-			status: "ineligible",
-		});
-		await f.native.run(() =>
-			f.native.prisma.serviceInstance.update({
-				where: { id: f.request.instanceId, userId: f.request.userId },
-				data: { enabled: false },
-			}),
-		);
-		await expect(f.retry()).resolves.toEqual({ status: "ineligible" });
-		await f.native.run(() =>
-			f.native.prisma.serviceInstance.update({
-				where: { id: f.request.instanceId, userId: f.request.userId },
-				data: { enabled: true },
-			}),
-		);
-		await f.start("startup");
-		expect(await waitForNative(() => f.pageInputs.length === 2)).toBe(true);
-		expect(f.maxPages()).toBe(2);
-		expect(
-			f.pageInputs
-				.map(({ id, userId, resume }) => ({ id, userId, resume }))
-				.sort((a, b) => a.id.localeCompare(b.id)),
-		).toEqual(
-			f.instances
-				.map((row) => ({ id: row.id, userId: row.userId, resume: true }))
-				.sort((a, b) => a.id.localeCompare(b.id)),
-		);
-		gate.resolve();
-		await f.idle();
-	});
-	it("suppresses overlapping rounds and retries rejected lookup before the later interval", async () => {
-		const gate = deferred(),
-			f = await boot({ hold: { phase: "round", gate: gate.promise, reject: true } });
-		await f.start("startup");
-		expect(await f.waitUntilHeld()).toBe(true);
-		await f.advance(INTERVAL_MS);
-		expect(f.counts.round).toBe(1);
-		gate.resolve();
-		await f.idle();
-		await f.advance(29_999);
-		expect(f.counts.round).toBe(1);
-		await f.advance(1);
-		expect(f.counts.round).toBe(2);
-		expect(f.counts.page).toBe(1);
-		await f.advance(INTERVAL_MS - 30_000 - 1);
-		expect(f.counts.round).toBe(2);
-		await f.advance(1);
-		expect(f.counts.round).toBe(3);
-		expect(f.counts.page).toBe(2);
-	});
+			expect(f.pageInputs[1]).toEqual({
+				id: f.request.instanceId,
+				userId: f.request.userId,
+				resume: false,
+				attempt: f.attempt,
+			});
+			for (let i = 0; i < 4; i++) await f.advance(30_000);
+			expect(f.counts.page).toBe(6);
+			expect(
+				f.pageInputs
+					.slice(1)
+					.every((input) => input.attempt === f.attempt && input.resume === false),
+			).toBe(true);
+			boundaries.refresh.mockResolvedValue({
+				complete: false,
+				errors: 0,
+				errorMessages: [],
+				upserted: 0,
+				eligibleShows: 1,
+				refreshedShows: 0,
+				coverageIncomplete: true,
+				capacityDegraded: false,
+				superseded: true,
+			});
+			await f.advance(30_000);
+			const pages = f.counts.page;
+			await f.advance(30_000);
+			expect(f.counts.page).toBe(pages);
+			expect(f.retryDelay()).toBe(STARTUP_MS);
+			boundaries.refresh.mockResolvedValue({
+				complete: false,
+				errors: 1,
+				errorMessages: [],
+				upserted: 0,
+				eligibleShows: 1,
+				refreshedShows: 0,
+				coverageIncomplete: true,
+				capacityDegraded: false,
+			});
+			const unavailable = await f.retry();
+			if (unavailable.status !== "accepted") throw new Error("Synthetic page not admitted");
+			await unavailable.backgroundTask;
+			expect(f.retryDelay()).toBe(STARTUP_MS);
+		},
+	);
+	nativeLifecycleTest(
+		"preserves current owner selection and independent simultaneous instances",
+		async () => {
+			const gate = deferred(),
+				f = await boot({ instances: 2, hold: { phase: "page", gate: gate.promise } });
+			return { gate, f } as const;
+		},
+		async ({ gate, f }) => {
+			await expect(f.retry({ ...f.request, userId: f.ownerRows[1]!.userId })).resolves.toEqual({
+				status: "ineligible",
+			});
+			await expect(f.retry({ ...f.request, instanceId: "synthetic-missing" })).resolves.toEqual({
+				status: "ineligible",
+			});
+			await f.native.run(() =>
+				f.native.prisma.serviceInstance.update({
+					where: { id: f.request.instanceId, userId: f.request.userId },
+					data: { enabled: false },
+				}),
+			);
+			await expect(f.retry()).resolves.toEqual({ status: "ineligible" });
+			await f.native.run(() =>
+				f.native.prisma.serviceInstance.update({
+					where: { id: f.request.instanceId, userId: f.request.userId },
+					data: { enabled: true },
+				}),
+			);
+			await f.start("startup");
+			expect(await waitForNative(() => f.pageInputs.length === 2)).toBe(true);
+			expect(f.maxPages()).toBe(2);
+			expect(
+				f.pageInputs
+					.map(({ id, userId, resume }) => ({ id, userId, resume }))
+					.sort((a, b) => a.id.localeCompare(b.id)),
+			).toEqual(
+				f.instances
+					.map((row) => ({ id: row.id, userId: row.userId, resume: true }))
+					.sort((a, b) => a.id.localeCompare(b.id)),
+			);
+			gate.resolve();
+			await f.idle();
+		},
+	);
+	nativeLifecycleTest(
+		"suppresses overlapping rounds and retries rejected lookup before the later interval",
+		async () => {
+			const gate = deferred(),
+				f = await boot({ hold: { phase: "round", gate: gate.promise, reject: true } });
+			return { gate, f } as const;
+		},
+		async ({ gate, f }) => {
+			await f.start("startup");
+			expect(await f.waitUntilHeld()).toBe(true);
+			await f.advance(INTERVAL_MS);
+			expect(f.counts.round).toBe(1);
+			gate.resolve();
+			await f.idle();
+			await f.advance(29_999);
+			expect(f.counts.round).toBe(1);
+			await f.advance(1);
+			expect(f.counts.round).toBe(2);
+			expect(f.counts.page).toBe(1);
+			await f.advance(INTERVAL_MS - 30_000 - 1);
+			expect(f.counts.round).toBe(2);
+			await f.advance(1);
+			expect(f.counts.round).toBe(3);
+			expect(f.counts.page).toBe(2);
+		},
+	);
 });

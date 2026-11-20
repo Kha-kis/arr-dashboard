@@ -6,7 +6,8 @@ import { basename, dirname } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import Fastify from "fastify";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { nativeLifecycleTest } from "../../lib/__tests__/native-lifecycle-test.js";
 import { getRestoreRuntimeClientContext } from "../../lib/backup/restore-runtime-admission.js";
 import { refreshOwnedJellyfinEpisodeCache } from "../../lib/jellyfin/jellyfin-episode-cache-refresher.js";
 import { runJellyfinEpisodeFinalizerWorker } from "../../lib/jellyfin/jellyfin-episode-finalizer-worker-transport.js";
@@ -438,149 +439,57 @@ describe("cancelled episode work can really resume", () => {
 		},
 		20_000,
 	);
-	it("releases its own Plex claim without spending retry allowance and publishes on actual retry", async () => {
-		const native = await createNotificationOutboxNativeFixture(),
-			directory = ownedFixtureDirectory(native),
-			app = Fastify({ logger: false }),
-			controller = new AbortController();
-		let held: ServerResponse | undefined,
-			accepted!: () => void,
-			complete = false;
-		const ready = new Promise<void>((resolve) => {
-			accepted = resolve;
-		});
-		const server = createServer((request, response) => {
-			response.setHeader("Content-Type", "application/json");
-			response.setHeader("Connection", "close");
-			if (request.url?.startsWith("/identity"))
-				return response.end(
-					JSON.stringify({ MediaContainer: { machineIdentifier: "synthetic-id", version: "1" } }),
-				);
-			if (!request.url?.startsWith("/library/metadata/show-1/allLeaves")) {
-				response.writeHead(503);
-				return response.end("{}");
-			}
-			if (!complete) {
-				held = response;
-				accepted();
-				return;
-			}
-			response.end(
-				JSON.stringify({
-					MediaContainer: {
-						size: 1,
-						totalSize: 1,
-						offset: 0,
-						Metadata: [
-							{
-								ratingKey: "new-episode",
-								title: "Synthetic episode",
-								type: "episode",
-								parentIndex: 1,
-								index: 1,
-								viewCount: 2,
-							},
-						],
-					},
-				}),
-			);
-		});
-		server.listen(0, "127.0.0.1");
-		await once(server, "listening");
-		const address = server.address();
-		if (!address || typeof address === "string") throw Error("missing loopback");
-		let pending: Promise<unknown> | undefined;
-		try {
-			const { instance } = await seedParent(native, "PLEX", `http://127.0.0.1:${address.port}`);
-			const context = {
-				prisma: native.prisma,
-				encryptor: native.encryptor,
-				instance,
-				log: app.log,
-			};
-			pending = native
-				.run(() => refreshOwnedPlexEpisodeCache({ ...context, signal: controller.signal }))
-				.catch((error) => error);
-			expect(await bounded(ready, 4000)).not.toBe("expired");
-			controller.abort(new Error("SECRET_SENTINEL"));
-			const result = await bounded(pending);
-			// Cleanup release makes old behavior finite; never counts as cancellation.
-			if (result === "expired") {
-				complete = true;
-				held?.writeHead(503);
-				held?.end("{}");
-			}
-			await pending;
-			const unit = await native.run(() =>
-				native.prisma.providerObservationUnit.findFirstOrThrow({
-					where: { run: { instanceId: instance.id } },
-				}),
-			);
-			expect
-				.soft(result, "cancelled provider invocation joins without response release")
-				.not.toBe("expired");
-			expect.soft(result).toMatchObject({ code: "PUBLICATION_CANCELLED" });
-			expect.soft(unit).toMatchObject({
-				state: "pending",
-				claimToken: null,
-				attemptCount: 0,
-				cursor: 0,
-				completedPages: 0,
-				nextAttemptAt: null,
-			});
-			complete = true;
-			const retry = await native.run(() => refreshOwnedPlexEpisodeCache(context));
-			expect(retry).toMatchObject({ complete: true, upserted: 1 });
-			const status = await native.run(() =>
-				native.prisma.cacheRefreshStatus.findUniqueOrThrow({
-					where: { instanceId_cacheType: { instanceId: instance.id, cacheType: "plex_episode" } },
-				}),
-			);
-			// The unchanged bounded positive-only Plex publisher truthfully records
-			// partial authority even after this work item completed and published.
-			expect(status.lastAttemptResult).toBe("partial");
-			expect(JSON.parse(status.generationMetadata!)).toMatchObject({
-				publicationLevel: "positive-only",
-			});
-			expect(status.generationId).not.toBe("seeded-last-good");
-		} finally {
-			complete = true;
-			if (held && !held.destroyed) held.end("{}");
-			await pending;
-			await app.close();
-			server.closeAllConnections();
-			await new Promise<void>((resolve) => server.close(() => resolve()));
-			await native.close();
-			rmSync(directory, { recursive: true });
-		}
-	});
-	it.each(["headers", "body"] as const)(
-		"cooperatively cancels a real finalizer identity %s read and joins its runtime",
-		async (phase) => {
+	nativeLifecycleTest(
+		"releases its own Plex claim without spending retry allowance and publishes on actual retry",
+		async () => {
 			const native = await createNotificationOutboxNativeFixture(),
 				directory = ownedFixtureDirectory(native),
+				app = Fastify({ logger: false }),
 				controller = new AbortController();
+			return { native, directory, app, controller } as const;
+		},
+		async ({ native, directory, app, controller }) => {
 			let held: ServerResponse | undefined,
 				accepted!: () => void,
-				closed = false;
+				complete = false;
 			const ready = new Promise<void>((resolve) => {
 				accepted = resolve;
 			});
 			const server = createServer((request, response) => {
-				if (!request.url?.startsWith("/System/Info")) {
+				response.setHeader("Content-Type", "application/json");
+				response.setHeader("Connection", "close");
+				if (request.url?.startsWith("/identity"))
+					return response.end(
+						JSON.stringify({ MediaContainer: { machineIdentifier: "synthetic-id", version: "1" } }),
+					);
+				if (!request.url?.startsWith("/library/metadata/show-1/allLeaves")) {
 					response.writeHead(503);
-					response.end("{}");
+					return response.end("{}");
+				}
+				if (!complete) {
+					held = response;
+					accepted();
 					return;
 				}
-				held = response;
-				response.once("close", () => {
-					closed = true;
-				});
-				if (phase === "body") {
-					response.writeHead(200, { "Content-Type": "application/json" });
-					response.write('{"');
-				}
-				accepted();
+				response.end(
+					JSON.stringify({
+						MediaContainer: {
+							size: 1,
+							totalSize: 1,
+							offset: 0,
+							Metadata: [
+								{
+									ratingKey: "new-episode",
+									title: "Synthetic episode",
+									type: "episode",
+									parentIndex: 1,
+									index: 1,
+									viewCount: 2,
+								},
+							],
+						},
+					}),
+				);
 			});
 			server.listen(0, "127.0.0.1");
 			await once(server, "listening");
@@ -588,11 +497,122 @@ describe("cancelled episode work can really resume", () => {
 			if (!address || typeof address === "string") throw Error("missing loopback");
 			let pending: Promise<unknown> | undefined;
 			try {
+				const { instance } = await seedParent(native, "PLEX", `http://127.0.0.1:${address.port}`);
+				const context = {
+					prisma: native.prisma,
+					encryptor: native.encryptor,
+					instance,
+					log: app.log,
+				};
+				pending = native
+					.run(() => refreshOwnedPlexEpisodeCache({ ...context, signal: controller.signal }))
+					.catch((error) => error);
+				expect(await bounded(ready, 4000)).not.toBe("expired");
+				controller.abort(new Error("SECRET_SENTINEL"));
+				const result = await bounded(pending);
+				// Cleanup release makes old behavior finite; never counts as cancellation.
+				if (result === "expired") {
+					complete = true;
+					held?.writeHead(503);
+					held?.end("{}");
+				}
+				await pending;
+				const unit = await native.run(() =>
+					native.prisma.providerObservationUnit.findFirstOrThrow({
+						where: { run: { instanceId: instance.id } },
+					}),
+				);
+				expect
+					.soft(result, "cancelled provider invocation joins without response release")
+					.not.toBe("expired");
+				expect.soft(result).toMatchObject({ code: "PUBLICATION_CANCELLED" });
+				expect.soft(unit).toMatchObject({
+					state: "pending",
+					claimToken: null,
+					attemptCount: 0,
+					cursor: 0,
+					completedPages: 0,
+					nextAttemptAt: null,
+				});
+				complete = true;
+				const retry = await native.run(() => refreshOwnedPlexEpisodeCache(context));
+				expect(retry).toMatchObject({ complete: true, upserted: 1 });
+				const status = await native.run(() =>
+					native.prisma.cacheRefreshStatus.findUniqueOrThrow({
+						where: { instanceId_cacheType: { instanceId: instance.id, cacheType: "plex_episode" } },
+					}),
+				);
+				// The unchanged bounded positive-only Plex publisher truthfully records
+				// partial authority even after this work item completed and published.
+				expect(status.lastAttemptResult).toBe("partial");
+				expect(JSON.parse(status.generationMetadata!)).toMatchObject({
+					publicationLevel: "positive-only",
+				});
+				expect(status.generationId).not.toBe("seeded-last-good");
+			} finally {
+				complete = true;
+				if (held && !held.destroyed) held.end("{}");
+				await pending;
+				await app.close();
+				server.closeAllConnections();
+				await new Promise<void>((resolve) => server.close(() => resolve()));
+				await native.close();
+				rmSync(directory, { recursive: true });
+			}
+		},
+	);
+	describe.each(["headers", "body"] as const)(
+		"cooperatively cancels a real finalizer identity %s read and joins its runtime",
+		(phase) => {
+			let native: Native | undefined,
+				directory: string | undefined,
+				server: ReturnType<typeof createServer> | undefined,
+				controller: AbortController,
+				pending: Promise<unknown> | undefined,
+				instanceId: string,
+				held: ServerResponse | undefined,
+				closed = false;
+
+			beforeEach(async () => {
+				native = undefined;
+				directory = undefined;
+				server = undefined;
+				pending = undefined;
+				held = undefined;
+				closed = false;
+				controller = new AbortController();
+				native = await createNotificationOutboxNativeFixture();
+				directory = ownedFixtureDirectory(native);
+				let accepted!: () => void;
+				const ready = new Promise<void>((resolve) => {
+					accepted = resolve;
+				});
+				server = createServer((request, response) => {
+					if (!request.url?.startsWith("/System/Info")) {
+						response.writeHead(503);
+						response.end("{}");
+						return;
+					}
+					held = response;
+					response.once("close", () => {
+						closed = true;
+					});
+					if (phase === "body") {
+						response.writeHead(200, { "Content-Type": "application/json" });
+						response.write('{"');
+					}
+					accepted();
+				});
+				server.listen(0, "127.0.0.1");
+				await once(server, "listening");
+				const address = server.address();
+				if (!address || typeof address === "string") throw Error("missing loopback");
 				const { instance, now } = await seedParent(
 					native,
 					"JELLYFIN",
 					`http://127.0.0.1:${address.port}`,
 				);
+				instanceId = instance.id;
 				const payload = {
 					databaseUrl: getRestoreRuntimeClientContext(native.runtime).databaseUrl,
 					userId: instance.userId,
@@ -606,8 +626,29 @@ describe("cancelled episode work can really resume", () => {
 					.run(() => runJellyfinEpisodeFinalizerWorker(payload, { signal: controller.signal }))
 					.catch((error) => error);
 				expect(await bounded(ready, 5000)).not.toBe("expired");
+			});
+
+			afterEach(async () => {
+				// Failed preparation must cooperatively stop and physically join the worker too.
 				controller.abort();
-				const result = await bounded(pending);
+				await pending;
+				if (held && !held.destroyed) held.end("{}");
+				const fixtureServer = server;
+				if (fixtureServer) {
+					fixtureServer.closeAllConnections();
+					await new Promise<void>((resolve) => fixtureServer.close(() => resolve()));
+				}
+				await native?.close();
+				if (directory) {
+					assertOwnedFixtureDirectory(directory);
+					rmSync(directory, { recursive: true });
+					expect(existsSync(directory)).toBe(false);
+				}
+			});
+
+			it("preserves the lifecycle contract", async () => {
+				controller.abort();
+				const result = await bounded(pending!);
 				if (result === "expired") {
 					if (phase === "headers")
 						held?.writeHead(503, { "Content-Type": "application/json", Connection: "close" });
@@ -617,10 +658,11 @@ describe("cancelled episode work can really resume", () => {
 				for (let i = 0; i < 100 && !closed; i++) await delay(10);
 				expect(result).toEqual({ status: "cancelled" });
 				expect(closed).toBe(true);
-				const status = await native.run(() =>
-					native.prisma.cacheRefreshStatus.findUniqueOrThrow({
+				const fixture = native!;
+				const status = await fixture.run(() =>
+					fixture.prisma.cacheRefreshStatus.findUniqueOrThrow({
 						where: {
-							instanceId_cacheType: { instanceId: instance.id, cacheType: "jellyfin_episode" },
+							instanceId_cacheType: { instanceId, cacheType: "jellyfin_episode" },
 						},
 					}),
 				);
@@ -629,15 +671,7 @@ describe("cancelled episode work can really resume", () => {
 					lastResult: "success",
 					lastAttemptResult: "success",
 				});
-			} finally {
-				if (held && !held.destroyed) held.end("{}");
-				await pending;
-				server.closeAllConnections();
-				await new Promise<void>((resolve) => server.close(() => resolve()));
-				await native.close();
-				rmSync(directory, { recursive: true });
-				expect(existsSync(directory)).toBe(false);
-			}
+			});
 		},
 	);
 });

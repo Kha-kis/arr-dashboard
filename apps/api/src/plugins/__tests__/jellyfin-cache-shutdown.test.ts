@@ -2,8 +2,9 @@ import { AsyncResource } from "node:async_hooks";
 import { performance } from "node:perf_hooks";
 import Fastify, { type FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, vi } from "vitest";
 import { registerSchedulers } from "../../bootstrap/schedulers.js";
+import { nativeLifecycleTest } from "../../lib/__tests__/native-lifecycle-test.js";
 import {
 	registerRestoreBootstrapPlugin,
 	registerRestoreRuntimeActivation,
@@ -13,16 +14,16 @@ import { withCleanupMaintenanceGuard } from "../../lib/library-cleanup/cleanup-m
 import { createNotificationOutboxNativeFixture } from "../../lib/notifications/__tests__/notification-outbox-native-fixture.js";
 import type { ServiceInstance } from "../../lib/prisma.js";
 import {
+	ensureLibraryRefreshRecovery,
+	type LibraryRefreshRecoveryBridge,
+	type LibraryRefreshRecoveryRequest,
+} from "../../lib/services/library-refresh-recovery.js";
+import {
 	claimProviderCacheRefreshAttempt,
 	finishProviderCacheRefreshAttemptFailure,
 	type ProviderCacheRefreshAttempt,
 } from "../../lib/services/provider-cache-status.js";
 import { createProviderPublicationAuthority } from "../../lib/services/provider-identity-guard.js";
-import {
-	ensureLibraryRefreshRecovery,
-	type LibraryRefreshRecoveryBridge,
-	type LibraryRefreshRecoveryRequest,
-} from "../../lib/services/library-refresh-recovery.js";
 import cachePlugin from "../jellyfin-cache-scheduler.js";
 import registryPlugin from "../scheduler-registry.js";
 
@@ -596,265 +597,359 @@ describe("Jellyfin/Emby cache scheduler lifetime", () => {
 			const lookup = origin === "retry" ? "currentLookup" : "roundLookup";
 			for (const phase of [lookup, "refresh"] as const) {
 				for (const reject of [false, true]) {
-					it(`drains ${service} ${origin} ${phase} ${reject ? "failure" : "completion"} before teardown`, async () => {
-						const gate = deferred();
-						const f = await boot({
-							service,
-							origin,
-							firstRefreshFailed: origin === "retry",
-							hold: {
-								phase,
-								gate: gate.promise,
-								reject,
-								call: origin === "startup" || phase === "currentLookup" ? 1 : 2,
-							},
-						});
-						await f.start(origin);
-						expect(await f.waitUntilHeld()).toBe(true);
-						expect(f.state.pending).toBe(1);
-						const closing = await f.closePending();
-						expect(closing.settled()).toBe(false);
-						expect(f.state.teardown).toBe(false);
-						gate.resolve();
-						await closing.promise;
-						expect(f.state.pending).toBe(0);
-						expect(f.state.afterTeardown).toBe(0);
-						const before = { ...f.counts };
-						await f.advance(24 * 60 * 60_000);
-						expect(f.counts).toEqual(before);
-					});
+					nativeLifecycleTest(
+						`drains ${service} ${origin} ${phase} ${reject ? "failure" : "completion"} before teardown`,
+						async () => {
+							const gate = deferred();
+							const f = await boot({
+								service,
+								origin,
+								firstRefreshFailed: origin === "retry",
+								hold: {
+									phase,
+									gate: gate.promise,
+									reject,
+									call: origin === "startup" || phase === "currentLookup" ? 1 : 2,
+								},
+							});
+							return { gate, f } as const;
+						},
+						async ({ gate, f }) => {
+							await f.start(origin);
+							expect(await f.waitUntilHeld()).toBe(true);
+							expect(f.state.pending).toBe(1);
+							const closing = await f.closePending();
+							expect(closing.settled()).toBe(false);
+							expect(f.state.teardown).toBe(false);
+							gate.resolve();
+							await closing.promise;
+							expect(f.state.pending).toBe(0);
+							expect(f.state.afterTeardown).toBe(0);
+							const before = { ...f.counts };
+							await f.advance(24 * 60 * 60_000);
+							expect(f.counts).toEqual(before);
+						},
+					);
 				}
 			}
 		}
-		it(`queues ${service} operator recovery without database admission and closes its timer`, async () => {
-			const f = await boot({ origin: "arm", service });
-			await expect(f.arm()).resolves.toEqual({ status: "accepted" });
-			expect(f.counts.currentLookup).toBe(0);
-			expect(f.state.pending).toBe(0);
-			const closing = await f.closePending();
-			await closing.promise;
-			await expect(f.arm()).resolves.toEqual({ status: "unavailable" });
-			expect(f.counts.refresh).toBe(0);
-			expect(f.state.afterTeardown).toBe(0);
-		});
+		nativeLifecycleTest(
+			`queues ${service} operator recovery without database admission and closes its timer`,
+			async () => {
+				const f = await boot({ origin: "arm", service });
+				return { f } as const;
+			},
+			async ({ f }) => {
+				await expect(f.arm()).resolves.toEqual({ status: "accepted" });
+				expect(f.counts.currentLookup).toBe(0);
+				expect(f.state.pending).toBe(0);
+				const closing = await f.closePending();
+				await closing.promise;
+				await expect(f.arm()).resolves.toEqual({ status: "unavailable" });
+				expect(f.counts.refresh).toBe(0);
+				expect(f.state.afterTeardown).toBe(0);
+			},
+		);
 	}
-	it("permanently rejects retired startup/interval/retry and retained recovery callbacks", async () => {
-		const f = await boot({ firstRefreshFailed: true });
-		await f.start("startup");
-		await f.idle();
-		const startup = f.callback("startup"),
-			interval = f.callback("interval"),
-			retry = f.callback("retry");
-		await f.app.close();
-		const before = { ...f.counts };
-		startup();
-		interval();
-		retry();
-		await expect(f.retained()).resolves.toEqual({ status: "unavailable" });
-		await expect(f.arm()).resolves.toEqual({ status: "unavailable" });
-		await f.advance(24 * 60 * 60_000);
-		await settle();
-		expect(f.counts).toEqual(before);
-		expect(f.state.afterTeardown).toBe(0);
-	});
-	it("closes admission before sibling preClose waits and never reinstalls timers", async () => {
-		const gate = deferred();
-		const f = await boot({ empty: true, preCloseGate: gate.promise });
-		const startup = f.callback("startup");
-		const closing = await f.closePending();
-		expect(closing.settled()).toBe(false);
-		startup();
-		await settle();
-		expect(f.counts.roundLookup).toBe(0);
-		await expect(f.retained()).resolves.toEqual({ status: "unavailable" });
-		gate.resolve();
-		await closing.promise;
-		await f.advance(24 * 60 * 60_000);
-		expect(f.counts.roundLookup).toBe(0);
-	});
-	it("joins duplicate close calls while an accepted refresh remains pending", async () => {
-		const gate = deferred();
-		const f = await boot({ hold: { phase: "refresh", gate: gate.promise } });
-		await f.start("startup");
-		expect(await f.waitUntilHeld()).toBe(true);
-		const closing = await f.closePending();
-		let secondSettled = false;
-		const second = f.app.close().then(() => {
-			secondSettled = true;
-		});
-		await settle();
-		expect(closing.settled()).toBe(false);
-		expect(secondSettled).toBe(false);
-		gate.resolve();
-		await Promise.all([closing.promise, second]);
-		expect(f.state.afterTeardown).toBe(0);
-		expect(f.counts.refresh).toBe(1);
-	});
-	it("suppresses overlapping rounds but permits the next interval after a rejected lookup", async () => {
-		const gate = deferred();
-		const f = await boot({ hold: { phase: "roundLookup", gate: gate.promise, reject: true } });
-		await f.start("startup");
-		expect(await f.waitUntilHeld()).toBe(true);
-		await f.advance(INTERVAL_MS);
-		expect(f.counts.roundLookup).toBe(1);
-		gate.resolve();
-		await f.idle();
-		await f.advance(INTERVAL_MS - 1);
-		expect(f.counts.roundLookup).toBe(1);
-		await f.advance(1);
-		expect(f.counts.roundLookup).toBe(2);
-		expect(f.counts.refresh).toBe(1);
-	});
-	it("retains full selected multi-instance round lifetime without mixing identities", async () => {
-		const gate = deferred();
-		const f = await boot({ instances: 2, hold: { phase: "refresh", gate: gate.promise, call: 2 } });
-		await f.start("startup");
-		expect(await f.waitUntilHeld()).toBe(true);
-		expect(f.state.pending).toBe(1);
-		const closing = await f.closePending();
-		expect(closing.settled()).toBe(false);
-		gate.resolve();
-		await closing.promise;
-		expect([...f.selected].sort()).toEqual(f.instances.map((row) => row.id).sort());
-		expect(f.state.afterTeardown).toBe(0);
-	});
-	it("rejects an unrelated live handoff while draining the owned authority-keyed singleflight", async () => {
-		const gate = deferred();
-		const f = await boot({ hold: { phase: "refresh", gate: gate.promise } });
-		await f.start("startup");
-		expect(await f.waitUntilHeld()).toBe(true);
-		await expect(f.arm()).resolves.toEqual({ status: "unavailable" });
-		await f.advance(30_000);
-		await settle();
-		expect(f.counts.currentLookup).toBe(0);
-		expect(f.counts.refresh).toBe(1);
-		const closing = await f.closePending();
-		expect(closing.settled()).toBe(false);
-		gate.resolve();
-		await closing.promise;
-		expect(f.selected).toHaveLength(1);
-		expect(f.state.afterTeardown).toBe(0);
-	});
-	it("does not bypass owner-scoped recovery admission", async () => {
-		const f = await boot();
-		const wrong = { ...f.request, userId: f.owners[1]!.userId };
-		f.bridge.admit(wrong);
-		await expect(f.arm(wrong)).resolves.toEqual({ status: "ineligible" });
-		expect(f.prisma.serviceInstance.findFirst).not.toHaveBeenCalled();
-		await f.advance(30_000);
-		expect(f.counts.refresh).toBe(0);
-	});
-	it("keeps existing three-attempt backoff and does not promote superseded results", async () => {
-		const f = await boot({ alwaysRetryable: true });
-		await f.advance(STARTUP_MS + 30_000 + 120_000 + 600_000);
-		await settle();
-		expect(f.counts.refresh).toBe(4);
-		expect(f.counts.currentLookup).toBe(3);
-		await f.advance(600_000);
-		expect(f.counts.refresh).toBe(4);
-		await f.dispose();
-		const superseded = await boot({ superseded: true });
-		await superseded.advance(STARTUP_MS + 20 * 60_000);
-		await settle();
-		expect(superseded.counts.refresh).toBe(1);
-		expect(superseded.counts.currentLookup).toBe(0);
-		await superseded.dispose();
-		const positive = await boot({ positiveOnly: true });
-		await positive.advance(STARTUP_MS + 20 * 60_000);
-		expect(positive.counts.refresh).toBe(1);
-		expect(positive.counts.currentLookup).toBe(0);
-		// This case boots three real native fixtures before checking each outcome.
-	}, 15_000);
-	for (const deniedRung of [0, 1, 2]) {
-		it(`preserves recovery rung ${deniedRung + 1} throughout prolonged maintenance`, async () => {
-			const delays = [30_000, 120_000, 600_000];
-			const f = await boot({ alwaysRetryable: true });
+	nativeLifecycleTest(
+		"permanently rejects retired startup/interval/retry and retained recovery callbacks",
+		async () => {
+			const f = await boot({ firstRefreshFailed: true });
+			return { f } as const;
+		},
+		async ({ f }) => {
 			await f.start("startup");
 			await f.idle();
-			for (let rung = 0; rung < deniedRung; rung++) {
-				await f.advance(delays[rung]!);
-			}
+			const startup = f.callback("startup"),
+				interval = f.callback("interval"),
+				retry = f.callback("retry");
+			await f.app.close();
 			const before = { ...f.counts };
-			await withCleanupMaintenanceGuard(async () => {
-				await f.advance(20 * 60_000);
-				expect(f.counts).toEqual(before);
-			});
-			await f.advance(delays[deniedRung]!);
-			expect(f.counts.refresh).toBe(before.refresh + 1);
-			for (let rung = deniedRung + 1; rung < delays.length; rung++) {
-				await f.advance(delays[rung]!);
-			}
-			expect(f.counts.refresh).toBe(4);
-			await f.advance(20 * 60_000);
-			expect(f.counts.refresh).toBe(4);
-		});
-	}
-	it("reports maintenance-skipped startup and interval rounds without refresh failures", async () => {
-		const f = await boot();
-		const errors = vi.spyOn(f.app.log, "error");
-		await withCleanupMaintenanceGuard(async () => {
-			await f.advance(STARTUP_MS);
-			await f.advance(INTERVAL_MS);
-		});
-		expect(errors).not.toHaveBeenCalled();
-		expect(f.counts.roundLookup).toBe(0);
-		await f.advance(INTERVAL_MS);
-		expect(f.counts.refresh).toBe(1);
-	});
-	for (const origin of ["startup", "retry"] as const) {
-		it(`keeps maintenance excluded throughout accepted ${origin} lookup`, async () => {
+			startup();
+			interval();
+			retry();
+			await expect(f.retained()).resolves.toEqual({ status: "unavailable" });
+			await expect(f.arm()).resolves.toEqual({ status: "unavailable" });
+			await f.advance(24 * 60 * 60_000);
+			await settle();
+			expect(f.counts).toEqual(before);
+			expect(f.state.afterTeardown).toBe(0);
+		},
+	);
+	nativeLifecycleTest(
+		"closes admission before sibling preClose waits and never reinstalls timers",
+		async () => {
 			const gate = deferred();
-			const phase = origin === "startup" ? "roundLookup" : "currentLookup";
-			const f = await boot({
-				origin,
-				firstRefreshFailed: origin === "retry",
-				hold: { phase, gate: gate.promise },
+			const f = await boot({ empty: true, preCloseGate: gate.promise });
+			return { gate, f } as const;
+		},
+		async ({ gate, f }) => {
+			const startup = f.callback("startup");
+			const closing = await f.closePending();
+			expect(closing.settled()).toBe(false);
+			startup();
+			await settle();
+			expect(f.counts.roundLookup).toBe(0);
+			await expect(f.retained()).resolves.toEqual({ status: "unavailable" });
+			gate.resolve();
+			await closing.promise;
+			await f.advance(24 * 60 * 60_000);
+			expect(f.counts.roundLookup).toBe(0);
+		},
+	);
+	nativeLifecycleTest(
+		"joins duplicate close calls while an accepted refresh remains pending",
+		async () => {
+			const gate = deferred();
+			const f = await boot({ hold: { phase: "refresh", gate: gate.promise } });
+			return { gate, f } as const;
+		},
+		async ({ gate, f }) => {
+			await f.start("startup");
+			expect(await f.waitUntilHeld()).toBe(true);
+			const closing = await f.closePending();
+			let secondSettled = false;
+			const second = f.app.close().then(() => {
+				secondSettled = true;
 			});
-			const task = f.start(origin);
+			await settle();
+			expect(closing.settled()).toBe(false);
+			expect(secondSettled).toBe(false);
+			gate.resolve();
+			await Promise.all([closing.promise, second]);
+			expect(f.state.afterTeardown).toBe(0);
+			expect(f.counts.refresh).toBe(1);
+		},
+	);
+	nativeLifecycleTest(
+		"suppresses overlapping rounds but permits the next interval after a rejected lookup",
+		async () => {
+			const gate = deferred();
+			const f = await boot({ hold: { phase: "roundLookup", gate: gate.promise, reject: true } });
+			return { gate, f } as const;
+		},
+		async ({ gate, f }) => {
+			await f.start("startup");
+			expect(await f.waitUntilHeld()).toBe(true);
+			await f.advance(INTERVAL_MS);
+			expect(f.counts.roundLookup).toBe(1);
+			gate.resolve();
+			await f.idle();
+			await f.advance(INTERVAL_MS - 1);
+			expect(f.counts.roundLookup).toBe(1);
+			await f.advance(1);
+			expect(f.counts.roundLookup).toBe(2);
+			expect(f.counts.refresh).toBe(1);
+		},
+	);
+	nativeLifecycleTest(
+		"retains full selected multi-instance round lifetime without mixing identities",
+		async () => {
+			const gate = deferred();
+			const f = await boot({
+				instances: 2,
+				hold: { phase: "refresh", gate: gate.promise, call: 2 },
+			});
+			return { gate, f } as const;
+		},
+		async ({ gate, f }) => {
+			await f.start("startup");
 			expect(await f.waitUntilHeld()).toBe(true);
 			expect(f.state.pending).toBe(1);
-			await expect(withCleanupMaintenanceGuard(async () => undefined)).rejects.toMatchObject({
-				statusCode: 409,
-			});
+			const closing = await f.closePending();
+			expect(closing.settled()).toBe(false);
 			gate.resolve();
-			await task;
+			await closing.promise;
+			expect([...f.selected].sort()).toEqual(f.instances.map((row) => row.id).sort());
+			expect(f.state.afterTeardown).toBe(0);
+		},
+	);
+	nativeLifecycleTest(
+		"rejects an unrelated live handoff while draining the owned authority-keyed singleflight",
+		async () => {
+			const gate = deferred();
+			const f = await boot({ hold: { phase: "refresh", gate: gate.promise } });
+			return { gate, f } as const;
+		},
+		async ({ gate, f }) => {
+			await f.start("startup");
+			expect(await f.waitUntilHeld()).toBe(true);
+			await expect(f.arm()).resolves.toEqual({ status: "unavailable" });
+			await f.advance(30_000);
 			await settle();
-			await f.app.close();
-			await expect(withCleanupMaintenanceGuard(async () => "released")).resolves.toBe("released");
-		});
+			expect(f.counts.currentLookup).toBe(0);
+			expect(f.counts.refresh).toBe(1);
+			const closing = await f.closePending();
+			expect(closing.settled()).toBe(false);
+			gate.resolve();
+			await closing.promise;
+			expect(f.selected).toHaveLength(1);
+			expect(f.state.afterTeardown).toBe(0);
+		},
+	);
+	nativeLifecycleTest(
+		"does not bypass owner-scoped recovery admission",
+		async () => {
+			const f = await boot();
+			return { f } as const;
+		},
+		async ({ f }) => {
+			const wrong = { ...f.request, userId: f.owners[1]!.userId };
+			f.bridge.admit(wrong);
+			await expect(f.arm(wrong)).resolves.toEqual({ status: "ineligible" });
+			expect(f.prisma.serviceInstance.findFirst).not.toHaveBeenCalled();
+			await f.advance(30_000);
+			expect(f.counts.refresh).toBe(0);
+		},
+	);
+	nativeLifecycleTest(
+		"keeps existing three-attempt backoff and does not promote superseded results",
+		async () => {
+			const f = await boot({ alwaysRetryable: true });
+			return { f } as const;
+		},
+		async ({ f }) => {
+			await f.advance(STARTUP_MS + 30_000 + 120_000 + 600_000);
+			await settle();
+			expect(f.counts.refresh).toBe(4);
+			expect(f.counts.currentLookup).toBe(3);
+			await f.advance(600_000);
+			expect(f.counts.refresh).toBe(4);
+			await f.dispose();
+			const superseded = await boot({ superseded: true });
+			await superseded.advance(STARTUP_MS + 20 * 60_000);
+			await settle();
+			expect(superseded.counts.refresh).toBe(1);
+			expect(superseded.counts.currentLookup).toBe(0);
+			await superseded.dispose();
+			const positive = await boot({ positiveOnly: true });
+			await positive.advance(STARTUP_MS + 20 * 60_000);
+			expect(positive.counts.refresh).toBe(1);
+			expect(positive.counts.currentLookup).toBe(0);
+			// This case boots three real native fixtures before checking each outcome.
+		},
+		15_000,
+	);
+	for (const deniedRung of [0, 1, 2]) {
+		nativeLifecycleTest(
+			`preserves recovery rung ${deniedRung + 1} throughout prolonged maintenance`,
+			async () => {
+				const delays = [30_000, 120_000, 600_000];
+				const f = await boot({ alwaysRetryable: true });
+				return { delays, f } as const;
+			},
+			async ({ delays, f }) => {
+				await f.start("startup");
+				await f.idle();
+				for (let rung = 0; rung < deniedRung; rung++) {
+					await f.advance(delays[rung]!);
+				}
+				const before = { ...f.counts };
+				await withCleanupMaintenanceGuard(async () => {
+					await f.advance(20 * 60_000);
+					expect(f.counts).toEqual(before);
+				});
+				await f.advance(delays[deniedRung]!);
+				expect(f.counts.refresh).toBe(before.refresh + 1);
+				for (let rung = deniedRung + 1; rung < delays.length; rung++) {
+					await f.advance(delays[rung]!);
+				}
+				expect(f.counts.refresh).toBe(4);
+				await f.advance(20 * 60_000);
+				expect(f.counts.refresh).toBe(4);
+			},
+		);
 	}
-	it("does not start a new refresh or recovery lookup through maintenance and recovers afterward", async () => {
-		const f = await boot();
-		await withCleanupMaintenanceGuard(async () => {
-			await f.advance(STARTUP_MS);
-			await expect(f.arm()).resolves.toEqual({ status: "accepted" });
-		});
-		expect(f.counts.roundLookup).toBe(0);
-		expect(f.counts.currentLookup).toBe(0);
-		expect(f.counts.refresh).toBe(0);
-		await f.advance(30_000);
-		expect(f.counts.refresh).toBe(1);
-	});
-	it("naturally observes45-second startup and six-hour cadence with distinct owned Jellyfin/Emby sources", async () => {
-		const f = await boot({ instances: 2 });
-		await f.advance(STARTUP_MS - 1);
-		expect(f.counts.roundLookup).toBe(0);
-		expect(f.counts.refresh).toBe(0);
-		await f.advance(1);
-		expect(f.counts.roundLookup).toBe(1);
-		expect(f.counts.refresh).toBe(2);
-		expect(f.instances.map((row) => row.service).sort()).toEqual(["EMBY", "JELLYFIN"]);
-		expect([...f.selected].sort()).toEqual(f.instances.map((row) => row.id).sort());
-		await f.advance(INTERVAL_MS - 1);
-		expect(f.counts.roundLookup).toBe(1);
-		expect(f.counts.refresh).toBe(2);
-		await f.advance(1);
-		expect(f.counts.roundLookup).toBe(2);
-		expect(f.counts.refresh).toBe(4);
-		await f.app.close();
-		expect(f.timerCount()).toBe(0);
-		const before = { ...f.counts };
-		await f.advance(INTERVAL_MS);
-		expect(f.counts).toEqual(before);
-	});
+	nativeLifecycleTest(
+		"reports maintenance-skipped startup and interval rounds without refresh failures",
+		async () => {
+			const f = await boot();
+			return { f } as const;
+		},
+		async ({ f }) => {
+			const errors = vi.spyOn(f.app.log, "error");
+			await withCleanupMaintenanceGuard(async () => {
+				await f.advance(STARTUP_MS);
+				await f.advance(INTERVAL_MS);
+			});
+			expect(errors).not.toHaveBeenCalled();
+			expect(f.counts.roundLookup).toBe(0);
+			await f.advance(INTERVAL_MS);
+			expect(f.counts.refresh).toBe(1);
+		},
+	);
+	for (const origin of ["startup", "retry"] as const) {
+		nativeLifecycleTest(
+			`keeps maintenance excluded throughout accepted ${origin} lookup`,
+			async () => {
+				const gate = deferred();
+				const phase = origin === "startup" ? "roundLookup" : "currentLookup";
+				const f = await boot({
+					origin,
+					firstRefreshFailed: origin === "retry",
+					hold: { phase, gate: gate.promise },
+				});
+				return { gate, f } as const;
+			},
+			async ({ gate, f }) => {
+				const task = f.start(origin);
+				expect(await f.waitUntilHeld()).toBe(true);
+				expect(f.state.pending).toBe(1);
+				await expect(withCleanupMaintenanceGuard(async () => undefined)).rejects.toMatchObject({
+					statusCode: 409,
+				});
+				gate.resolve();
+				await task;
+				await settle();
+				await f.app.close();
+				await expect(withCleanupMaintenanceGuard(async () => "released")).resolves.toBe("released");
+			},
+		);
+	}
+	nativeLifecycleTest(
+		"does not start a new refresh or recovery lookup through maintenance and recovers afterward",
+		async () => {
+			const f = await boot();
+			return { f } as const;
+		},
+		async ({ f }) => {
+			await withCleanupMaintenanceGuard(async () => {
+				await f.advance(STARTUP_MS);
+				await expect(f.arm()).resolves.toEqual({ status: "accepted" });
+			});
+			expect(f.counts.roundLookup).toBe(0);
+			expect(f.counts.currentLookup).toBe(0);
+			expect(f.counts.refresh).toBe(0);
+			await f.advance(30_000);
+			expect(f.counts.refresh).toBe(1);
+		},
+	);
+	nativeLifecycleTest(
+		"naturally observes45-second startup and six-hour cadence with distinct owned Jellyfin/Emby sources",
+		async () => {
+			const f = await boot({ instances: 2 });
+			return { f } as const;
+		},
+		async ({ f }) => {
+			await f.advance(STARTUP_MS - 1);
+			expect(f.counts.roundLookup).toBe(0);
+			expect(f.counts.refresh).toBe(0);
+			await f.advance(1);
+			expect(f.counts.roundLookup).toBe(1);
+			expect(f.counts.refresh).toBe(2);
+			expect(f.instances.map((row) => row.service).sort()).toEqual(["EMBY", "JELLYFIN"]);
+			expect([...f.selected].sort()).toEqual(f.instances.map((row) => row.id).sort());
+			await f.advance(INTERVAL_MS - 1);
+			expect(f.counts.roundLookup).toBe(1);
+			expect(f.counts.refresh).toBe(2);
+			await f.advance(1);
+			expect(f.counts.roundLookup).toBe(2);
+			expect(f.counts.refresh).toBe(4);
+			await f.app.close();
+			expect(f.timerCount()).toBe(0);
+			const before = { ...f.counts };
+			await f.advance(INTERVAL_MS);
+			expect(f.counts).toEqual(before);
+		},
+	);
 });
