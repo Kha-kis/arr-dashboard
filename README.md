@@ -332,6 +332,29 @@ The `/config` volume contains critical data that must be preserved:
 >
 > **Rootless (`--user`):** Run the container directly as a non-root user with `--user UID:GID` or `user: "UID:GID"` in Compose. No root required — ideal for Kubernetes and security-hardened deployments. Ensure `/config` is writable by the specified user. PUID/PGID env vars are ignored in this mode.
 
+### Passkeys on a public domain
+
+HTTPS and the relying-party domain must both match your deployment. For a browser
+at `https://dashboard.example.com`, configure these together:
+
+```yaml
+WEBAUTHN_RP_ID: dashboard.example.com
+WEBAUTHN_ORIGIN: https://dashboard.example.com
+```
+
+The RP ID is a domain without a protocol, port or path. The origin includes the
+protocol, host and any nondefault browser port, with no path. `APP_URL` alone does
+not replace the RP ID. Recreate/restart the application after changing these
+variables, then retry registration. The `localhost` defaults are for local
+development; HTTPS alone does not correct a mismatched RP ID.
+
+Existing passkeys remain scoped to their original RP ID. Keep another working
+sign-in method before changing it; credentials are not automatically migrated.
+A roaming key must support the existing discoverable FIDO2 credential and user
+verification requirements. Browser/password-manager chooser behavior is separate
+from RP configuration; this guidance does not establish compatibility with a
+particular physical key.
+
 ## Platform Support
 
 ### Unraid
@@ -499,8 +522,54 @@ docker-compose up -d
 | Port in use | Change port mapping: `-p 8080:3000` |
 | Database locked | Ensure only one instance is running |
 | Connection refused | Check container logs: `docker logs arr-dashboard` |
-| Login issues | Reset password: `pnpm run reset-admin-password` |
+| Login issues | Use the [offline password recovery command](#offline-password-recovery) after stopping the normal service |
 | Blank page after update | Clear browser cache or hard refresh |
+
+### Offline password recovery
+
+Use the installed `reset-admin-password` command from the same image and service
+configuration as the normal deployment. It uses the existing database and
+requires downtime. Stop every API/container using that database first, including
+older images that do not enforce native ownership. Do not run recovery through
+`docker exec` against the live API.
+
+For the repository's Compose service, run these commands separately from a real
+interactive terminal. Compose allocates the TTY automatically; do not use `-T`:
+
+```bash
+docker compose stop arr-dashboard
+docker compose run --rm --no-deps --interactive --entrypoint reset-admin-password arr-dashboard
+```
+
+The one-off service inherits the configured image, volumes, database URL,
+`PASSWORD_POLICY` and runtime user settings. Keep PostgreSQL available when it is
+the selected database. Do not omit or substitute the existing configuration.
+Root execution drops to numeric `PUID`/`PGID` (default `911:911`); a non-root
+container retains its actual UID/GID. Recovery does not change file ownership.
+See [Docker recovery details](docker/README.md#offline-password-recovery).
+
+Enter one exact, case-sensitive existing username, then the new password twice.
+Input is hidden, including the username. Password arguments, environment/file
+input and noninteractive stdin are unsupported. The configured strict/relaxed
+password policy applies, with an 8-character minimum and 128-character maximum.
+
+Only an account that already has a local password can be recovered. The command
+atomically changes its password, clears its lockout and revokes its sessions.
+It preserves `mustChangePassword`, other accounts, passkeys, OIDC links, settings,
+connections and encryption secrets. It does not migrate, reset, restore or
+bootstrap the application.
+
+After confirmed success, restart the normal service and sign in:
+
+```bash
+docker compose up -d arr-dashboard
+```
+
+An active or suspended native owner makes recovery refuse. A cancelled or failed
+run is not reported as successful. If the outcome is unconfirmed, do not retry
+automatically: restart the normal service and check sign-in before deciding
+whether another recovery attempt is needed. Never delete coordination files or
+edit the runtime journal to bypass a refusal.
 
 ### Getting Help
 
