@@ -822,7 +822,7 @@ export const seerrTvDetailsSchema = z.looseObject({
 	posterPath: z.string().nullable().optional(),
 	backdropPath: z.string().nullable().optional(),
 	firstAirDate: z.string().optional(),
-	lastAirDate: z.string().optional(),
+	lastAirDate: z.string().nullable().optional(),
 	numberOfSeasons: z.number().optional(),
 	numberOfEpisodes: z.number().optional(),
 	episodeRunTime: z.array(z.number()).optional(),
