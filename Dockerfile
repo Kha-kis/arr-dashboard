@@ -141,10 +141,12 @@ COPY --chown=root:root docker/runtime-health.cjs ./runtime-health.cjs
 # users can run `docker exec <container> dump-heap` without needing to
 # know the API's internal process layout.
 COPY --chown=root:root docker/dump-heap.sh /usr/local/bin/dump-heap
+COPY --chown=root:root docker/reset-admin-password.sh /usr/local/bin/reset-admin-password
 RUN sed -i 's/\r$//' ./start-combined.sh && chmod +x ./start-combined.sh \
     && mv start-combined.sh start.sh \
     && chmod +x ./api/validate-runtime.sh \
-    && sed -i 's/\r$//' /usr/local/bin/dump-heap && chmod +x /usr/local/bin/dump-heap
+    && sed -i 's/\r$//' /usr/local/bin/dump-heap && chmod +x /usr/local/bin/dump-heap \
+    && sed -i 's/\r$//' /usr/local/bin/reset-admin-password && chmod +x /usr/local/bin/reset-admin-password
 
 # Configuration
 EXPOSE 3000 3001
