@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -271,4 +271,66 @@ describe("development recovery configuration", () => {
 			rmSync(directory, { recursive: true, force: true });
 		}
 	});
+});
+
+describe("public package recovery configuration", () => {
+	it.each([false, true])(
+		"loads source configuration through pnpm run and preserves exports=%s",
+		async (exported) => {
+			const api = resolve(import.meta.dirname, "../..");
+			const directory = mkdtempSync(join(tmpdir(), "arr-recovery-package-env-"));
+			const configuredDatabase = `file:${join(directory, "configured.db")}`;
+			const exportedDatabase = `file:${join(directory, "exported.db")}`;
+			const expectedDatabase = exported ? exportedDatabase : configuredDatabase;
+			const expectedPolicy = exported ? "strict" : "relaxed";
+			const command = JSON.parse(readFileSync(join(api, "package.json"), "utf8")).scripts[
+				"reset-admin-password"
+			];
+			try {
+				writeFileSync(
+					join(directory, "package.json"),
+					JSON.stringify({
+						name: "synthetic-recovery-config",
+						private: true,
+						type: "module",
+						scripts: { "reset-admin-password": command },
+					}),
+					{ mode: 0o600 },
+				);
+				writeFileSync(
+					join(directory, ".env"),
+					`DATABASE_URL=${configuredDatabase}\nPASSWORD_POLICY=relaxed\n`,
+					{ mode: 0o600 },
+				);
+				symlinkSync(join(api, "node_modules"), join(directory, "node_modules"));
+				mkdirSync(join(directory, "dist"), { mode: 0o700 });
+				// Exercise the real public package command and dotenv bootstrap. The
+				// terminal/native mutation boundary is covered by the existing CLI cases.
+				writeFileSync(
+					join(directory, "dist/reset-admin-password.js"),
+					`process.stdout.write(JSON.stringify({ configuredDatabase: process.env.DATABASE_URL === ${JSON.stringify(expectedDatabase)}, configuredPolicy: process.env.PASSWORD_POLICY === ${JSON.stringify(expectedPolicy)} }));`,
+					{ mode: 0o600 },
+				);
+				const { stdout } = await promisify(execFile)("pnpm", ["run", "reset-admin-password"], {
+					cwd: directory,
+					env: {
+						PATH: process.env.PATH,
+						HOME: process.env.HOME,
+						COREPACK_ENABLE_NETWORK: "0",
+						DOTENV_CONFIG_QUIET: "true",
+						...(exported ? { DATABASE_URL: exportedDatabase, PASSWORD_POLICY: "strict" } : {}),
+					},
+					timeout: 15000,
+					maxBuffer: 16 * 1024,
+				});
+				expect(JSON.parse(stdout.trim().split("\n").at(-1)!)).toEqual({
+					configuredDatabase: true,
+					configuredPolicy: true,
+				});
+			} finally {
+				rmSync(directory, { recursive: true, force: true });
+			}
+		},
+		20000,
+	);
 });

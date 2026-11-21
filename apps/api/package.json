@@ -16,7 +16,7 @@
 		"db:generate": "prisma generate --schema prisma/schema.prisma",
 		"db:push": "prisma db push --schema prisma/schema.prisma",
 		"db:sync": "prisma db push --schema prisma/schema.prisma --skip-generate",
-		"reset-admin-password": "node dist/reset-admin-password.js",
+		"reset-admin-password": "node --import dotenv/config dist/reset-admin-password.js",
 		"reset-oidc": "tsx scripts/reset-oidc.ts"
 	},
 	"dependencies": {
