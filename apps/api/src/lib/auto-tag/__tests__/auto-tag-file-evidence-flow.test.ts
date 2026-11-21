@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { RadarrClient } from "arr-sdk";
-import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyBaseLogger } from "fastify";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AutoTagRule, ServiceInstance, User } from "../../prisma.js";
 import type { AutoTagRuleInput } from "../execute-rule.js";
 import { adaptLiveArrItemForAutoTag } from "../live-arr-evidence.js";
@@ -15,6 +15,7 @@ vi.mock("../../library-cleanup/cleanup-executor.js", () => ({
 vi.mock("../../label-sync/trigger-for-item.js", () => ({
 	triggerLabelSyncForItem: vi.fn(async () => {}),
 }));
+
 import { executeAutoTagRule } from "../execute-rule.js";
 import { processWebhook } from "../webhook-handler.js";
 
@@ -441,5 +442,73 @@ describe.each(["scheduled", "webhook"] as const)("RG-D01 %s independent agreed f
 			],
 		});
 		expect(f.client.movie.update).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe.each(["scheduled", "webhook"] as const)("AT-HDR-01 %s missing dynamic range", (kind) => {
+	const noHdrRule = { ...rule, ruleType: "hdr_type", parameters: { operator: "none" } };
+	it("does not create a tag or PUT from an absent embedded file and mediaInfo:null", async () => {
+		const f = setup();
+		f.client.movie.getById.mockResolvedValue(movie({ movieFile: undefined }) as never);
+		f.client.movieFile.getById.mockResolvedValue({
+			id: 77,
+			movieId: 100,
+			mediaInfo: null,
+		} as never);
+		f.client.tag.getAll.mockResolvedValue([]);
+		await f.run(kind, noHdrRule);
+		expect(f.client.tag.create).not.toHaveBeenCalled();
+		expect(f.client.movie.update).not.toHaveBeenCalled();
+	});
+	it("rechecks HDR availability after tag listing before any create or PUT", async () => {
+		const f = setup();
+		f.client.movie.getById.mockResolvedValue(movie({ movieFile: undefined }) as never);
+		f.client.movieFile.getById.mockResolvedValue({
+			id: 77,
+			movieId: 100,
+			videoDynamicRange: "",
+		} as never);
+		f.client.tag.getAll.mockImplementation(async () => {
+			f.client.movieFile.getById.mockResolvedValue({
+				id: 77,
+				movieId: 100,
+				mediaInfo: null,
+			} as never);
+			return [];
+		});
+		await f.run(kind, noHdrRule);
+		expect(f.client.tag.create).not.toHaveBeenCalled();
+		expect(f.client.movie.update).not.toHaveBeenCalled();
+	});
+	it("keeps an independently known codec OR branch usable when HDR is missing", async () => {
+		const f = setup();
+		f.client.movie.getById.mockResolvedValue(movie({ movieFile: undefined }) as never);
+		await f.run(kind, {
+			...rule,
+			ruleType: "composite",
+			operator: "OR",
+			conditions: [
+				{ ruleType: "hdr_type", parameters: { operator: "none" } },
+				{ ruleType: "video_codec", parameters: rule.parameters },
+			],
+		});
+		expect(f.client.movie.update).toHaveBeenCalledWith(100, {
+			...movie({ movieFile: undefined }),
+			tags: [7],
+		});
+	});
+	it("retains an explicitly observed empty dynamic range as none", async () => {
+		const f = setup();
+		f.client.movie.getById.mockResolvedValue(movie({ movieFile: undefined }) as never);
+		f.client.movieFile.getById.mockResolvedValue({
+			id: 77,
+			movieId: 100,
+			mediaInfo: { videoDynamicRange: "" },
+		} as never);
+		await f.run(kind, noHdrRule);
+		expect(f.client.movie.update).toHaveBeenCalledWith(100, {
+			...movie({ movieFile: undefined }),
+			tags: [7],
+		});
 	});
 });
