@@ -182,6 +182,48 @@ describe("seerrMovieDetailsSchema", () => {
 });
 
 describe("seerrTvDetailsSchema", () => {
+	const upcomingTvDetails = {
+		id: 1396,
+		name: "Upcoming Series",
+		firstAirDate: "2027-01-15",
+		status: "Planned",
+		genres: [{ id: 18, name: "Drama" }],
+		credits: { cast: [], crew: [] },
+		keywords: [],
+		seasons: [{ id: 1, seasonNumber: 1, episodeCount: 7, airDate: "2027-01-15" }],
+		recommendations: VALID_DISCOVER_RESPONSE,
+		similar: VALID_DISCOVER_RESPONSE,
+	};
+
+	it.each([
+		{ label: "null", fields: { lastAirDate: null }, expected: null },
+		{ label: "absent", fields: {}, expected: undefined },
+		{ label: "string", fields: { lastAirDate: "2027-01-15" }, expected: "2027-01-15" },
+	])("preserves seasons when lastAirDate is $label", ({ fields, expected }) => {
+		const result = seerrTvDetailsSchema.parse({ ...upcomingTvDetails, ...fields });
+
+		expect(result.lastAirDate).toBe(expected);
+		expect(result.seasons).toEqual([
+			{ id: 1, seasonNumber: 1, episodeCount: 7, airDate: "2027-01-15" },
+		]);
+	});
+
+	it.each([
+		{ label: "number", value: 0 },
+		{ label: "boolean", value: false },
+		{ label: "object", value: {} },
+		{ label: "array", value: [] },
+	])("rejects a $label lastAirDate", ({ value }) => {
+		const result = seerrTvDetailsSchema.safeParse({ ...upcomingTvDetails, lastAirDate: value });
+
+		expect(result.success).toBe(false);
+		if (!result.success) {
+			expect(result.error.issues).toEqual([
+				expect.objectContaining({ path: ["lastAirDate"], code: "invalid_type" }),
+			]);
+		}
+	});
+
 	it("accepts valid tv details", () => {
 		const data = {
 			id: 1396,
