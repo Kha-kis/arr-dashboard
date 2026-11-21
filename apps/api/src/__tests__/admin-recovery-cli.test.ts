@@ -216,3 +216,59 @@ finally:
 		25000,
 	);
 });
+
+describe("development recovery configuration", () => {
+	it("loads the source dotenv database, preserves exports and still reads the password from the terminal", async () => {
+		const directory = mkdtempSync(join(tmpdir(), "arr-recovery-env-"));
+		const selectedDatabase = `file:${join(directory, "selected.db")}`;
+		const typedPassword = "Synthetic-Typed-123!";
+		const f = fixture();
+		const previousExitCode = process.exitCode;
+		let work: Promise<number> | undefined;
+		writeFileSync(
+			join(directory, ".env"),
+			`DATABASE_URL=${selectedDatabase}\nPASSWORD_POLICY=relaxed\nPASSWORD=Synthetic-File-Unused-123!\n`,
+			{ mode: 0o600 },
+		);
+		vi.resetModules();
+		vi.spyOn(process, "cwd").mockReturnValue(directory);
+		vi.stubEnv("DATABASE_URL", undefined);
+		vi.stubEnv("PASSWORD_POLICY", "strict");
+		vi.stubEnv("PASSWORD", undefined);
+		vi.stubEnv("DOTENV_CONFIG_PATH", undefined);
+		vi.stubEnv("DOTENV_CONFIG_QUIET", "true");
+		// Keep the real CLI/default process.env boundary and existing mock actor;
+		// only supply the same isolated terminal used by the other CLI cases.
+		vi.doMock("../reset-admin-password.js", () => ({
+			runAdminRecoveryCli: () => {
+				work = runAdminRecoveryCli({ ...f, argv: [] });
+				return work;
+			},
+		}));
+		try {
+			await import("../../scripts/reset-admin-password.js");
+			await vi.waitFor(() => expect(f.text()).toContain("Exact username:"));
+			f.input.write(`SyntheticConfigOwner\r${typedPassword}\r${typedPassword}\r`);
+			expect(await work).toBe(0);
+			expect(boundary.recover).toHaveBeenCalledWith(
+				expect.objectContaining({
+					databaseUrl: selectedDatabase,
+					passwordPolicy: "strict",
+					username: "SyntheticConfigOwner",
+					password: typedPassword,
+					confirmation: typedPassword,
+				}),
+			);
+			expect(f.text()).not.toContain(typedPassword);
+			expect(f.text()).not.toContain(selectedDatabase);
+		} finally {
+			f.signals.emit("SIGTERM");
+			await work;
+			vi.doUnmock("../reset-admin-password.js");
+			vi.restoreAllMocks();
+			vi.unstubAllEnvs();
+			process.exitCode = previousExitCode;
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+});
