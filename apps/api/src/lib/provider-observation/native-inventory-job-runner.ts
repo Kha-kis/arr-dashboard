@@ -261,6 +261,7 @@ export async function runNativeInventoryJobSlice<
 		checkpoint();
 		if (begun.status === "superseded") return { status: "superseded", pagesCommitted };
 		if (begun.status === "contended") return await yieldContendedClaim();
+		if (begun.status === "drifted") return await fail("coverage-incomplete", "none");
 		if (begun.status === "retryable") return await fail("coverage-incomplete");
 		const currentPass = await prisma.providerNativeInventoryPass.findUnique({
 			where: { runId_ordinal: { runId, ordinal: claim.passOrdinal } },
@@ -366,6 +367,7 @@ export async function runNativeInventoryJobSlice<
 		);
 		if (completed.status === "superseded") return { status: "superseded", pagesCommitted };
 		if (completed.status === "contended") return await yieldContendedClaim();
+		if (completed.status === "drifted") return await fail("coverage-incomplete", "none");
 		if (completed.status !== "completed") return await fail("coverage-incomplete");
 		// First-pass completion has already released this exact claim atomically.
 		if (claim.passOrdinal === 1) return { status: "pass-complete", pagesCommitted };
