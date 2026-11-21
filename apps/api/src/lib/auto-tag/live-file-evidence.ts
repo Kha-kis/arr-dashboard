@@ -18,7 +18,7 @@ const FILE_FIELDS: Readonly<Record<string, string>> = {
 	release_group: "releaseGroup",
 	audio_channels: "audioCodec",
 };
-// Conflict evidence belongs to this ephemeral projection, never provider data or a PUT.
+// Unavailable/conflicting evidence belongs to this ephemeral projection, never a PUT.
 const uncertainFileFields = new WeakMap<CacheItemForEval, ReadonlySet<string>>();
 export function evaluateAutoTagConditionState(
 	...args: Parameters<typeof evaluateSingleConditionState>
@@ -47,6 +47,22 @@ function record(value: unknown): Record<string, unknown> | null {
 	return typeof value === "object" && value !== null && !Array.isArray(value)
 		? (value as Record<string, unknown>)
 		: null;
+}
+function normalizeFileEvidence(file: Record<string, unknown>): Record<string, unknown> {
+	const normalized = normalizeLiveMovieFile(file);
+	// An explicitly observed empty HDR string is known absence, unlike missing/null.
+	if (typeof normalized.videoDynamicRange !== "string") {
+		const direct = file.videoDynamicRange;
+		const nested = record(file.mediaInfo)?.videoDynamicRange;
+		if (typeof direct === "string") normalized.videoDynamicRange = direct;
+		else if (typeof nested === "string") normalized.videoDynamicRange = nested;
+	}
+	return normalized;
+}
+function usableFileField(field: string, value: unknown): boolean {
+	return field === "customFormatScore"
+		? typeof value === "number" && Number.isFinite(value)
+		: typeof value === "string" && (field === "videoDynamicRange" || value.trim().length > 0);
 }
 function positiveId(value: unknown): value is number {
 	return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
@@ -82,17 +98,14 @@ function mergeCurrentFileEvidence(
 	fields: readonly string[],
 ): { file: Record<string, unknown>; unavailable: Set<string> } {
 	const unavailable = new Set<string>();
-	const current = embedded ? normalizeLiveMovieFile(embedded) : {};
-	const external = normalizeLiveMovieFile(observed);
+	const current = embedded ? normalizeFileEvidence(embedded) : {};
+	const external = normalizeFileEvidence(observed);
 	const merged = { ...current, ...external };
 	for (const field of new Set(Object.values(FILE_FIELDS))) {
 		const a = current[field],
 			b = external[field];
-		const usable = (value: unknown) =>
-			field === "customFormatScore"
-				? typeof value === "number" && Number.isFinite(value)
-				: typeof value === "string" && value.trim().length > 0;
-		// A positive contradiction is uncertainty, not permission to select a value.
+		const usable = (value: unknown) => usableFileField(field, value);
+		// Contradictory known values, including explicit HDR absence, are uncertain.
 		if (
 			fields.includes(field) &&
 			usable(a) &&
@@ -128,15 +141,10 @@ export async function loadLiveArrItemForAutoTag(args: {
 	await assertCurrent();
 	const id = fileId(fullItem);
 	let file = record(fullItem.movieFile);
-	let conflicts = new Set<string>();
-	const normalized = file ? normalizeLiveMovieFile(file) : null;
+	let unavailableFields = new Set<string>();
+	const normalized = file ? normalizeFileEvidence(file) : null;
 	const complete =
-		normalized !== null &&
-		fields.every((field) =>
-			field === "customFormatScore"
-				? typeof normalized[field] === "number" && Number.isFinite(normalized[field])
-				: typeof normalized[field] === "string" && normalized[field].trim().length > 0,
-		);
+		normalized !== null && fields.every((field) => usableFileField(field, normalized[field]));
 	if (id === null) file = null;
 	else if (!matchesFile(file, id, target.arrItemId, false) || !complete) {
 		let observed: Record<string, unknown> | null = null;
@@ -158,10 +166,15 @@ export async function loadLiveArrItemForAutoTag(args: {
 		else if (matchesFile(observed, id, target.arrItemId, true)) {
 			const merged = mergeCurrentFileEvidence(embedded, observed, fields);
 			file = merged.file;
-			conflicts = merged.unavailable;
+			unavailableFields = merged.unavailable;
 		} else file = null;
 	}
+	if (
+		fields.includes("videoDynamicRange") &&
+		(!file || !usableFileField("videoDynamicRange", normalizeFileEvidence(file).videoDynamicRange))
+	)
+		unavailableFields.add("videoDynamicRange");
 	const item = adaptLiveArrItemForAutoTag({ ...fullItem, movieFile: file ?? undefined }, target);
-	if (conflicts.size) uncertainFileFields.set(item, conflicts);
+	if (unavailableFields.size) uncertainFileFields.set(item, unavailableFields);
 	return { fullItem, item };
 }

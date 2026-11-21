@@ -31,6 +31,7 @@ describe("live Radarr file normalization at the actual evaluator", () => {
 });
 
 import { evaluateAutoTagConditionState, loadLiveArrItemForAutoTag } from "../live-file-evidence.js";
+
 const codecRule = { ruleType: "video_codec" };
 function fixture() {
 	const full = {
@@ -214,4 +215,127 @@ it("RG-D01 conflicting HDR stays unknown for none while an agreed codec stays tr
 	).toBe("true");
 	expect(fullItem.movieFile).toMatchObject({ videoDynamicRange: "HDR10" });
 	expect(item.data).not.toContain("uncertainFileFields");
+});
+
+describe("AT-HDR-01 current dynamic-range evidence", () => {
+	const hdrRule = { ruleType: "hdr_type" };
+	const hdrState = (item: ReturnType<typeof adaptLiveArrItemForAutoTag>, operator = "none") =>
+		evaluateAutoTagConditionState(
+			item,
+			"hdr_type",
+			{ operator, types: ["HDR10"] },
+			{ now: new Date() },
+		).state;
+	it.each([
+		{ label: "null mediaInfo", metadata: { mediaInfo: null } },
+		{ label: "missing mediaInfo", metadata: {} },
+		{ label: "nested null range", metadata: { mediaInfo: { videoDynamicRange: null } } },
+		{ label: "flat null range", metadata: { videoDynamicRange: null } },
+	])("keeps none unknown with absent embedded file and $label", async ({ metadata }) => {
+		const f = fixture();
+		f.client.movie.getById.mockResolvedValue({ ...f.full, movieFile: undefined } as never);
+		f.client.movieFile.getById.mockResolvedValue({ id: 77, movieId: 100, ...metadata } as never);
+		const { item } = await loadLiveArrItemForAutoTag({
+			client: f.client as never,
+			target,
+			rules: [hdrRule],
+			assertCurrent: f.assertCurrent,
+		});
+		expect(hdrState(item)).toBe("unknown");
+		expect(hdrState(item, "is")).toBe("unknown");
+	});
+	it.each([
+		{ metadata: { videoDynamicRange: "" }, none: "true", isHdr: "unknown" },
+		{ metadata: { mediaInfo: { videoDynamicRange: "" } }, none: "true", isHdr: "unknown" },
+		{ metadata: { mediaInfo: { videoDynamicRange: " " } }, none: "true", isHdr: "unknown" },
+		{ metadata: { videoDynamicRange: "HDR10" }, none: "false", isHdr: "true" },
+		{ metadata: { mediaInfo: { videoDynamicRange: "HDR10" } }, none: "false", isHdr: "true" },
+		{ metadata: { videoDynamicRange: "SDR" }, none: "false", isHdr: "false" },
+		{ metadata: { videoDynamicRange: "none" }, none: "false", isHdr: "false" },
+	])(
+		"preserves explicit external range semantics for $metadata",
+		async ({ metadata, none, isHdr }) => {
+			const f = fixture();
+			f.client.movie.getById.mockResolvedValue({ ...f.full, movieFile: undefined } as never);
+			f.client.movieFile.getById.mockResolvedValue({ id: 77, movieId: 100, ...metadata } as never);
+			const { item } = await loadLiveArrItemForAutoTag({
+				client: f.client as never,
+				target,
+				rules: [hdrRule],
+				assertCurrent: f.assertCurrent,
+			});
+			expect(hdrState(item)).toBe(none);
+			expect(hdrState(item, "is")).toBe(isHdr);
+		},
+	);
+	it.each([{ videoDynamicRange: "" }, { mediaInfo: { videoDynamicRange: "" } }])(
+		"accepts explicit embedded empty range without an enrichment dependency %j",
+		async (metadata) => {
+			const f = fixture();
+			f.client.movie.getById.mockResolvedValue({
+				...f.full,
+				movieFile: { id: 77, ...metadata },
+			} as never);
+			const { item } = await loadLiveArrItemForAutoTag({
+				client: f.client as never,
+				target,
+				rules: [hdrRule],
+				assertCurrent: f.assertCurrent,
+			});
+			expect(hdrState(item)).toBe("true");
+			expect(f.client.movieFile.getById).not.toHaveBeenCalled();
+		},
+	);
+	it.each(["sparse", "unavailable"] as const)(
+		"keeps missing HDR unknown and agreed codec usable with %s enrichment",
+		async (mode) => {
+			const f = fixture();
+			f.client.movie.getById.mockResolvedValue({
+				...f.full,
+				movieFile: { id: 77, videoCodec: "h265" },
+			} as never);
+			if (mode === "unavailable")
+				f.client.movieFile.getById.mockRejectedValue(new Error("synthetic unavailable"));
+			else
+				f.client.movieFile.getById.mockResolvedValue({
+					id: 77,
+					movieId: 100,
+					mediaInfo: null,
+				} as never);
+			const { item } = await loadLiveArrItemForAutoTag({
+				client: f.client as never,
+				target,
+				rules: [hdrRule, codecRule],
+				assertCurrent: f.assertCurrent,
+			});
+			expect(hdrState(item)).toBe("unknown");
+			expect(codecState(item)).toBe("true");
+		},
+	);
+	it.each([
+		{ embedded: "", external: "HDR10" },
+		{ embedded: "HDR10", external: "" },
+	])(
+		"keeps conflicting explicit absence unknown: $embedded versus $external",
+		async ({ embedded, external }) => {
+			const f = fixture();
+			f.client.movie.getById.mockResolvedValue({
+				...f.full,
+				movieFile: { id: 77, videoDynamicRange: embedded, videoCodec: "h265" },
+			} as never);
+			f.client.movieFile.getById.mockResolvedValue({
+				id: 77,
+				movieId: 100,
+				mediaInfo: { videoDynamicRange: external, videoCodec: "h265" },
+			} as never);
+			const { item } = await loadLiveArrItemForAutoTag({
+				client: f.client as never,
+				target,
+				rules: [hdrRule, codecRule, { ruleType: "release_group" }],
+				assertCurrent: f.assertCurrent,
+			});
+			expect(hdrState(item)).toBe("unknown");
+			expect(codecState(item)).toBe("true");
+		},
+	);
 });
