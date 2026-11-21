@@ -1,8 +1,10 @@
 import type { CalendarItem } from "@arr/shared";
 import { describe, expect, it } from "vitest";
 import {
+	formatDateOnly,
 	getCalendarDateKey,
 	getPaddedCalendarDateRange,
+	getViewerCalendarDate,
 	isCalendarItemInDateRange,
 } from "./calendar-formatters";
 
@@ -14,6 +16,29 @@ const createItem = (overrides: Partial<CalendarItem> = {}): CalendarItem => ({
 	instanceId: "sonarr-1",
 	instanceName: "Sonarr",
 	...overrides,
+});
+
+describe("getViewerCalendarDate", () => {
+	it.each([
+		{ year: 2026, month: 8, day: 26, hour: 18, key: "2026-09-26" },
+		{ year: 2026, month: 11, day: 31, hour: 23, key: "2026-12-31" },
+		{ year: 2027, month: 0, day: 1, hour: 0, key: "2027-01-01" },
+		{ year: 2026, month: 2, day: 8, hour: 1, key: "2026-03-08" },
+		{ year: 2026, month: 2, day: 8, hour: 3, key: "2026-03-08" },
+	])(
+		"represents the viewer's $key as UTC midnight at local hour $hour",
+		({ year, month, day, hour, key }) => {
+			const instant = new Date(year, month, day, hour, 22, 3);
+			const originalTime = instant.getTime();
+
+			expect(getViewerCalendarDate(instant).toISOString()).toBe(`${key}T00:00:00.000Z`);
+			expect(instant.getTime()).toBe(originalTime);
+		},
+	);
+
+	it("keeps canonical grid keys independent of the viewer timezone", () => {
+		expect(formatDateOnly(new Date("2026-09-27T00:00:00.000Z"))).toBe("2026-09-27");
+	});
 });
 
 describe("getCalendarDateKey", () => {
