@@ -6,7 +6,7 @@ import { IncognitoProvider } from "../../../../contexts/IncognitoContext";
 import { ColorThemeProvider } from "../../../../providers/color-theme-provider";
 import { CalendarClient } from "../calendar-client";
 
-const today = new Date().toISOString().split("T")[0]!;
+const today = "2026-09-15";
 const event: CalendarItem = {
 	id: 31,
 	title: "Synthetic known schedule",
@@ -55,6 +55,8 @@ function show() {
 	);
 }
 beforeEach(() => {
+	vi.useFakeTimers({ toFake: ["Date"] });
+	vi.setSystemTime(new Date(2026, 8, 15, 12));
 	localStorage.clear();
 	status = 200;
 	calendarReads = 0;
@@ -168,6 +170,7 @@ afterEach(() => {
 	cleanup();
 	for (const client of clients.splice(0)) client.clear();
 	vi.restoreAllMocks();
+	vi.useRealTimers();
 });
 
 describe("real CalendarClient availability and normal query flow", () => {
