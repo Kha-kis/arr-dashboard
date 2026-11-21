@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { createMonthDate, formatDateOnly } from "../lib/calendar-formatters";
+import { createMonthDate, formatDateOnly, getViewerCalendarDate } from "../lib/calendar-formatters";
 
 export type ServiceFilterValue = "all" | "sonarr" | "radarr" | "lidarr" | "readarr";
 
@@ -37,7 +37,7 @@ export interface CalendarState {
 
 export const useCalendarState = (weekStart: 0 | 1 = 0): CalendarState => {
 	const [currentMonth, setCurrentMonth] = useState(() => {
-		const now = new Date();
+		const now = getViewerCalendarDate(new Date());
 		return createMonthDate(now.getUTCFullYear(), now.getUTCMonth());
 	});
 
@@ -83,7 +83,7 @@ export const useCalendarState = (weekStart: 0 | 1 = 0): CalendarState => {
 	// Auto-select today or first day when days change
 	useEffect(() => {
 		if (!selectedDate) {
-			const todayKey = formatDateOnly(new Date());
+			const todayKey = formatDateOnly(getViewerCalendarDate(new Date()));
 			for (const day of daysInView) {
 				if (formatDateOnly(day) === todayKey) {
 					setSelectedDate(day);
@@ -109,7 +109,7 @@ export const useCalendarState = (weekStart: 0 | 1 = 0): CalendarState => {
 	}, [monthStart]);
 
 	const handleGoToday = useCallback(() => {
-		const today = new Date();
+		const today = getViewerCalendarDate(new Date());
 		const month = createMonthDate(today.getUTCFullYear(), today.getUTCMonth());
 		setCurrentMonth(month);
 		setSelectedDate(null);

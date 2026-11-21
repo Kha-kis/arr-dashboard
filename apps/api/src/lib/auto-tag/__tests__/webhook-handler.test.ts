@@ -128,8 +128,10 @@ function makeRule(over: Partial<AutoTagRule> = {}): AutoTagRule {
 		userId: "user-1",
 		name: "Tag premium",
 		enabled: true,
-		ruleType: "audio_channels",
-		parameters: JSON.stringify({ operator: "greater_than", channels: 5 }),
+		// This suite mocks evaluation to isolate orchestration. File evidence is
+		// exercised with the real evaluator in auto-tag-file-evidence-flow.test.ts.
+		ruleType: "year_range",
+		parameters: JSON.stringify({ operator: "after", year: 2000 }),
 		operator: null,
 		conditions: null,
 		serviceFilter: null,

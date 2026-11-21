@@ -273,6 +273,7 @@ export async function prepareNativePostgresFixture({ sourceApiRoot }) {
 					maxWorkers: 1,
 					fileParallelism: false,
 					include: [
+						"src/lib/auth/__tests__/admin-recovery.database.test.ts",
 						"src/lib/backup/__tests__/restore-runtime-postgres-client.database.test.ts",
 						"src/lib/backup/__tests__/restore-runtime-postgres-application.database.test.ts",
 						"src/lib/backup/__tests__/restore-runtime-replacement.postgres.database.test.ts",

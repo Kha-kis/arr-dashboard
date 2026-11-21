@@ -1,17 +1,39 @@
 # Backup inventory
 
 > [!WARNING]
-> Backup creation, scheduling, download, and deletion remain available. Restore
-> is temporarily disabled and returns HTTP 503 before reading the supplied
-> backup or changing filesystem/database state. Internal destination-key
-> preparation and disposable transaction tests do not establish exclusive
-> admission or crash-safe publication. The maintenance barrier is
-> not shared across API processes. Issue #815 remains open for a durable,
-> restart-reconciled recovery protocol and provider-backed exclusive lease.
+> Restore replaces accounts and settings and ends existing sessions on commit.
+> Preserve a current encrypted backup and its password before proceeding. After
+> runtime recovery, sign in with a restored account. A disconnected request or
+> an unconfirmed publication is not proof of success or rollback; do not retry
+> the replacement blindly.
 
-The inventory below documents the complete export format and the safety
-contract a future restore implementation must satisfy. It does not mean that
-restore is enabled in this version.
+Backup creation, scheduling, download, deletion, and authenticated Restore are
+available. Both uploaded and stored backups pass through the public Restore
+controller and provider-native exclusive publication. The inventory below
+documents the export format and its compatibility and conservation checks.
+
+## Restore outcomes and recovery
+
+The authenticated `/backup/restore` and `/backup/restore-from-file` routes report
+publication outcomes separately from request validation and restart:
+
+| HTTP status | Publication outcome | Meaning |
+| --- | --- | --- |
+| 200 | `committed` | Replacement is confirmed; existing sessions have ended. |
+| 409 | `not-committed` | The publication attempt is confirmed not committed because state changed. |
+| 503 | `unavailable` | Publication or closure could not be confirmed; the outcome remains unknown. |
+
+Pre-publication authentication, validation, compatibility, rate-limit, maintenance,
+and destination-availability refusals have their own bounded error categories.
+A status code alone does not identify a confirmed publication outcome.
+
+Publication responses include `restoreId`, `restartRequired: true`, and either
+`automatic-requested` or `manual-required`. An automatic restart request is not
+proof that restart completed. Unconfirmed publication requires manual recovery.
+After runtime recovery and fresh sign-in, `/backup/restore/status` returns only
+the latest confirmed committed attempt. A matching `restoreId` is positive
+commit evidence; a missing or different ID does not prove rollback. A lost
+response without an attempt ID cannot be reconciled by guessing one.
 
 Arr Dashboard backup format **1.6** emits complete, explicit coverage for the
 durable configuration and authentication state needed to recreate an
@@ -90,9 +112,10 @@ The enforced schema-wide model and encrypted-field inventory is
 portable backups and explicitly preserved by internal prepared replacement.
 Ordinary installation-local worker leases are still discarded. An empty journal
 is not initialized implicitly by a schema upgrade or a destructive boundary.
-Its internal commit helper uses a complete-snapshot compare-and-set, but this
-core alone does not establish provider ownership, crash-safe runtime admission,
-or enable public Restore.
+Its internal commit helper uses a complete-snapshot compare-and-set. Public
+Restore additionally requires the provider-native runtime owner, exclusive
+admission, joined publication and restart reconciliation; the journal helper
+alone does not establish those guarantees.
 The following table describes the major model groups. “Included” means copied by format
 1.6; “conditional” means only the bounded coordination rows described above
 are copied.
@@ -194,8 +217,9 @@ Background notification dispatch and retry publication participate in the same
 barrier. Read-only routes remain available while a normal mutation is running.
 
 This in-process barrier protects coherent export in the supported single-API
-topology. It is not sufficient authority for restore, which remains disabled
-until a provider-backed cross-process exclusion mechanism is available.
+topology. Restore additionally uses provider-native ownership and exclusive
+runtime admission through the public controller; the in-process barrier alone
+is not replacement authority.
 
 ## Internal preparation and disposable transaction boundary
 
@@ -220,8 +244,9 @@ schema v2. Resource-state proofs, managed formats, score intents, pending or
 unknown recovery markers, and unrelated JSON fields are preserved. Translation
 does not query a provider or authorize retry, rollback, or new upstream work.
 
-The internal `restorePreparedDatabase` helper has no live service or route
-caller. It accepts only genuinely prepared format 1.3–1.6 values for the same
+The public controller reaches `restorePreparedDatabase` through the exclusive
+`publishPreparedRestore` operation. The helper accepts only genuinely prepared
+format 1.3–1.6 values for the same
 destination installation, with complete safety coverage and no publication
 blocker. It repeats compatibility and conservation checks inside the same
 serializable transaction before deletion. Every current import operation,
@@ -253,8 +278,8 @@ parents (including qUI's service-instance RESTRICT relation). Source worker
 ownership is cleared only by the documented preparation dispositions, preserving
 durable holds and outcomes. Destination sessions disappear atomically on success
 and survive a rolled-back transaction. Restored `hashedPassword`, OIDC and
-passkey records are conserved; successful eventual public Restore must require
-fresh sign-in. The helper never writes destination encryption keys, cookie
+passkey records are conserved; committed public Restore requires fresh sign-in
+after runtime recovery. The helper never writes destination encryption keys, cookie
 secrets or installation identity and never dispatches or replays provider work.
 
 Format 1.4 requires an explicit nullable `restoreEvidence` field on every label
@@ -283,8 +308,8 @@ Imported idle pending deliveries become canceled with the generic
 `restored-not-replayed` disposition; imported submitting deliveries become
 unconfirmed. They remain recorded but never automatically dispatch. Ordinary
 restart recovery is distinct from Restore and still checks the destination
-installation and last committed Restore binding. These internal rules do not
-enable the public Restore route.
+installation and last committed Restore binding. These portability rules remain
+mandatory inside public Restore; they do not themselves authorize publication.
 
 Grab attempts, predecessor links, acknowledged history and exact target claims
 are included regardless of history exclusion or retention caps. Preparation
@@ -308,21 +333,23 @@ never converts this held state into permission to send. A fresh fenced read-only
 observation may mark the desired state `reconciled`; that means observed now,
 not acknowledgment of the original send. Absent, ambiguous, stale or unavailable
 evidence leaves the hold intact. No replay, expiry-based release or operator
-override is introduced. Public Restore remains disabled independently of these
-internal portability rules.
+override is introduced. Public Restore preserves these holds through the same
+prepared-value conservation checks.
 
 Disposable SQLite/PostgreSQL fixtures exercise transaction conservation,
 refusal, stale preparation and rollback. Fresh helper processes reopen synthetic
 databases and decrypt the registry-listed pairs using the unchanged effective destination
-key. This is not full server startup, image/upgrade, crash/interruption,
-cross-process exclusion or populated production QA evidence. Those gates and
-public integration remain required before Restore can be enabled.
+key. These lower-level checks are distinct from the public-controller,
+provider-native ownership, process-recovery and image/upgrade checks. A helper
+fixture alone does not establish those behaviors or populated-environment
+Restore evidence.
 
 ## Legacy direct-helper behavior
 
-The rules in this section are retained as requirements and lower-level
-validation coverage for a future restore implementation. Production restore
-currently returns HTTP 503 before parsing either current or legacy files.
+The rules in this section describe lower-level direct-helper compatibility,
+not an alternate public Restore path. Public Restore uses authenticated
+preparation and the stricter prepared publication contract described above;
+readability by a legacy helper does not establish public restorability.
 
 Versions **1.0** and **1.1** remain readable. Their older optional arrays may
 be absent, and a clean target may restore them. A legacy restore is rejected

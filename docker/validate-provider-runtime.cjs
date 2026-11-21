@@ -24,6 +24,7 @@ const required = [
 	"dist/launcher.js",
 	"dist/schema-startup.js",
 	"dist/combined-startup.js",
+	"dist/reset-admin-password.js",
 	"dist/lib/jellyfin/jellyfin-episode-finalizer-worker.js",
 	"dist/lib/jellyfin/jellyfin-episode-page-worker.js",
 	"prisma/runtime-schema/sqlite-v1.sql",

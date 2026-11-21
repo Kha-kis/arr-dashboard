@@ -63,6 +63,7 @@ async function fixture() {
 	});
 	const authority = createProviderPublicationAuthority(instance);
 	let total = 3;
+	let catalogIdentity = "stable";
 	let unavailable = false;
 	let beforeReturn: (() => Promise<void>) | undefined;
 	const offsets: number[] = [];
@@ -71,7 +72,7 @@ async function fixture() {
 		async discoverScopes() {
 			return {
 				status: "ready",
-				catalogIdentity: "stable",
+				catalogIdentity,
 				scopes: [{ scopeKey: "library:scope" }],
 			};
 		},
@@ -145,6 +146,9 @@ async function fixture() {
 		prior,
 		admit,
 		slice,
+		setCatalogIdentity: (value: string) => {
+			catalogIdentity = value;
+		},
 		setTotal: (value: number) => {
 			total = value;
 		},
@@ -249,6 +253,83 @@ describe("native inventory incompatible-total recovery", { timeout: 30_000 }, ()
 					domain: "episode",
 				}),
 			).toMatchObject({ status: "available", complete: true, itemCount: changedTotal });
+		},
+	);
+
+	it.each(
+		[1, 2].flatMap((passOrdinal) =>
+			(["resume", "completion"] as const).map((boundary) => ({ passOrdinal, boundary })),
+		),
+	)(
+		"ends incompatible catalog at $boundary of pass $passOrdinal without futile retries",
+		async ({ passOrdinal, boundary }) => {
+			const f = await fixture();
+			const run = await f.admit();
+			if (passOrdinal === 2) expect((await f.slice(run.id)).status).toBe("pass-complete");
+			expect((await f.slice(run.id, 1)).status).toBe("yielded");
+			const readsBeforeDrift = f.offsets.length;
+			if (boundary === "resume") f.setCatalogIdentity("changed-catalog");
+			else f.beforeReturn(async () => f.setCatalogIdentity("changed-catalog"));
+			expect((await f.slice(run.id)).status).toBe("incomplete");
+			const terminal = await f.prisma.providerNativeInventoryRun.findUniqueOrThrow({
+				where: { id: run.id },
+			});
+			expect(terminal).toMatchObject({
+				state: "incomplete",
+				activeSlotKey: null,
+				claimToken: null,
+				leaseUntil: null,
+				nextAttemptAt: null,
+				failureCount: 1,
+				lastFailureCategory: "coverage-incomplete",
+			});
+			expect(f.offsets.length - readsBeforeDrift).toBe(boundary === "resume" ? 0 : 2);
+			expect(await f.prisma.providerNativeInventorySnapshot.findFirstOrThrow()).toEqual(f.prior);
+			const pass = await f.prisma.providerNativeInventoryPass.findUniqueOrThrow({
+				where: { runId_ordinal: { runId: run.id, ordinal: passOrdinal } },
+			});
+			expect(pass).toMatchObject({
+				state: "collecting",
+				comparisonDigest: null,
+				completedAt: null,
+			});
+			const readsAtTerminal = f.offsets.length;
+			expect((await f.slice(run.id)).status).toBe("superseded");
+			expect(f.offsets).toHaveLength(readsAtTerminal);
+			const cadence = {
+				maxInstances: 1,
+				refreshIntervalMs: 30 * 60_000,
+				retryCooldownMs: 5 * 60_000,
+			};
+			await schedulePeriodicNativeInventoryWork(
+				f.prisma,
+				new Date(terminal.updatedAt.getTime() + cadence.retryCooldownMs - 1),
+				cadence,
+			);
+			expect(
+				await f.prisma.providerNativeInventoryRun.count({
+					where: { workKey: "episode", activeSlotKey: { not: null } },
+				}),
+			).toBe(0);
+			await schedulePeriodicNativeInventoryWork(
+				f.prisma,
+				new Date(terminal.updatedAt.getTime() + cadence.retryCooldownMs + 1),
+				cadence,
+			);
+			const fresh = await f.prisma.providerNativeInventoryRun.findFirstOrThrow({
+				where: { workKey: "episode", activeSlotKey: { not: null } },
+			});
+			expect(fresh.id).not.toBe(run.id);
+			expect(fresh.passOrdinal).toBe(1);
+			expect((await f.slice(fresh.id)).status).toBe("pass-complete");
+			expect(await f.prisma.providerNativeInventorySnapshot.findFirstOrThrow()).toEqual(f.prior);
+			expect((await f.slice(fresh.id)).status).toBe("published");
+			const head = await f.prisma.providerNativeInventorySnapshot.findFirstOrThrow({
+				include: { publishedPass: { include: { run: true } } },
+			});
+			expect(head.itemCount).toBe(3);
+			expect(head.generationId).not.toBe(f.prior.generationId);
+			expect(head.publishedPass?.run.id).toBe(fresh.id);
 		},
 	);
 

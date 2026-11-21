@@ -537,7 +537,9 @@ export async function beginNativeInventoryPass(
 	claim: NativeInventoryRunClaim,
 	manifest: NativeInventoryScopeManifest,
 	now: Date,
-): Promise<{ status: "recorded" | "coalesced" | "superseded" | "retryable" | "contended" }> {
+): Promise<{
+	status: "recorded" | "coalesced" | "superseded" | "retryable" | "contended" | "drifted";
+}> {
 	const normalized = normalizeScopeManifest(claim.workKey, manifest);
 	if (!normalized || !Number.isFinite(now.getTime())) return { status: "retryable" };
 	for (let attempt = 1; attempt <= ADMISSION_ATTEMPTS; attempt++) {
@@ -580,11 +582,12 @@ export async function beginNativeInventoryPass(
 						where: { runId_ordinal: { runId: claim.runId, ordinal: claim.passOrdinal } },
 					});
 					if (existing) {
-						return existing.state === "collecting" &&
-							existing.scopeManifest === normalized.scopeManifest &&
+						if (existing.state !== "collecting") return { status: "retryable" } as const;
+						// Reusing this pass cannot repair a changed catalog or scope set.
+						return existing.scopeManifest === normalized.scopeManifest &&
 							existing.scopeDigest === normalized.scopeDigest
 							? ({ status: "coalesced" } as const)
-							: ({ status: "retryable" } as const);
+							: ({ status: "drifted" } as const);
 					}
 					await tx.providerNativeInventoryPass.create({
 						data: {
@@ -947,7 +950,9 @@ export async function completeNativeInventoryPass(
 	claim: NativeInventoryRunClaim,
 	endCatalogIdentity: string,
 	now: Date,
-): Promise<{ status: "completed" | "coalesced" | "superseded" | "retryable" | "contended" }> {
+): Promise<{
+	status: "completed" | "coalesced" | "superseded" | "retryable" | "contended" | "drifted";
+}> {
 	if (
 		!Number.isFinite(now.getTime()) ||
 		typeof endCatalogIdentity !== "string" ||
@@ -973,7 +978,8 @@ export async function completeNativeInventoryPass(
 			const endDigest = createHash("sha256")
 				.update(JSON.stringify([endCatalogIdentity, domains]))
 				.digest("hex");
-			if (endDigest !== pass.scopeDigest) return { status: "retryable" };
+			if (endDigest !== pass.scopeDigest)
+				return { status: pass.state === "collecting" ? "drifted" : "retryable" };
 			const comparisonHash = createHash("sha256");
 			for (const { domain, scopeKeys } of domains) {
 				for (const scopeKey of scopeKeys) {

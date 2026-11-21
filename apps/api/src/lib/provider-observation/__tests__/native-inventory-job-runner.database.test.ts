@@ -1379,7 +1379,7 @@ describe("durable native inventory runner", { timeout: 30_000 }, () => {
 					retryDelayMs: 0,
 				})
 			).status,
-		).toBe("retryable");
+		).toBe("incomplete");
 		expect(await prisma.providerNativeInventorySnapshot.count()).toBe(0);
 		expect(await prisma.providerNativeInventoryPageReceipt.count()).toBe(2);
 	});
@@ -1953,7 +1953,7 @@ describe("durable native inventory runner", { timeout: 30_000 }, () => {
 			"yielded",
 		);
 		expect((await runNativeInventoryJobSlice(prisma, run.id, adapter, options)).status).toBe(
-			"retryable",
+			"incomplete",
 		);
 		expect(adapter.readPage).toHaveBeenCalledTimes(1);
 		expect(await prisma.providerNativeInventoryPageReceipt.count()).toBe(1);

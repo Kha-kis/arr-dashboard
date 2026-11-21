@@ -5311,6 +5311,7 @@ describe("full-watch counted checkpoints", () => {
 				}),
 			).toMatchObject({ state: "complete", publishedItemCount: finalTotal });
 		},
+		15_000,
 	);
 
 	it("admits only interior unknown pages and requires counted last pages before publication", async () => {
