@@ -8,7 +8,7 @@
 
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { requirePlexClient } from "../../lib/plex/plex-helpers.js";
+import { requirePlexReadClient } from "../../lib/plex/plex-helpers.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
 const thumbParams = z.object({
@@ -34,7 +34,7 @@ export async function registerImageProxyRoutes(app: FastifyInstance, _opts: Fast
 		const { path } = validateRequest(thumbQuery, request.query);
 		const userId = request.currentUser!.id;
 
-		const { client } = await requirePlexClient(app, userId, instanceId);
+		const { client } = await requirePlexReadClient(app, userId, instanceId);
 
 		const imageResponse = await client.fetchImage(path);
 

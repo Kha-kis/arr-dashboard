@@ -68,6 +68,34 @@ export async function requirePlexClient(
 	return { client, instance };
 }
 
+/**
+ * Resolve an owned Plex source for read-only requests without borrowing an
+ * ordinary transaction. Release the read lane before client or provider work.
+ * Mutation callers must keep using requirePlexClient.
+ */
+export async function requirePlexReadClient(
+	app: FastifyInstance,
+	userId: string,
+	instanceId: string,
+): Promise<{ client: PlexClient; instance: ServiceInstance }> {
+	const instance = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+		prisma.serviceInstance.findFirst({
+			where: { id: instanceId, userId, enabled: true },
+		}),
+	);
+
+	if (!instance) {
+		throw new InstanceNotFoundError(instanceId);
+	}
+
+	if (instance.service !== "PLEX") {
+		throw new AppValidationError("Instance is not a Plex service");
+	}
+
+	const client = createPlexClient(app.encryptor, instance, app.log);
+	return { client, instance };
+}
+
 // ============================================================================
 // Multi-Instance
 // ============================================================================
