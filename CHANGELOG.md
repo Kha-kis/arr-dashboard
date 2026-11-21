@@ -57,6 +57,14 @@ returns HTTP `202` with `{ status: "accepted", cacheType }`. The `cacheType` is
 completion and counter handling with reads of the corresponding cache
 health/status endpoint to observe the refresh and its published data.
 
+**Container administrator recovery.** Replace recovery commands that depend on
+`pnpm` or `tsx` inside the container with the installed `reset-admin-password`
+command. Stop every API/container using the database first, then use the same
+image and service configuration in an interactive one-off container. Recovery
+requires an exact existing local-password account and hidden terminal input;
+password arguments, environment/file input and noninteractive stdin are not
+supported. See [offline password recovery](README.md#offline-password-recovery).
+
 See the [API route reference](docs/API-ROUTES.md) for the full contracts.
 
 ### Added
@@ -95,6 +103,23 @@ See the [API route reference](docs/API-ROUTES.md) for the full contracts.
   watch coverage. Insight results alone do not authorize cleanup or provider writes.
 
 ### Fixed
+
+- **Seerr upcoming TV** — Details and seasons remain available when
+  `lastAirDate` is null. Malformed details still fail validation. Includes the
+  compatibility correction contributed by `Matosh-fr`.
+- **Calendar Today** — Initial selection, the initial month and Go to Today use
+  the viewer's local date without changing provider date-only values.
+- **Notification controls** — Switches display their purposes, and Plex and
+  Jellyfin/Emby new-device subscriptions have distinct labels. Jellyfin-only
+  installations retain known client platforms between capture ticks; incomplete
+  history cannot establish that a platform is new.
+- **Radarr Auto-Tagger metadata** — File-dependent criteria can use metadata
+  fetched for the exact current movie file when embedded fields are missing.
+  Missing or conflicting HDR evidence remains unknown. Scheduled and webhook
+  execution revalidate identity and retain the complete current resource when
+  updating tags.
+- **Runtime maintenance** — Update Next.js to 16.4.5, Nodemailer to 10.6.0 and
+  DOMPurify resolutions to 3.4.18.
 
 - **Navigation and keyboard usability** — Desktop navigation stays within the
   viewport and scrolls independently. The mobile menu opens from the header,
