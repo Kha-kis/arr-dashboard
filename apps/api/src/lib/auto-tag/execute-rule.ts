@@ -18,10 +18,7 @@ import type { ArrClient, ArrClientFactory } from "../arr/client-factory.js";
 import type { Encryptor } from "../auth/encryption.js";
 import { triggerLabelSyncForItem } from "../label-sync/trigger-for-item.js";
 import { buildEvalContextWithHealth } from "../library-cleanup/cleanup-executor.js";
-import {
-	evaluateSingleConditionState,
-	type RuleEvaluationState,
-} from "../library-cleanup/rule-evaluators.js";
+import type { RuleEvaluationState } from "../library-cleanup/rule-evaluators.js";
 import type { CacheItemForEval, EvalContext } from "../library-cleanup/types.js";
 import type { PrismaClient, ServiceInstance } from "../prisma.js";
 import {
@@ -31,7 +28,11 @@ import {
 } from "../provider-observation/native-presence-evidence.js";
 import { safeJsonParse } from "../utils/json.js";
 import { loadCompleteListEvidence } from "./list-evidence-loader.js";
-import { adaptLiveArrItemForAutoTag } from "./live-arr-evidence.js";
+import {
+	autoTagRuleUsesFileEvidence,
+	evaluateAutoTagConditionState,
+	loadLiveArrItemForAutoTag,
+} from "./live-file-evidence.js";
 import { acquireAutoTagTargetLock } from "./target-lock.js";
 import { AutoTagAuthorityChangedError, isCurrentAutoTagTarget } from "./target-authorization.js";
 
@@ -267,6 +268,8 @@ async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstan
 	// Retain only target coordinates; full ARR payloads are fetched again before writing.
 	const matched: Array<{ item: Pick<CacheItemForEval, "arrItemId" | "itemType"> }> = [];
 	const usesNativePresence = collectNativePresenceInstances([rule]).length > 0;
+	const usesFileEvidence = instance.service === "RADARR" && autoTagRuleUsesFileEvidence(rule);
+	const usesWriteEvidence = usesNativePresence || usesFileEvidence;
 	let totalScanned = 0;
 	let skipped = 0;
 	let cursor: string | undefined;
@@ -378,13 +381,22 @@ async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstan
 			// reject partial bodies with errors like "'Quality Profile Id' must
 			// be greater than '0'". Fetch the current item so the update preserves
 			// every field the *arr expects.
-			const fullItem = (await resource.getById(item.arrItemId)) as Record<string, unknown>;
-			const latestItem = adaptLiveArrItemForAutoTag(fullItem, {
-				instanceId: instance.id,
-				arrItemId: item.arrItemId,
-				itemType: item.itemType,
-			});
-			const latestTags = extractTagIds(fullItem);
+			const loadCurrentItem = () =>
+				loadLiveArrItemForAutoTag({
+					client: arrClient,
+					target: {
+						instanceId: instance.id,
+						arrItemId: item.arrItemId,
+						itemType: item.itemType as "movie" | "series",
+					},
+					rules: [rule],
+					assertCurrent: async () => {
+						if (!(await isCurrentAutoTagTarget(prisma, rule.userId, instance)))
+							throw new AutoTagAuthorityChangedError();
+					},
+				});
+			let { fullItem, item: latestItem } = await loadCurrentItem();
+			let latestTags = extractTagIds(fullItem);
 			if (isExcludedByRule(latestItem.title, latestTags, rule.excludeTags, compiledTitleRegexes)) {
 				continue;
 			}
@@ -405,14 +417,22 @@ async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstan
 					latestEvidence.failedSources,
 				) !== "true"
 			) {
-				if (usesNativePresence) skipped++;
+				if (usesWriteEvidence) skipped++;
 				continue;
 			}
-			if (usesNativePresence && !(await isCurrentAutoTagTarget(prisma, rule.userId, instance))) {
+			if (usesWriteEvidence && !(await isCurrentAutoTagTarget(prisma, rule.userId, instance))) {
 				skipped++;
 				continue;
 			}
 			const assertNativeAuthority = async () => {
+				if (usesFileEvidence) {
+					({ fullItem, item: latestItem } = await loadCurrentItem());
+					latestTags = extractTagIds(fullItem);
+					if (
+						isExcludedByRule(latestItem.title, latestTags, rule.excludeTags, compiledTitleRegexes)
+					)
+						throw new AutoTagAuthorityChangedError();
+				}
 				const boundaryEvidence = await buildRuleEvalContext({
 					rule,
 					prisma,
@@ -437,9 +457,9 @@ async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstan
 			tagId ??= await ensureTag(
 				arrClient,
 				rule.tagName,
-				usesNativePresence ? assertNativeAuthority : undefined,
+				usesWriteEvidence ? assertNativeAuthority : undefined,
 			);
-			if (usesNativePresence) await assertNativeAuthority();
+			if (usesWriteEvidence) await assertNativeAuthority();
 			if (latestTags.includes(tagId)) {
 				applied++;
 				continue;
@@ -513,7 +533,7 @@ function evaluateAgainstRule(
 		if (rule.operator === "AND") {
 			let unknown = false;
 			for (const cond of rule.conditions) {
-				const evaluation = evaluateSingleConditionState(
+				const evaluation = evaluateAutoTagConditionState(
 					item,
 					cond.ruleType,
 					cond.parameters,
@@ -529,7 +549,7 @@ function evaluateAgainstRule(
 		// OR
 		let unknown = false;
 		for (const cond of rule.conditions) {
-			const evaluation = evaluateSingleConditionState(
+			const evaluation = evaluateAutoTagConditionState(
 				item,
 				cond.ruleType,
 				cond.parameters,
@@ -544,7 +564,7 @@ function evaluateAgainstRule(
 	}
 
 	// Single-condition rule
-	const evaluation = evaluateSingleConditionState(
+	const evaluation = evaluateAutoTagConditionState(
 		item,
 		rule.ruleType,
 		rule.parameters,
