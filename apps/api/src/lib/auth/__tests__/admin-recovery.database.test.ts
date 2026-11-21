@@ -1,7 +1,15 @@
 import { type ChildProcess, execFile, fork } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
-import { chmodSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -9,6 +17,7 @@ import { Client } from "pg";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { openRestoreRuntime, type RestoreRuntime } from "../../backup/restore-runtime-admission.js";
 import { createRuntimePrismaClient } from "../../backup/restore-runtime-client.js";
+import { acquirePostgresRestoreRuntimeOwnership } from "../../backup/restore-runtime-postgres.js";
 import { resolveSecretsPath } from "../../utils/secrets-path.js";
 import { recoverAdministratorPassword } from "../admin-recovery.js";
 import * as passwords from "../password.js";
@@ -20,6 +29,7 @@ const api = resolve(import.meta.dirname, "../../../../");
 const oldPassword = "Synthetic-Old-123!";
 const newPassword = "Synthetic-New-456!";
 let directory: string | undefined;
+let postgresDataDirectory: string | undefined;
 let url: string;
 let secretsPath: string;
 let installationId: string;
@@ -65,10 +75,40 @@ beforeAll(async () => {
 			resolve(process.cwd()) !== resolve(project) ||
 			!project.includes("/artifacts/restore-application-admission-") ||
 			parsed.hostname !== "127.0.0.1" ||
-			!parsed.pathname.endsWith("_test")
+			!parsed.pathname.endsWith("_test") ||
+			parsed.search ||
+			parsed.hash
 		)
 			throw new Error("Owned disposable PostgreSQL fixture required");
 		url = pgUrl;
+		// Neighboring suites use this disposable database but own separate secrets.
+		// Start a coherent synthetic installation only after proving no live owner
+		// or admitted operation remains; production identity checks stay intact.
+		const owner = await acquirePostgresRestoreRuntimeOwnership(url);
+		try {
+			if (!(await owner.tryAcquireExclusive()))
+				throw new Error("Exclusive disposable PostgreSQL fixture required");
+			const data = join(project, "data");
+			mkdirSync(data, { mode: 0o700 });
+			postgresDataDirectory = data;
+			const seed = new Client({ connectionString: url });
+			try {
+				await seed.connect();
+				await seed.query("BEGIN");
+				await seed.query('TRUNCATE TABLE public."RestoreRuntimeControl"');
+				await seed.query(
+					'INSERT INTO public."RestoreRuntimeControl" (id,"protocolVersion",phase) VALUES(1,1,\'idle\')',
+				);
+				await seed.query("COMMIT");
+			} catch (error) {
+				await seed.query("ROLLBACK").catch(() => {});
+				throw error;
+			} finally {
+				await seed.end();
+			}
+		} finally {
+			await owner.close();
+		}
 	} else {
 		directory = mkdtempSync(join(tmpdir(), "arr-admin-recovery-"));
 		const schema = join(directory, "schema.prisma");
@@ -173,6 +213,7 @@ afterEach(async () => {
 });
 afterAll(() => {
 	if (directory) rmSync(directory, { recursive: true, force: true });
+	if (postgresDataDirectory) rmSync(postgresDataDirectory, { recursive: true });
 });
 
 describe(`actual native ${provider} offline recovery`, () => {
