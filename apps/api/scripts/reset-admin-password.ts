@@ -1,6 +1,7 @@
 #!/usr/bin/env tsx
 // Development compatibility entrypoint; uses the same offline owner-fenced actor.
 // Production containers use the installed reset-admin-password wrapper.
+import "dotenv/config";
 import { runAdminRecoveryCli } from "../src/reset-admin-password.js";
 
 void runAdminRecoveryCli()
