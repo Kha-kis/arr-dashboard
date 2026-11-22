@@ -24,6 +24,7 @@ type Actor = {
 	result: Result | null;
 	failure: Error | null;
 	events: Event[];
+	diagnosticBytes: number;
 	root: string;
 };
 const actors: Actor[] = [];
@@ -47,6 +48,7 @@ function start(): Actor {
 		child,
 		root,
 		events: [],
+		diagnosticBytes: 0,
 		failure: null,
 		result: null,
 		closed: Promise.resolve({ code: null, signal: null }),
@@ -80,7 +82,11 @@ function start(): Actor {
 			}
 		}
 	});
-	child.stderr!.resume();
+	child.stderr!.on("data", (chunk) => {
+		actor.diagnosticBytes += chunk.length;
+		if (actor.diagnosticBytes > 65536)
+			actor.failure = new Error("Synthetic actor diagnostics exceeded their bound");
+	});
 	child.once("error", () => {
 		actor.failure = new Error("Synthetic launcher could not start");
 	});
@@ -181,8 +187,9 @@ afterEach(async () => {
 
 it("real restart POST waits for cleanup, exits 42, readies one replacement and joins terminal stop", async () => {
 	const actor = start();
-	await until(actor, () => rows(actor, "ready").length === 1);
+	await until(actor, () => rows(actor, "ready").length === 1 && actor.diagnosticBytes > 0);
 	const initial = rows(actor, "ready")[0]!.pid;
+	expect(actor.diagnosticBytes).toBeGreaterThan(0);
 	expect(rows(actor, "child").map((row) => row.pid)).toEqual([initial]);
 	release(actor, "request-restart");
 	await until(actor, () => rows(actor, "acknowledged", initial).length === 1);
