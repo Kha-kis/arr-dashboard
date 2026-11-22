@@ -1,14 +1,17 @@
-import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it } from "vitest";
 
+import { SqliteSchemaFixture } from "../../__tests__/sqlite-schema-fixture.js";
 import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
 import { createOrLoadObservationRun } from "../../provider-observation/observation-run-repository.js";
 import type { ProviderCacheRefreshAttempt } from "../../services/provider-cache-status.js";
 import { createProviderPublicationAuthority } from "../../services/provider-identity-guard.js";
 import { invalidateJellyfinEpisodeAttempt } from "../jellyfin-episode-attempt-recovery.js";
+
+let schemaFixture: SqliteSchemaFixture | undefined;
+afterAll(() => schemaFixture?.dispose());
 
 const databases: Array<{ directory: string; prisma: ReturnType<typeof createTestPrismaClient> }> =
 	[];
@@ -16,11 +19,11 @@ const databases: Array<{ directory: string; prisma: ReturnType<typeof createTest
 async function database() {
 	const directory = mkdtempSync(join(tmpdir(), "jellyfin-attempt-recovery-"));
 	const dbPath = join(directory, "test.db");
-	execFileSync("pnpm", ["exec", "prisma", "db", "push", "--schema", "prisma/schema.prisma"], {
-		cwd: process.cwd(),
-		env: { ...process.env, DATABASE_URL: `file:${dbPath}` },
-		stdio: "ignore",
-	});
+	if (!schemaFixture) {
+		schemaFixture = new SqliteSchemaFixture();
+		schemaFixture.initialize();
+	}
+	schemaFixture.copyTo(dbPath);
 	const prisma = createTestPrismaClient(dbPath);
 	databases.push({ directory, prisma });
 	await prisma.user.createMany({

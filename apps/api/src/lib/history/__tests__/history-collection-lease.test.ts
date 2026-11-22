@@ -1,11 +1,11 @@
-import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { type Prisma, PrismaClient } from "../../../generated/prisma/client.js";
+import { SqliteSchemaFixture } from "../../__tests__/sqlite-schema-fixture.js";
 import { createTestPgClient } from "../../__tests__/test-prisma.js";
 import {
 	acquireHistoryCollectionLease,
@@ -16,6 +16,9 @@ import {
 	releaseHistoryCollectionLease,
 	withHistoryCollectionLeaseAuthority,
 } from "../history-collection-lease.js";
+
+let schemaFixture: SqliteSchemaFixture | undefined;
+afterAll(() => schemaFixture?.dispose());
 
 const databases: Array<{ clients: PrismaClient[]; directory: string }> = [];
 const postgresCleanups: Array<() => Promise<void>> = [];
@@ -720,11 +723,11 @@ async function createDatabase(
 ): Promise<{ clients: PrismaClient[]; prisma: PrismaClient }> {
 	const directory = mkdtempSync(join(tmpdir(), "history-lease-"));
 	const databasePath = join(directory, "history.db");
-	execFileSync("pnpm", ["exec", "prisma", "db", "push", "--schema", "prisma/schema.prisma"], {
-		cwd: process.cwd(),
-		env: { ...process.env, DATABASE_URL: `file:${databasePath}` },
-		stdio: "pipe",
-	});
+	if (!schemaFixture) {
+		schemaFixture = new SqliteSchemaFixture();
+		schemaFixture.initialize();
+	}
+	schemaFixture.copyTo(databasePath);
 	const clients = Array.from(
 		{ length: clientCount },
 		() =>

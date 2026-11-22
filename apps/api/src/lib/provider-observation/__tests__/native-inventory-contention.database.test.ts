@@ -1,9 +1,9 @@
-import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { SqliteSchemaFixture } from "../../__tests__/sqlite-schema-fixture.js";
 import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
 import { openRestoreRuntime } from "../../backup/restore-runtime-admission.js";
 import { createRuntimePrismaClient } from "../../backup/restore-runtime-client.js";
@@ -20,6 +20,9 @@ import {
 	type NativeInventorySlicePhase,
 	runNativeInventoryJobSlice,
 } from "../native-inventory-job-runner.js";
+
+let schemaFixture: SqliteSchemaFixture | undefined;
+afterAll(() => schemaFixture?.dispose());
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -42,11 +45,11 @@ function row(offset: number) {
 async function fixture(guarded = false) {
 	const directory = mkdtempSync(join(tmpdir(), "native-inventory-contention-"));
 	const dbPath = join(directory, "test.db");
-	execFileSync("pnpm", ["exec", "prisma", "db", "push", "--schema", "prisma/schema.prisma"], {
-		cwd: process.cwd(),
-		env: { ...process.env, DATABASE_URL: `file:${dbPath}` },
-		stdio: "ignore",
-	});
+	if (!schemaFixture) {
+		schemaFixture = new SqliteSchemaFixture();
+		schemaFixture.initialize();
+	}
+	schemaFixture.copyTo(dbPath);
 	let prisma = createTestPrismaClient(dbPath);
 	const lock = new Database(dbPath, { timeout: 0 });
 	let runtime: Awaited<ReturnType<typeof openRestoreRuntime>> | undefined;

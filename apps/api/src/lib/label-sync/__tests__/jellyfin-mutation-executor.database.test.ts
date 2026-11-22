@@ -1,10 +1,10 @@
-import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import pino from "pino";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { SqliteSchemaFixture } from "../../__tests__/sqlite-schema-fixture.js";
 import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
 import { Encryptor } from "../../auth/encryption.js";
 import { evidenceFingerprint } from "../../evidence-fingerprint.js";
@@ -23,6 +23,9 @@ import { JellyfinMutationRepository } from "../jellyfin-mutation-repository.js";
 import { prepareRestoredLabelSyncMutationAttempt } from "../jellyfin-mutation-restore.js";
 import { registerLabelSyncMutationAdmission } from "../mutation-admission.js";
 import { projectLabelSyncRecovery } from "../recovery-projection.js";
+
+let schemaFixture: SqliteSchemaFixture | undefined;
+afterAll(() => schemaFixture?.dispose());
 
 const databases: Array<{
 	directory: string;
@@ -205,11 +208,11 @@ async function publishCatalog(prisma: PrismaClient, instance: ServiceInstance, r
 async function createFixture(options: { tags?: string[]; uncertainPost?: boolean } = {}) {
 	const directory = mkdtempSync(join(tmpdir(), "jellyfin-mutation-executor-"));
 	const dbPath = join(directory, "fixture.db");
-	execFileSync("pnpm", ["exec", "prisma", "db", "push", "--schema", "prisma/schema.prisma"], {
-		cwd: process.cwd(),
-		env: { ...process.env, DATABASE_URL: `file:${dbPath}` },
-		stdio: "ignore",
-	});
+	if (!schemaFixture) {
+		schemaFixture = new SqliteSchemaFixture();
+		schemaFixture.initialize();
+	}
+	schemaFixture.copyTo(dbPath);
 	const state: ProviderState = {
 		item: initialDto(options.tags),
 		extraItems: [],
