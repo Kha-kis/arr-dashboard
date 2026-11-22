@@ -12,7 +12,13 @@ export function selectApiTestPhases(argv, sqliteWorkers = "4") {
 		} else if (!["run", "--run"].includes(argument)) vitestArguments.push(argument);
 	}
 	phase ??= "all";
-	if (vitestArguments.some((argument) => /^(--watch|--ui)(=|$)/.test(argument)))
+	if (
+		vitestArguments.some(
+			(argument) =>
+				/^(--watch|--ui)(=|$)/.test(argument) &&
+				!["--watch=false", "--ui=false"].includes(argument),
+		)
+	)
 		throw new Error("The API gate is noninteractive so native child exit can be joined.");
 	if (sqliteWorkers !== "2" && sqliteWorkers !== "4")
 		throw new Error("ARR_API_TEST_WORKERS must be 2 or 4.");
