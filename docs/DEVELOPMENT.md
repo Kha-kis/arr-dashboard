@@ -302,6 +302,37 @@ pnpm run lint
   Native multi-process cases require the preparation performed by the full gate;
   direct Vitest without those actors is not equivalent full-gate evidence.
 
+### API phases and CI partitions
+
+The default `pnpm --filter @arr/api test` still builds shared, runs the Node
+fixture/recovery harness, then runs SQLite followed by the three serial native
+PostgreSQL phases. Explicit commands select a narrower boundary:
+
+```bash
+pnpm --filter @arr/api run test:node       # Fixture, Docker recovery and phase-selector contracts
+pnpm --filter @arr/api run test:sqlite     # Shared build, owned SQLite actors and all SQLite suites
+pnpm --filter @arr/api run test:sqlite --shard=1/2
+pnpm --filter @arr/api run test:postgres   # Shared build and all three serial native PG phases
+pnpm run test:ci-workflow                 # Actual YAML wiring and fail-closed aggregate contract
+```
+
+`run-api-tests.mjs` accepts `--phase=all|sqlite|postgres` (default `all`). It rejects
+invalid or duplicate phases before fixture preparation. Vitest filters apply to
+SQLite; PostgreSQL-only mode rejects extra Vitest arguments. Each phase owns its
+native fixtures, forwards signals, waits for physical child exit, and retains
+private files on uncertain failure. PostgreSQL-only mode allocates no SQLite actor.
+
+CI runs quality checks first, then independent database, package, API, contract,
+heap, browser and Docker jobs. Two separate hosted SQLite runners each use two
+workers; PostgreSQL runs once, serially, on its own runner. The existing
+`Lint, Type Check & Test` required check waits for all jobs and fails if any is
+failed, cancelled, skipped or missing. The root full-test command also includes
+the workflow contract; existing full PR verification remains required.
+
+Full CI selects eligible PR updates and stable `main` pushes. A standalone
+`release/**` push receives no full CI until an eligible PR exists; removing that
+push trigger avoids duplicate full qualification for release-branch PR updates.
+
 ## Pull request review workflow
 
 Follow [`CODE-REVIEW.md`](CODE-REVIEW.md) for the finite review contract.

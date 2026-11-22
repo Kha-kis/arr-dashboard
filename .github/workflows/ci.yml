@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, "release/**"]
+    branches: [main]
     paths-ignore:
       - "**.md"
       - "docs/**"
@@ -22,25 +22,9 @@ env:
   DOCKERHUB_IMAGE: khak1s/arr-dashboard
 
 jobs:
-  # Lint, Type Check, and Unit Tests (merged — both fast, same setup)
-  lint-and-test:
-    name: Lint, Type Check & Test
+  quality:
+    name: Quality Checks
     runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
-        env:
-          POSTGRES_USER: arr_backup_test
-          POSTGRES_PASSWORD: arr_backup_test
-          POSTGRES_DB: arr_backup_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U arr_backup_test -d arr_backup_test"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
 
     steps:
       - name: Checkout code
@@ -77,7 +61,61 @@ jobs:
         run: node --test scripts/check-prisma-generated.test.mjs
 
       - name: Verify PR review contract checker
-        run: node --test scripts/check-pr-review-contract.test.mjs
+        run: pnpm run test:pr-review-contract
+
+      - name: Verify CI workflow contract
+        run: pnpm run test:ci-workflow
+
+      - name: Build shared package
+        run: pnpm --filter @arr/shared run build
+
+      - name: Check formatting
+        run: pnpm run format
+
+      - name: Run linting
+        run: pnpm run lint
+
+      - name: Run type checking
+        run: pnpm run typecheck
+
+      - name: Check for dead code (Knip)
+        run: pnpm exec knip --no-exit-code
+
+  database-contracts:
+    name: Database Persistence Contracts
+    runs-on: ubuntu-latest
+    needs: [quality]
+
+    services:
+      postgres:
+        image: postgres@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+        env:
+          POSTGRES_USER: arr_backup_test
+          POSTGRES_PASSWORD: arr_backup_test
+          POSTGRES_DB: arr_backup_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U arr_backup_test -d arr_backup_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Build shared package
         run: pnpm --filter @arr/shared run build
@@ -114,33 +152,178 @@ jobs:
           TEST_DB: "true"
           TEST_DATABASE_URL: postgresql://arr_backup_test:arr_backup_test@127.0.0.1:5432/arr_backup_test
 
-      - name: Check formatting
-        run: pnpm run format
+  api-sqlite:
+    name: API SQLite (${{ matrix.shardIndex }}/${{ matrix.shardTotal }})
+    runs-on: ubuntu-latest
+    needs: [quality]
 
-      - name: Run linting
-        run: pnpm run lint
+    strategy:
+      fail-fast: false
+      matrix:
+        shardIndex: [1, 2]
+        shardTotal: [2]
 
-      - name: Run type checking
-        run: pnpm run typecheck
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Check for dead code (Knip)
-        run: pnpm exec knip --no-exit-code
+      - name: Setup pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
 
-      - name: Run tests
-        run: pnpm run test
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run API SQLite shard
+        run: pnpm --filter @arr/api run test:sqlite --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }}
         env:
-          # Keep the native API worker pool from competing with web test workers.
-          TURBO_CONCURRENCY: "1"
-          # Limit native SQLite test contention on hosted runners.
           ARR_API_TEST_WORKERS: "2"
+
+  api-postgres:
+    name: API Native PostgreSQL
+    runs-on: ubuntu-latest
+    needs: [quality]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run native PostgreSQL phases
+        run: pnpm --filter @arr/api run test:postgres
+
+  web-tests:
+    name: Web Tests
+    runs-on: ubuntu-latest
+    needs: [quality]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run web tests
+        run: pnpm exec turbo run test --filter=@arr/web
+
+  shared-tests:
+    name: Shared Tests
+    runs-on: ubuntu-latest
+    needs: [quality]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run shared tests
+        run: pnpm exec turbo run test --filter=@arr/shared
+
+  contracts-and-heap:
+    name: Node, Root Contracts & Heap
+    runs-on: ubuntu-latest
+    needs: [quality]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared package
+        run: pnpm --filter @arr/shared run build
+
+      - name: Run API Node fixture and recovery contracts
+        run: pnpm --filter @arr/api run test:node
+
+      - name: Run dependency patch contracts
+        run: pnpm run test:dependency-patches
+
+      - name: Run Jellyfin authority contracts
+        run: pnpm run test:jellyfin-authority-contract
+
+      - name: Run E2E UI contracts
+        run: pnpm run test:e2e-ui-contract
 
       - name: Run provider cache heap regression
         run: pnpm --filter @arr/api run test:provider-cache-heap
 
+  lint-and-test:
+    name: Lint, Type Check & Test
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [quality, database-contracts, api-sqlite, api-postgres, web-tests, shared-tests, contracts-and-heap, postgresql-contract, e2e, docker]
+    steps:
+      - name: Require every qualification job
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          node <<'NODE'
+          const required = [
+            'quality', 'database-contracts', 'api-sqlite', 'api-postgres', 'web-tests',
+            'shared-tests', 'contracts-and-heap', 'postgresql-contract', 'e2e', 'docker',
+          ];
+          let results;
+          try { results = JSON.parse(process.env.NEEDS_JSON); } catch { process.exit(1); }
+          if (!results || Array.isArray(results) || typeof results !== 'object' ||
+              Object.keys(results).length !== required.length ||
+              !required.every((job) => Object.hasOwn(results, job) && results[job]?.result === 'success')) {
+            process.stderr.write('Qualification incomplete: every required job must succeed.\n');
+            process.exit(1);
+          }
+          NODE
+
   postgresql-contract:
     name: PostgreSQL Persistence Contract
     runs-on: ubuntu-latest
-    needs: [lint-and-test]
+    needs: [quality]
     timeout-minutes: 10
 
     services:
@@ -201,7 +384,7 @@ jobs:
   e2e:
     name: E2E Tests (${{ matrix.shardIndex }}/${{ matrix.shardTotal }})
     runs-on: ubuntu-latest
-    needs: [lint-and-test]
+    needs: [quality]
     timeout-minutes: 10
     strategy:
       fail-fast: false
@@ -320,7 +503,7 @@ jobs:
   docker:
     name: Docker Build
     runs-on: ubuntu-latest
-    needs: [lint-and-test]
+    needs: [quality]
 
     steps:
       - name: Checkout code

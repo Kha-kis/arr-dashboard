@@ -3,15 +3,17 @@ import { createRequire } from "node:module";
 import { writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { selectApiTestPhases } from "./api-test-phases.mjs";
 import { prepareNativeTestActors } from "./native-test-actors.mjs";
 import { prepareNativePostgresFixture } from "./native-postgres-test-fixture.mjs";
 
 const apiRoot = fileURLToPath(new URL("..", import.meta.url));
 const require = createRequire(join(apiRoot, "package.json"));
 const vitest = join(dirname(require.resolve("vitest/package.json")), "vitest.mjs");
-const sqliteWorkers = process.env.ARR_API_TEST_WORKERS ?? "4";
-if (sqliteWorkers !== "2" && sqliteWorkers !== "4")
-	throw new Error("ARR_API_TEST_WORKERS must be 2 or 4.");
+const { vitestArguments, sqliteWorkers, runSqlite, runPostgres } = selectApiTestPhases(
+	process.argv.slice(2),
+	process.env.ARR_API_TEST_WORKERS,
+);
 const cleanEnvironment = () => ({
 	PATH: process.env.PATH,
 	HOME: process.env.HOME,
@@ -50,11 +52,6 @@ function run(args, cwd, environment) {
 	});
 }
 
-const argumentsForVitest = process.argv
-	.slice(2)
-	.filter((argument) => !["run", "--run"].includes(argument));
-if (argumentsForVitest.some((argument) => ["--watch", "--ui"].includes(argument)))
-	throw new Error("The API gate is noninteractive so native child exit can be joined.");
 const pgOnlySuites = [
 	"src/lib/backup/__tests__/restore-runtime-postgres-client.database.test.ts",
 	"src/lib/backup/__tests__/restore-runtime-postgres-application.database.test.ts",
@@ -65,51 +62,56 @@ const pgOnlySuites = [
 const nodeOnlySuites = [
 	"scripts/native-test-actors.test.mjs",
 	"scripts/native-postgres-test-fixture.test.mjs",
+	"scripts/api-test-phases.test.mjs",
 ];
 let actors,
 	postgres,
 	sqlitePassed = false,
 	postgresPassed = false;
 try {
-	actors = await prepareNativeTestActors({ apiRoot });
-	const sqliteConfig = join(actors.directory, "vitest.sqlite.mjs");
-	await writeFile(
-		sqliteConfig,
-		`export default ${JSON.stringify({ root: apiRoot, envDir: false, cacheDir: join(actors.directory, "vite") })};\n`,
-		{ flag: "wx", mode: 0o600 },
-	);
-	// Preparation occurs INSIDE the Turbo task; no inherited private actor paths.
-	await run(
-		[
-			"run",
-			"--config",
+	if (runSqlite) {
+		actors = await prepareNativeTestActors({ apiRoot });
+		const sqliteConfig = join(actors.directory, "vitest.sqlite.mjs");
+		await writeFile(
 			sqliteConfig,
-			...argumentsForVitest,
-			`--maxWorkers=${sqliteWorkers}`,
-			...pgOnlySuites.flatMap((suite) => ["--exclude", suite]),
-			...nodeOnlySuites.flatMap((suite) => ["--exclude", suite]),
-		],
-		apiRoot,
-		{ ...cleanEnvironment(), ...actors.environment, LOG_DIR: join(actors.directory, "logs") },
-	);
-	sqlitePassed = true;
-	postgres = await prepareNativePostgresFixture({ sourceApiRoot: apiRoot });
-	// PostgreSQL-only cases are executed, not skipped, with provider-native code.
-	await run(["run", "--config", postgres.config], postgres.project, postgres.environment);
-	// The shared startup file's SQLite group is covered above. Its native PG
-	// writer contracts need an explicit owned-provider route, never an app URL.
-	await run(
-		["run", "--config", postgres.schemaStartupConfig],
-		postgres.project,
-		postgres.environment,
-	);
-	// This file also contains SQLite cold-enrollment cases, covered above. Select
-	// its common admission contract for a second, real PostgreSQL provider run.
-	await run(["run", "--config", postgres.admissionConfig], postgres.project, {
-		...postgres.environment,
-		RESTORE_RUNTIME_ENGINE: "postgres",
-	});
-	postgresPassed = true;
+			`export default ${JSON.stringify({ root: apiRoot, envDir: false, cacheDir: join(actors.directory, "vite") })};\n`,
+			{ flag: "wx", mode: 0o600 },
+		);
+		// Preparation occurs INSIDE the Turbo task; no inherited private actor paths.
+		await run(
+			[
+				"run",
+				"--config",
+				sqliteConfig,
+				...vitestArguments,
+				`--maxWorkers=${sqliteWorkers}`,
+				...pgOnlySuites.flatMap((suite) => ["--exclude", suite]),
+				...nodeOnlySuites.flatMap((suite) => ["--exclude", suite]),
+			],
+			apiRoot,
+			{ ...cleanEnvironment(), ...actors.environment, LOG_DIR: join(actors.directory, "logs") },
+		);
+		sqlitePassed = true;
+	}
+	if (runPostgres) {
+		postgres = await prepareNativePostgresFixture({ sourceApiRoot: apiRoot });
+		// PostgreSQL-only cases are executed, not skipped, with provider-native code.
+		await run(["run", "--config", postgres.config], postgres.project, postgres.environment);
+		// The shared startup file's SQLite group is covered above. Its native PG
+		// writer contracts need an explicit owned-provider route, never an app URL.
+		await run(
+			["run", "--config", postgres.schemaStartupConfig],
+			postgres.project,
+			postgres.environment,
+		);
+		// This file also contains SQLite cold-enrollment cases, covered above. Select
+		// its common admission contract for a second, real PostgreSQL provider run.
+		await run(["run", "--config", postgres.admissionConfig], postgres.project, {
+			...postgres.environment,
+			RESTORE_RUNTIME_ENGINE: "postgres",
+		});
+		postgresPassed = true;
+	}
 } catch {
 	process.stderr.write(
 		"API gate failed. Native fixture files remain private; no passing full gate is claimed.\n",
