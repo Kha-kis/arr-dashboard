@@ -5,6 +5,8 @@
  * Run with: npx tsx src/lib/queue-cleaner/test-lidarr-integration.ts
  */
 
+import { reportDiagnostic } from "./diagnostic-output.js";
+
 const LIDARR_URL = process.env.LIDARR_URL || "http://localhost:8686";
 const LIDARR_API_KEY = process.env.LIDARR_API_KEY || "YOUR_API_KEY";
 
@@ -71,13 +73,8 @@ async function fetchLidarrQueue(): Promise<QueueResponse> {
 }
 
 async function testLidarrIntegration() {
-	console.log("🎵 Testing Lidarr Integration\n");
-	console.log("=".repeat(60));
-
-	// Fetch queue
-	console.log("\n📋 Fetching Lidarr queue...");
+	reportDiagnostic("lidarr-integration", "started");
 	const queue = await fetchLidarrQueue();
-	console.log(`   Total items in queue: ${queue.totalRecords}`);
 
 	// Analyze queue states
 	const stateMap = new Map<string, number>();
@@ -116,96 +113,28 @@ async function testLidarrIntegration() {
 		}
 	}
 
-	// Print state breakdown
-	console.log("\n📊 Queue State Breakdown:");
-	for (const [state, count] of stateMap) {
-		const emoji =
-			state === "importPending"
-				? "⏳"
-				: state === "importBlocked"
-					? "🚫"
-					: state === "importFailed"
-						? "❌"
-						: state === "downloading"
-							? "⬇️"
-							: "📦";
-		console.log(`   ${emoji} ${state}: ${count}`);
-	}
+	reportDiagnostic("lidarr-integration", "queue-summary", {
+		totalItems: queue.totalRecords,
+		pendingItems: stateMap.get("importPending") ?? 0,
+		blockedItems: stateMap.get("importBlocked") ?? 0,
+		failedItems: stateMap.get("importFailed") ?? 0,
+		downloadingItems: stateMap.get("downloading") ?? 0,
+		otherItems: [...stateMap.entries()]
+			.filter(
+				([state]) =>
+					!["importPending", "importBlocked", "importFailed", "downloading"].includes(state),
+			)
+			.reduce((count, [, value]) => count + value, 0),
+	});
 
-	// Check for auto-import eligible items
-	console.log("\n🔍 Auto-Import Eligibility Check:");
-
-	const importPendingCount = stateMap.get("importPending") ?? 0;
-	const importBlockedCount = stateMap.get("importBlocked") ?? 0;
-	const importFailedCount = stateMap.get("importFailed") ?? 0;
-
-	if (importPendingCount === 0 && importBlockedCount === 0) {
-		console.log("   ⚠️  No importPending or importBlocked items found");
-		console.log("   Auto-import targets these states specifically.");
-		console.log("");
-		if (importFailedCount > 0) {
-			console.log(
-				`   The ${importFailedCount} item(s) with importFailed state would be handled by`,
-			);
-			console.log("   the 'Failed Downloads' rule instead of auto-import.");
-		}
-	} else {
-		console.log(`   ✅ Found ${importPendingCount + importBlockedCount} eligible items!`);
-	}
-
-	// Show all import items with details
-	if (importItems.length > 0) {
-		console.log("\n📝 Import-Related Items Details:");
-		console.log("─".repeat(60));
-
-		for (const item of importItems) {
-			const stateEmoji =
-				item.state === "importPending" ? "⏳" : item.state === "importBlocked" ? "🚫" : "❌";
-
-			console.log(`\n${stateEmoji} [${item.state}] ${item.title.substring(0, 50)}...`);
-			console.log(`   ID: ${item.id} | Status: ${item.status}`);
-			if (item.downloadId) {
-				console.log(`   DownloadID: ${item.downloadId}`);
-			}
-
-			if (item.statusMessages.length > 0) {
-				console.log("   Messages:");
-				for (const msg of item.statusMessages) {
-					console.log(`      • ${msg}`);
-				}
-			}
-
-			// Check auto-import eligibility
-			const allText = item.statusMessages.join(" ").toLowerCase();
-			const hasSafe = AUTO_IMPORT_SAFE_KEYWORDS.some((k) => allText.includes(k));
-			const neverMatch = AUTO_IMPORT_NEVER_KEYWORDS.find((k) => allText.includes(k));
-
-			if (item.state === "importPending" || item.state === "importBlocked") {
-				if (neverMatch) {
-					console.log(`   🚫 Auto-Import: NOT eligible (matched: "${neverMatch}")`);
-				} else if (hasSafe) {
-					console.log(`   ✨ Auto-Import: ELIGIBLE (has safe pattern)`);
-				} else {
-					console.log(`   ⚠️  Auto-Import: NOT eligible (no safe pattern matched)`);
-				}
-			} else {
-				console.log(`   ℹ️  Auto-Import: Not applicable (handled by Failed Downloads rule)`);
-			}
-		}
-	}
-
-	// Test what queue cleaner would do
-	console.log(`\n${"=".repeat(60)}`);
-	console.log("🧹 Queue Cleaner Preview (simulated):");
-	console.log("=".repeat(60));
-
+	// Simulate the same queue cleaner choices without outputting selected items.
 	let wouldClean = 0;
 	let autoImportEligible = 0;
+	let wouldWarn = 0;
 
 	for (const item of importItems) {
 		if (item.state === "importFailed") {
 			wouldClean++;
-			console.log(`\n   ❌ Would REMOVE (failed): ${item.title.substring(0, 40)}...`);
 		} else if (item.state === "importPending" || item.state === "importBlocked") {
 			// Check auto-import eligibility
 			const allText = item.statusMessages.join(" ").toLowerCase();
@@ -213,29 +142,21 @@ async function testLidarrIntegration() {
 			const neverMatch = AUTO_IMPORT_NEVER_KEYWORDS.find((k) => allText.includes(k));
 
 			if (neverMatch) {
-				console.log(`\n   🚫 Would REMOVE (blocked): ${item.title.substring(0, 40)}...`);
-				console.log(`      Auto-import: Not eligible (matched: "${neverMatch}")`);
 				wouldClean++;
 			} else if (hasSafe) {
-				console.log(`\n   ✨ Would AUTO-IMPORT: ${item.title.substring(0, 40)}...`);
-				console.log(`      Status: ${item.statusMessages[0] ?? "N/A"}`);
 				autoImportEligible++;
 			} else {
-				console.log(`\n   ⚠️  Would WARN (pending): ${item.title.substring(0, 40)}...`);
-				console.log(`      Auto-import: Not eligible (no safe pattern)`);
+				wouldWarn++;
 			}
 		}
 	}
+	reportDiagnostic("lidarr-integration", "preview-summary", {
+		wouldRemoveItems: wouldClean,
+		eligibleItems: autoImportEligible,
+		wouldWarnItems: wouldWarn,
+		importItems: importItems.length,
+	});
 
-	console.log(`\n${"=".repeat(60)}`);
-	console.log("📈 Summary:");
-	console.log(`   Items that would be removed: ${wouldClean}`);
-	console.log(`   Items eligible for auto-import: ${autoImportEligible}`);
-	console.log(`   Total import-related items: ${importItems.length}`);
-	console.log("=".repeat(60));
-
-	// Additional: Try to fetch manual import to see if API is available
-	console.log("\n🔧 Testing Manual Import API availability...");
 	try {
 		const miResponse = await fetch(`${LIDARR_URL}/api/v1/manualimport?downloadId=test`, {
 			headers: {
@@ -245,13 +166,13 @@ async function testLidarrIntegration() {
 		});
 
 		if (miResponse.ok) {
-			console.log("   ✅ Manual Import API is available (GET /api/v1/manualimport)");
+			reportDiagnostic("lidarr-integration", "manual-import-api", { available: true });
 		} else {
-			console.log(`   ⚠️  Manual Import API returned: ${miResponse.status}`);
+			reportDiagnostic("lidarr-integration", "manual-import-api", { available: false });
 		}
-	} catch (error) {
-		console.log(`   ❌ Manual Import API error: ${error}`);
+	} catch {
+		reportDiagnostic("lidarr-integration", "provider-failed");
 	}
 }
 
-testLidarrIntegration().catch(console.error);
+testLidarrIntegration().catch(() => reportDiagnostic("lidarr-integration", "provider-failed"));
