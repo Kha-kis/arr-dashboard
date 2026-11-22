@@ -2,11 +2,16 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import Database from "better-sqlite3";
 import Fastify, { type FastifyInstance } from "fastify";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestPrismaClient } from "../../lib/__tests__/test-prisma.js";
 import { ArrClientFactory } from "../../lib/arr/client-factory.js";
 import { Encryptor } from "../../lib/auth/encryption.js";
+import {
+	acquireIndependentCleanupOperationGuard,
+	withCleanupMaintenanceGuard,
+} from "../../lib/library-cleanup/cleanup-maintenance-gate.js";
 import { registerServiceRoutes } from "../services.js";
 import {
 	createInjectAuthenticated,
@@ -76,7 +81,92 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+	vi.restoreAllMocks();
 	await app?.close();
+});
+
+describe("service update admission on populated SQLite", () => {
+	it("allows an already-disabled browser edit during independent background work", async () => {
+		const before = await readServices();
+		const release = acquireIndependentCleanupOperationGuard();
+		try {
+			const response = await update("candidate", browserEdit());
+			expect(response.statusCode).toBe(200);
+			expect(await readServices()).toEqual(
+				before.map((row) =>
+					row.id === "candidate" ? { ...row, label: "Edited synthetic service" } : row,
+				),
+			);
+		} finally {
+			release();
+		}
+	});
+
+	it("blocks a real disable during background work and permits it after that work settles", async () => {
+		const before = await readServices();
+		const release = acquireIndependentCleanupOperationGuard();
+		try {
+			const blocked = await update("sonarr-default", { enabled: false });
+			expect(blocked.statusCode).toBe(409);
+			expect(await readServices()).toEqual(before);
+		} finally {
+			release();
+		}
+		const retried = await update("sonarr-default", { enabled: false });
+		expect(retried.statusCode).toBe(200);
+		expect(await readServices()).toEqual(
+			before.map((row) => (row.id === "sonarr-default" ? { ...row, enabled: false } : row)),
+		);
+	});
+
+	it("still blocks an already-disabled edit during maintenance", async () => {
+		const before = await readServices();
+		const response = await withCleanupMaintenanceGuard(() => update("candidate", browserEdit()));
+		expect(response.statusCode).toBe(409);
+		expect(await readServices()).toEqual(before);
+	});
+
+	it("refuses a stale disabled admission if the record becomes enabled before the guarded read", async () => {
+		const before = await readServices();
+		const upsert = prisma.libraryCleanupConfig.upsert.bind(prisma.libraryCleanupConfig);
+		const concurrent = new Database(join(directory, "fixture.db"));
+		vi.spyOn(prisma.libraryCleanupConfig, "upsert").mockImplementationOnce((args) => {
+			// Real database interleaving between preliminary admission and the protected reread.
+			concurrent
+				.prepare("UPDATE ServiceInstance SET enabled=1, label=? WHERE id=? AND userId=?")
+				.run("Concurrent enable", "candidate", "user-1");
+			return upsert(args);
+		});
+		const release = acquireIndependentCleanupOperationGuard();
+		try {
+			const response = await update("candidate", browserEdit());
+			expect(response.statusCode).toBe(409);
+			expect(await readServices()).toEqual(
+				before.map((row) =>
+					row.id === "candidate" ? { ...row, enabled: true, label: "Concurrent enable" } : row,
+				),
+			);
+		} finally {
+			release();
+			concurrent.close();
+		}
+	});
+
+	it("cannot edit another owner's disabled record while background work is active", async () => {
+		await prisma.serviceInstance.updateMany({
+			where: { id: "other-sonarr", userId: "user-2" },
+			data: { enabled: false },
+		});
+		const before = await readServices();
+		const release = acquireIndependentCleanupOperationGuard();
+		try {
+			const response = await update("other-sonarr", browserEdit());
+			expect(response.statusCode).toBe(404);
+			expect(await readServices()).toEqual(before);
+		} finally {
+			release();
+		}
+	});
 });
 
 afterAll(async () => {
