@@ -8,6 +8,7 @@
 
 import { ArrError } from "arr-sdk";
 import type { ArrClient } from "../../arr/client-factory.js";
+import { acquireArrItemWriteLock } from "../../arr/item-write-lock.js";
 import type { ServiceType } from "../../prisma.js";
 import type {
 	DestWriteResult,
@@ -98,7 +99,9 @@ function createWriter(config: ArrWriterConfig): DestWriter {
 			let labelsApplied = 0;
 			let failures = 0;
 			for (const item of matched) {
+				let releaseTarget: (() => void) | undefined;
 				try {
+					releaseTarget = await acquireArrItemWriteLock(destInstance, item.id);
 					// biome-ignore lint/suspicious/noExplicitAny: SDK union typing requires runtime accessor
 					const resource = (arrClient as any)[config.itemsAccessor];
 					// Radarr/Sonarr PUT endpoints require the full resource —
@@ -136,6 +139,8 @@ function createWriter(config: ArrWriterConfig): DestWriter {
 						"Failed to update *arr item tags",
 					);
 					failures++;
+				} finally {
+					releaseTarget?.();
 				}
 			}
 

@@ -330,3 +330,46 @@ describe("sonarrDestWriter — issue #384 regression", () => {
 		);
 	});
 });
+
+describe("participating ARR item writers", () => {
+	it("conserves concurrent Label Sync additions through equivalent endpoint instances and same-title peers", async () => {
+		let current = fullMovie(100, [1]);
+		const peer = { ...fullMovie(200, [9]), title: current.title };
+		const beforePeer = structuredClone(peer);
+		const update = vi.fn(async (_id: number, value: typeof current) => {
+			current = structuredClone(value);
+			return current;
+		});
+		const client = {
+			tag: {
+				getAll: async () => [
+					{ id: 2, label: "alpha" },
+					{ id: 3, label: "beta" },
+				],
+			},
+			movie: {
+				getAll: async () => [structuredClone(current), structuredClone(peer)],
+				getById: async () => structuredClone(current),
+				update,
+			},
+		};
+		const options = (tag: string, id: string, baseUrl: string) =>
+			makeOpts({
+				rule: makeRule({ id, destTagName: tag }),
+				destInstance: { ...makeOpts({}).destInstance, id, baseUrl },
+				arrClientFactory: { create: () => client } as unknown as DestWriterOpts["arrClientFactory"],
+			});
+		const results = await Promise.all([
+			radarrDestWriter.applyLabels(options("alpha", "one", "HTTP://labels-concurrent.invalid:80/")),
+			radarrDestWriter.applyLabels(options("beta", "two", "http://labels-concurrent.invalid")),
+		]);
+		expect(results).toEqual([
+			{ matchesFound: 1, labelsApplied: 1, failures: 0 },
+			{ matchesFound: 1, labelsApplied: 1, failures: 0 },
+		]);
+		expect(current.tags).toEqual([1, 2, 3]);
+		expect({ ...current, tags: [] }).toEqual({ ...fullMovie(100), tags: [] });
+		expect(peer).toEqual(beforePeer);
+		expect(update).toHaveBeenCalledTimes(2);
+	});
+});

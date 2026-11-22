@@ -12,6 +12,7 @@ import {
 	isReadarrClient,
 	isSonarrClient,
 } from "../../lib/arr/client-helpers.js";
+import { acquireArrItemWriteLock } from "../../lib/arr/item-write-lock.js";
 import {
 	areRequestedMonitorRowsConfirmed,
 	isMonitoringResourceForTarget,
@@ -164,7 +165,9 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 				new Set(selected).size !== selected.length)
 		)
 			return reply.status(400).send({ error: "Invalid season selection" });
+		let releaseTarget: (() => void) | undefined;
 		try {
+			releaseTarget = await acquireArrItemWriteLock(instance, itemId);
 			let acknowledged: unknown, itemType: "movie" | "series" | "artist" | "author";
 			let expectedSeasons: ReturnType<typeof monitoringSeasons>;
 			if (isRadarrClient(client)) {
@@ -251,6 +254,8 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 		} catch {
 			request.log.warn("Monitoring update not confirmed");
 			return unconfirmed(reply);
+		} finally {
+			releaseTarget?.();
 		}
 	});
 	app.post("/library/episode/monitor", async (request, reply) => {

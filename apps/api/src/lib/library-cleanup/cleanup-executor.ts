@@ -19,6 +19,7 @@ import {
 import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { Prisma } from "../../generated/prisma/client.js";
 import { isNotFoundError } from "../arr/client-factory.js";
+import { acquireArrItemWriteLock } from "../arr/item-write-lock.js";
 import { evidenceFingerprint } from "../evidence-fingerprint.js";
 import {
 	collectJellyfinCacheLiveEvidence,
@@ -10862,110 +10863,129 @@ async function unmonitorInArr(
 	if (safetyPlan.kind !== "verified_arr_target" && safetyPlan.kind !== "verified_sonarr_episode") {
 		throw new Error("A verified ARR target identity is required before unmonitoring");
 	}
-	const client = arrClientFactory.create(instance);
+	const releaseTarget =
+		safetyPlan.kind === "verified_arr_target"
+			? await acquireArrItemWriteLock(instance, arrItemId)
+			: undefined;
+	try {
+		const client = arrClientFactory.create(instance);
 
-	switch (instance.service) {
-		case "RADARR": {
-			const radarr = client as InstanceType<typeof RadarrClient>;
-			const step = "radarr_movie_unmonitor";
-			await mutationAudit?.prepare(step);
-			const movie = await radarr.movie.getById(arrItemId);
-			assertVerifiedArrTargetUnchanged(instance, movie.tmdbId, movie.path, safetyPlan.target);
-			await assertMutationAuthority?.({ seriesTransition: "unchanged" });
-			if (!isMonitoringResourceForTarget(movie, arrItemId) || typeof movie.monitored !== "boolean")
-				throw new ParentUnmonitorOutcomeUnknownError(new Error("Invalid current monitoring state"));
-			mutationAudit?.attempted(step);
-			let writeError: unknown;
-			try {
-				await radarr.movie.update(arrItemId, { ...movie, id: arrItemId, monitored: false });
-			} catch (error) {
-				writeError = error;
-			}
-			let current: Awaited<ReturnType<typeof radarr.movie.getById>>;
-			try {
-				current = await radarr.movie.getById(arrItemId);
-			} catch (error) {
-				throw new ParentUnmonitorOutcomeUnknownError(error);
-			}
-			if (
-				!isMonitoringResourceForTarget(current, arrItemId) ||
-				typeof current.monitored !== "boolean"
-			)
-				throw new ParentUnmonitorOutcomeUnknownError(new Error("Invalid monitoring readback"));
-			assertVerifiedArrTargetUnchanged(instance, current.tmdbId, current.path, safetyPlan.target);
-			if (current.monitored !== false)
-				throw writeError ?? new Error("Radarr did not apply the selected unmonitor");
-			return current;
-		}
-		case "SONARR": {
-			const sonarr = client as InstanceType<typeof SonarrClient>;
-			if (safetyPlan.kind === "verified_sonarr_episode") {
-				const step = "sonarr_episode_unmonitor";
+		switch (instance.service) {
+			case "RADARR": {
+				const radarr = client as InstanceType<typeof RadarrClient>;
+				const step = "radarr_movie_unmonitor";
 				await mutationAudit?.prepare(step);
-				await assertVerifiedSonarrEpisodeUnchanged(sonarr, arrItemId, safetyPlan, {
-					monitoredMode: "allow_unmonitored",
-				});
-				await assertMutationAuthority?.();
-				mutationAudit?.attempted(step);
-				try {
-					await sonarr.episode.setMonitored([safetyPlan.episode.arrEpisodeId], false);
-				} catch (error) {
-					const unmonitored = await sonarrEpisodeRemainsUnmonitored(sonarr, arrItemId, safetyPlan);
-					if (unmonitored === false) throw error;
-					if (unmonitored === null) {
-						throw new SonarrEpisodeUnmonitorOutcomeUnknownError(error);
-					}
-				}
-				const unmonitored = await sonarrEpisodeRemainsUnmonitored(sonarr, arrItemId, safetyPlan);
-				if (unmonitored === false) {
-					throw new Error("Sonarr did not apply the approved episode unmonitor");
-				}
-				if (unmonitored === null) {
-					throw new SonarrEpisodeUnmonitorOutcomeUnknownError(
-						new Error("Sonarr episode unmonitor readback was unavailable"),
+				const movie = await radarr.movie.getById(arrItemId);
+				assertVerifiedArrTargetUnchanged(instance, movie.tmdbId, movie.path, safetyPlan.target);
+				await assertMutationAuthority?.({ seriesTransition: "unchanged" });
+				if (
+					!isMonitoringResourceForTarget(movie, arrItemId) ||
+					typeof movie.monitored !== "boolean"
+				)
+					throw new ParentUnmonitorOutcomeUnknownError(
+						new Error("Invalid current monitoring state"),
 					);
+				mutationAudit?.attempted(step);
+				let writeError: unknown;
+				try {
+					await radarr.movie.update(arrItemId, { ...movie, id: arrItemId, monitored: false });
+				} catch (error) {
+					writeError = error;
 				}
-				break;
+				let current: Awaited<ReturnType<typeof radarr.movie.getById>>;
+				try {
+					current = await radarr.movie.getById(arrItemId);
+				} catch (error) {
+					throw new ParentUnmonitorOutcomeUnknownError(error);
+				}
+				if (
+					!isMonitoringResourceForTarget(current, arrItemId) ||
+					typeof current.monitored !== "boolean"
+				)
+					throw new ParentUnmonitorOutcomeUnknownError(new Error("Invalid monitoring readback"));
+				assertVerifiedArrTargetUnchanged(instance, current.tmdbId, current.path, safetyPlan.target);
+				if (current.monitored !== false)
+					throw writeError ?? new Error("Radarr did not apply the selected unmonitor");
+				return current;
 			}
-			const step = "sonarr_series_unmonitor";
-			await mutationAudit?.prepare(step);
-			const series = await sonarr.series.getById(arrItemId);
-			assertVerifiedArrTargetUnchanged(instance, series.tvdbId, series.path, safetyPlan.target);
-			await assertMutationAuthority?.({ seriesTransition: "unchanged" });
-			if (
-				!isMonitoringResourceForTarget(series, arrItemId) ||
-				typeof series.monitored !== "boolean"
-			)
-				throw new ParentUnmonitorOutcomeUnknownError(new Error("Invalid current monitoring state"));
-			mutationAudit?.attempted(step);
-			let writeError: unknown;
-			try {
-				await sonarr.series.update(arrItemId, {
-					...series,
-					id: arrItemId,
-					monitored: false,
-				} as Parameters<typeof sonarr.series.update>[1]);
-			} catch (error) {
-				writeError = error;
+			case "SONARR": {
+				const sonarr = client as InstanceType<typeof SonarrClient>;
+				if (safetyPlan.kind === "verified_sonarr_episode") {
+					const step = "sonarr_episode_unmonitor";
+					await mutationAudit?.prepare(step);
+					await assertVerifiedSonarrEpisodeUnchanged(sonarr, arrItemId, safetyPlan, {
+						monitoredMode: "allow_unmonitored",
+					});
+					await assertMutationAuthority?.();
+					mutationAudit?.attempted(step);
+					try {
+						await sonarr.episode.setMonitored([safetyPlan.episode.arrEpisodeId], false);
+					} catch (error) {
+						const unmonitored = await sonarrEpisodeRemainsUnmonitored(
+							sonarr,
+							arrItemId,
+							safetyPlan,
+						);
+						if (unmonitored === false) throw error;
+						if (unmonitored === null) {
+							throw new SonarrEpisodeUnmonitorOutcomeUnknownError(error);
+						}
+					}
+					const unmonitored = await sonarrEpisodeRemainsUnmonitored(sonarr, arrItemId, safetyPlan);
+					if (unmonitored === false) {
+						throw new Error("Sonarr did not apply the approved episode unmonitor");
+					}
+					if (unmonitored === null) {
+						throw new SonarrEpisodeUnmonitorOutcomeUnknownError(
+							new Error("Sonarr episode unmonitor readback was unavailable"),
+						);
+					}
+					break;
+				}
+				const step = "sonarr_series_unmonitor";
+				await mutationAudit?.prepare(step);
+				const series = await sonarr.series.getById(arrItemId);
+				assertVerifiedArrTargetUnchanged(instance, series.tvdbId, series.path, safetyPlan.target);
+				await assertMutationAuthority?.({ seriesTransition: "unchanged" });
+				if (
+					!isMonitoringResourceForTarget(series, arrItemId) ||
+					typeof series.monitored !== "boolean"
+				)
+					throw new ParentUnmonitorOutcomeUnknownError(
+						new Error("Invalid current monitoring state"),
+					);
+				mutationAudit?.attempted(step);
+				let writeError: unknown;
+				try {
+					await sonarr.series.update(arrItemId, {
+						...series,
+						id: arrItemId,
+						monitored: false,
+					} as Parameters<typeof sonarr.series.update>[1]);
+				} catch (error) {
+					writeError = error;
+				}
+				let current: Awaited<ReturnType<typeof sonarr.series.getById>>;
+				try {
+					current = await sonarr.series.getById(arrItemId);
+				} catch (error) {
+					throw new ParentUnmonitorOutcomeUnknownError(error);
+				}
+				if (
+					!isMonitoringResourceForTarget(current, arrItemId) ||
+					typeof current.monitored !== "boolean"
+				)
+					throw new ParentUnmonitorOutcomeUnknownError(new Error("Invalid monitoring readback"));
+				assertVerifiedArrTargetUnchanged(instance, current.tvdbId, current.path, safetyPlan.target);
+				if (current.monitored !== false)
+					throw writeError ?? new Error("Sonarr did not apply the selected unmonitor");
+				return current;
 			}
-			let current: Awaited<ReturnType<typeof sonarr.series.getById>>;
-			try {
-				current = await sonarr.series.getById(arrItemId);
-			} catch (error) {
-				throw new ParentUnmonitorOutcomeUnknownError(error);
-			}
-			if (
-				!isMonitoringResourceForTarget(current, arrItemId) ||
-				typeof current.monitored !== "boolean"
-			)
-				throw new ParentUnmonitorOutcomeUnknownError(new Error("Invalid monitoring readback"));
-			assertVerifiedArrTargetUnchanged(instance, current.tvdbId, current.path, safetyPlan.target);
-			if (current.monitored !== false)
-				throw writeError ?? new Error("Sonarr did not apply the selected unmonitor");
-			return current;
+			default:
+				throw new Error(`Unsupported service type for unmonitor: ${instance.service}`);
 		}
-		default:
-			throw new Error(`Unsupported service type for unmonitor: ${instance.service}`);
+	} finally {
+		releaseTarget?.();
 	}
 }
 

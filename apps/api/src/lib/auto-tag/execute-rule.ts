@@ -470,6 +470,9 @@ async function processInstance(args: ProcessInstanceArgs): Promise<ProcessInstan
 				tags: [...latestTags, tagId],
 			});
 			applied++;
+			// Downstream destinations may acquire this or another ARR target lock.
+			// Release before chaining; the finally release remains idempotent.
+			releaseTarget();
 
 			// Chain into Label Sync (Phase B): if any rules source from this
 			// (instance, tagName), fire them inline so the destination service

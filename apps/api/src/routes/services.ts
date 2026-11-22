@@ -654,7 +654,12 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 				const resetOtherDefaults = async (
 					prisma: Pick<typeof app.prisma, "serviceInstance">,
 				): Promise<void> => {
-					if (payload.isDefault === true || payload.service) {
+					if (
+						payload.isDefault === true ||
+						(targetService !== existing.service &&
+							existing.isDefault &&
+							payload.isDefault !== false)
+					) {
 						await prisma.serviceInstance.updateMany({
 							where: { service: targetService, userId, NOT: { id } },
 							data: { isDefault: false },
