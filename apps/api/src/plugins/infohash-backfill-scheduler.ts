@@ -23,8 +23,9 @@
  *      last sweep. Incremental, low-cost.
  *
  * Per-startup caps: 10k history and movie rows, plus 40k episode rows.
- * A five-minute probe retries only due correlations in smaller batches;
- * the six-hour steady-state pass separately refreshes ARR metadata.
+ * A five-minute probe retries due correlations in smaller batches and
+ * known failed metadata targets independently of correlation counts;
+ * the six-hour steady-state pass remains the broad metadata fallback.
  */
 
 import type { FastifyInstance } from "fastify";
@@ -34,6 +35,7 @@ import {
 	CleanupMaintenanceConflictError,
 } from "../lib/library-cleanup/cleanup-maintenance-gate.js";
 import {
+	type EpisodeFileSyncResult,
 	runEpisodeBackfillSweep,
 	runEpisodeFileSync,
 } from "../lib/library-sync/episode-file-backfill.js";
@@ -56,6 +58,9 @@ const BATCH_SIZE = 500;
 const EPISODE_CATCHUP_BATCH_SIZE = 2_000;
 const EPISODE_RETRY_BATCH_SIZE = 1_000;
 const PER_ROW_SLEEP_MS = 100;
+const METADATA_RETRY_QUEUE_CAP = 1_000;
+const METADATA_RETRY_BATCH_SIZE = 100;
+const METADATA_RETRY_BACKOFF_MS = [5 * 60_000, 10 * 60_000, 20 * 60_000];
 
 const infoHashBackfillSchedulerPlugin = fp(
 	async (app: FastifyInstance) => {
@@ -68,6 +73,86 @@ const infoHashBackfillSchedulerPlugin = fp(
 		let catchUpGapHandle: ReturnType<typeof setTimeout> | null = null;
 		let wakeCatchUpGap: (() => void) | null = null;
 		const pendingRounds = new Set<Promise<void>>();
+		// Process-local hints, never authority or a durable repair guarantee.
+		// A restart or an exhausted budget falls back to the ordinary 6h sync.
+		const metadataRetries = new Map<string, { attempts: number; retryAt: number }>();
+
+		function recordMetadataOutcome(result: EpisodeFileSyncResult) {
+			const failed = new Set(result.failedSeriesIds ?? []);
+			for (const id of result.attemptedSeriesIds ?? []) {
+				if (!failed.has(id)) metadataRetries.delete(id);
+			}
+			let overflow = 0;
+			for (const id of failed) {
+				if (metadataRetries.has(id)) continue;
+				if (metadataRetries.size >= METADATA_RETRY_QUEUE_CAP) {
+					overflow++;
+					continue;
+				}
+				metadataRetries.set(id, {
+					attempts: 0,
+					retryAt: Date.now() + METADATA_RETRY_BACKOFF_MS[0]!,
+				});
+			}
+			if (result.errors > 0) {
+				app.log.warn(
+					{ errors: result.errors, pendingSeries: metadataRetries.size, overflow },
+					"Sonarr metadata sync incomplete; known failures have bounded repair hints, ordinary scheduled sync remains fallback",
+				);
+			}
+		}
+
+		async function retryEpisodeMetadata(ids: string[]): Promise<void> {
+			for (const id of ids) metadataRetries.get(id)!.attempts++;
+			let failed = new Set(ids);
+			try {
+				const result = await runEpisodeFileSync({
+					app,
+					log: app.log,
+					seriesCap: METADATA_RETRY_BATCH_SIZE,
+					retrySeriesIds: ids,
+				});
+				const attempted = new Set(result.attemptedSeriesIds ?? []);
+				failed =
+					result.attemptedSeriesIds && result.failedSeriesIds
+						? new Set(result.failedSeriesIds)
+						: new Set(ids);
+				if (result.errors > 0)
+					app.log.warn(
+						{ errors: result.errors, selectedSeries: ids.length },
+						"Sonarr metadata repair incomplete; remaining attempts are bounded",
+					);
+				// An errored result without a per-series outcome cannot prove a
+				// selected target succeeded. Keep only our already-known hints.
+				if (result.errors > 0)
+					for (const id of ids) {
+						if (!attempted.has(id)) failed.add(id);
+					}
+			} catch {
+				app.log.warn(
+					{ category: "metadata-retry-failed" },
+					"Sonarr metadata repair failed; known targets retain only their remaining retry budget",
+				);
+			}
+			let exhausted = 0;
+			for (const id of ids) {
+				const retry = metadataRetries.get(id)!;
+				if (!failed.has(id)) {
+					// Includes rows no longer eligible in the current enabled topology.
+					metadataRetries.delete(id);
+				} else if (retry.attempts >= METADATA_RETRY_BACKOFF_MS.length) {
+					metadataRetries.delete(id);
+					exhausted++;
+				} else {
+					retry.retryAt = Date.now() + METADATA_RETRY_BACKOFF_MS[retry.attempts]!;
+				}
+			}
+			if (exhausted > 0)
+				app.log.warn(
+					{ exhausted },
+					"Sonarr metadata repair budget exhausted; ordinary scheduled sync remains fallback",
+				);
+		}
 
 		async function runOwnedRound(work: () => Promise<unknown>): Promise<void> {
 			if (cancelled) return;
@@ -89,10 +174,10 @@ const infoHashBackfillSchedulerPlugin = fp(
 
 		async function runOneSweep({
 			syncEpisodeFiles = true,
-			onEpisodeSyncSuccess,
+			onEpisodeSyncComplete,
 		}: {
 			syncEpisodeFiles?: boolean;
-			onEpisodeSyncSuccess?: () => void;
+			onEpisodeSyncComplete?: () => void;
 		} = {}): Promise<BackfillSweepResult | null> {
 			if (cancelled) return null;
 			if (isRunning) {
@@ -145,9 +230,8 @@ const infoHashBackfillSchedulerPlugin = fp(
 						);
 					}
 
-					// Refresh Sonarr file metadata once per successful catch-up
-					// cycle, then repeat only bounded inode correlation. A failed
-					// metadata refresh remains eligible on the next catch-up batch.
+					// Refresh metadata once per catch-up cycle. Known failures enter
+					// bounded repair instead of repeating a broad metadata scan.
 					let episodeFilesUpserted = 0;
 					if (syncEpisodeFiles) {
 						try {
@@ -156,15 +240,17 @@ const infoHashBackfillSchedulerPlugin = fp(
 								log: app.log,
 								seriesCap: BATCH_SIZE * 2,
 							});
+							recordMetadataOutcome(episodeSync);
 							episodeFilesUpserted = episodeSync.filesUpserted;
 							if (captured) captured.errors += episodeSync.errors;
-							if (episodeSync.errors === 0) onEpisodeSyncSuccess?.();
 						} catch (episodeErr) {
 							if (captured) captured.errors++;
 							app.log.warn(
 								{ err: episodeErr },
-								"infoHash episode-file metadata sync failed; retrying on the next catch-up batch",
+								"infoHash episode-file metadata sync failed without known targets; ordinary scheduled sync remains fallback",
 							);
+						} finally {
+							onEpisodeSyncComplete?.();
 						}
 					}
 					try {
@@ -215,9 +301,25 @@ const infoHashBackfillSchedulerPlugin = fp(
 			let release: (() => void) | undefined;
 			try {
 				release = acquireIndependentCleanupOperationGuard();
-				const due = await countDueDeferredCorrelationCandidates(app);
-				if (due === 0) return;
+				const metadataIds = [...metadataRetries]
+					.filter(([, retry]) => retry.retryAt <= Date.now())
+					.slice(0, METADATA_RETRY_BATCH_SIZE)
+					.map(([id]) => id);
+				let due = 0;
+				try {
+					due = await countDueDeferredCorrelationCandidates(app);
+				} catch (error) {
+					if (metadataIds.length === 0 || error instanceof CleanupMaintenanceConflictError)
+						throw error;
+					app.log.warn(
+						{ category: "correlation-retry-probe-failed" },
+						"infoHash correlation count failed; continuing known metadata repair only",
+					);
+				}
+				if (due === 0 && metadataIds.length === 0) return;
 				await app.schedulerRegistry.track(JOB_ID.infoHashBackfill, async () => {
+					if (metadataIds.length > 0) await retryEpisodeMetadata(metadataIds);
+					if (due === 0) return;
 					const movie = await runPathBackfillSweep({
 						app,
 						log: app.log,
@@ -324,7 +426,7 @@ const infoHashBackfillSchedulerPlugin = fp(
 					);
 					lastSweep = await runOneSweep({
 						syncEpisodeFiles: episodeSyncNeeded,
-						onEpisodeSyncSuccess: () => {
+						onEpisodeSyncComplete: () => {
 							episodeSyncNeeded = false;
 						},
 					});

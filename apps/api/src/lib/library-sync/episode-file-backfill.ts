@@ -75,6 +75,9 @@ import { CURRENT_INODE_SOURCE } from "./inode-correlation-upgrade.js";
 const BACKFILL_MISS_RETRY_MS = 30 * 60_000;
 
 export interface EpisodeFileSyncResult {
+	/** Internal cache-row identities for bounded scheduler repair admission. */
+	attemptedSeriesIds?: string[];
+	failedSeriesIds?: string[];
 	usersScanned: number;
 	seriesScanned: number;
 	filesUpserted: number;
@@ -88,6 +91,8 @@ export interface EpisodeFileSyncArgs {
 	log?: FastifyBaseLogger;
 	/** Cap on series fetched per sweep. Each series = one Sonarr API call. */
 	seriesCap: number;
+	/** Retry only these cache rows, re-resolved against current enabled instances. */
+	retrySeriesIds?: readonly string[];
 }
 
 /**
@@ -106,8 +111,11 @@ export async function runEpisodeFileSync({
 	app,
 	log,
 	seriesCap,
+	retrySeriesIds,
 }: EpisodeFileSyncArgs): Promise<EpisodeFileSyncResult> {
 	const startedAt = Date.now();
+	const attemptedSeriesIds: string[] = [];
+	const failedSeriesIds: string[] = [];
 	const result: EpisodeFileSyncResult = {
 		usersScanned: 0,
 		seriesScanned: 0,
@@ -115,11 +123,37 @@ export async function runEpisodeFileSync({
 		filesDeleted: 0,
 		errors: 0,
 		durationMs: 0,
+		attemptedSeriesIds,
+		failedSeriesIds,
 	};
 
 	const sonarrInstances = await app.prisma.serviceInstance.findMany({
 		where: { service: "SONARR", enabled: true },
 	});
+
+	const select = {
+		id: true,
+		instanceId: true,
+		arrItemId: true,
+		title: true,
+		data: true,
+		cachedAt: true,
+	} as const;
+	// Hints authorize no writes: look up current rows and current enabled
+	// connections before constructing clients or entering the normal fences.
+	const retrySeries =
+		retrySeriesIds !== undefined
+			? await app.prisma.libraryCache.findMany({
+					where: {
+						id: { in: [...new Set(retrySeriesIds)].slice(0, seriesCap) },
+						instanceId: { in: sonarrInstances.map((instance) => instance.id) },
+						itemType: "series",
+						hasFile: true,
+					},
+					select,
+					take: seriesCap,
+				})
+			: undefined;
 
 	const seenUserIds = new Set(sonarrInstances.map((instance) => instance.userId));
 	const availableClients: Array<{
@@ -127,6 +161,10 @@ export async function runEpisodeFileSync({
 		client: ReturnType<typeof app.arrClientFactory.create>;
 	}> = [];
 	for (const sonarrInstance of sonarrInstances) {
+		const selectedRetrySeries = retrySeries?.filter(
+			(series) => series.instanceId === sonarrInstance.id,
+		);
+		if (selectedRetrySeries?.length === 0) continue;
 		try {
 			availableClients.push({
 				sonarrInstance,
@@ -134,8 +172,18 @@ export async function runEpisodeFileSync({
 			});
 		} catch (err) {
 			result.errors++;
+			for (const series of selectedRetrySeries ?? []) {
+				attemptedSeriesIds.push(series.id);
+				failedSeriesIds.push(series.id);
+			}
 			await app.prisma.libraryCache.updateMany({
-				where: { instanceId: sonarrInstance.id, itemType: "series" },
+				where: {
+					instanceId: sonarrInstance.id,
+					itemType: "series",
+					...(selectedRetrySeries
+						? { id: { in: selectedRetrySeries.map((series) => series.id) } }
+						: {}),
+				},
 				data: { episodeFileInventoryReceipt: null },
 			});
 			log?.warn(
@@ -148,22 +196,15 @@ export async function runEpisodeFileSync({
 	// Reserve a fair bounded share for each healthy Sonarr connection, then
 	// use any unused slots for the globally oldest attempts. With cap < the
 	// connection count, the global oldest-attempt query rotates across them.
-	const select = {
-		id: true,
-		instanceId: true,
-		arrItemId: true,
-		title: true,
-		data: true,
-		cachedAt: true,
-	} as const;
 	const orderBy = [
 		{ episodeFileInventoryAttemptedAt: "asc" as const },
 		{ cachedAt: "asc" as const },
 		{ id: "asc" as const },
 	];
 	const quota = availableClients.length > 0 ? Math.floor(seriesCap / availableClients.length) : 0;
-	const selectedSeries = (
-		quota > 0
+	const selectedSeries =
+		retrySeries ??
+		(quota > 0
 			? await Promise.all(
 					availableClients.map(({ sonarrInstance }) =>
 						app.prisma.libraryCache.findMany({
@@ -175,9 +216,9 @@ export async function runEpisodeFileSync({
 					),
 				)
 			: []
-	).flat();
+		).flat();
 	const remaining = Math.max(0, seriesCap - selectedSeries.length);
-	if (remaining > 0 && availableClients.length > 0) {
+	if (retrySeries === undefined && remaining > 0 && availableClients.length > 0) {
 		const selectedIds = selectedSeries.map((series) => series.id);
 		selectedSeries.push(
 			...(await app.prisma.libraryCache.findMany({
@@ -199,6 +240,7 @@ export async function runEpisodeFileSync({
 
 		for (const series of seriesRows) {
 			result.seriesScanned++;
+			attemptedSeriesIds.push(series.id);
 			const attemptToken = randomUUID();
 			// Revoke the previous complete-list receipt before touching any file
 			// rows. A crash, malformed provider row, or partial write then leaves
@@ -219,10 +261,12 @@ export async function runEpisodeFileSync({
 				});
 				if (invalidated.count !== 1) {
 					result.errors++;
+					failedSeriesIds.push(series.id);
 					continue;
 				}
 			} catch (err) {
 				result.errors++;
+				failedSeriesIds.push(series.id);
 				log?.warn(
 					{ err: getErrorMessage(err), sonarrInstanceId: sonarrInstance.id },
 					"episode-file-sync: failed to invalidate series coverage receipt",
@@ -288,6 +332,7 @@ export async function runEpisodeFileSync({
 					!secondIdentities
 				) {
 					result.errors++;
+					failedSeriesIds.push(series.id);
 					log?.warn(
 						{
 							cachedEpisodeCount: cachedEvidence?.episodeWithFileCount,
@@ -311,6 +356,7 @@ export async function runEpisodeFileSync({
 				stableReceipt = secondReceipt;
 			} catch (err) {
 				result.errors++;
+				failedSeriesIds.push(series.id);
 				log?.warn(
 					{
 						err: getErrorMessage(err),
@@ -461,6 +507,7 @@ export async function runEpisodeFileSync({
 				result.filesDeleted += counts.deleted;
 			} catch (err) {
 				result.errors++;
+				failedSeriesIds.push(series.id);
 				log?.warn(
 					{ err: getErrorMessage(err), sonarrInstanceId: sonarrInstance.id },
 					"episode-file-sync: series receipt transaction failed",

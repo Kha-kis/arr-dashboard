@@ -1,11 +1,11 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { installRuntimeFixture } from "./runtime-fixture.js";
 import { withCleanupMaintenanceGuard } from "../../lib/library-cleanup/cleanup-maintenance-gate.js";
 import { JOB_ID } from "../../lib/scheduler-registry/job-definitions.js";
 import scheduler from "../infohash-backfill-scheduler.js";
 import registry from "../scheduler-registry.js";
+import { installRuntimeFixture } from "./runtime-fixture.js";
 
 // Real count helpers, registry, maintenance admission and Fastify hooks. Sweep
 // boundaries are synthetic: their provider matching/publication have separate
@@ -58,6 +58,8 @@ async function boot(
 		hold?: { phase: Phase; gate: Promise<void>; call?: number; reject?: boolean };
 		backlog?: number[];
 		preClose?: Promise<void>;
+		metadataFailure?: boolean;
+		dueCount?: number;
 	} = {},
 ) {
 	const state = {
@@ -144,7 +146,7 @@ async function boot(
 						: phase === "candidate-movie"
 							? (backlog.shift() ?? 0)
 							: phase === "due-movie"
-								? 1
+								? (options.dueCount ?? 1)
 								: 7;
 				},
 			},
@@ -176,7 +178,7 @@ async function boot(
 						});
 					}
 					await pause(phase);
-					return state.armed && phase === "due-episode" ? 1 : 0;
+					return state.armed && phase === "due-episode" ? (options.dueCount ?? 1) : 0;
 				},
 			},
 		},
@@ -197,7 +199,7 @@ async function boot(
 		boundary[phase].mockImplementation(async (args) => {
 			expect(args.app).toBe(app);
 			if (phase === "history") expect(args).toMatchObject({ batchSize: 500, perRowSleepMs: 100 });
-			if (phase === "metadata") expect(args.seriesCap).toBe(1000);
+			if (phase === "metadata") expect(args.seriesCap).toBe(args.retrySeriesIds ? 100 : 1000);
 			if (phase === "path") expect(args.batchSize).toBe(500);
 			if (phase === "episode") expect(args.batchSize).toBe(args.dueOnly ? 1000 : 2000);
 			await pause(phase);
@@ -206,9 +208,17 @@ async function boot(
 				rowsScanned: 2,
 				rowsHashed: 1,
 				rowsMissed: 1,
-				errors: 0,
+				errors:
+					phase === "metadata" && options.metadataFailure && counts.get("metadata") === 1 ? 1 : 0,
 				durationMs: 0,
 				filesUpserted: 2,
+				...(phase === "metadata"
+					? {
+							attemptedSeriesIds: ["failed-series"],
+							failedSeriesIds:
+								options.metadataFailure && counts.get("metadata") === 1 ? ["failed-series"] : [],
+						}
+					: {}),
 			};
 		});
 	app.register(
@@ -325,6 +335,72 @@ afterEach(async () => {
 	vi.useRealTimers();
 });
 describe("infoHash backfill accepted-work lifecycle", () => {
+	for (const reject of [false, true]) {
+		it(`owns and drains admitted metadata repair ${reject ? "failure" : "success"} without overlap`, async () => {
+			vi.useFakeTimers({
+				toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"],
+			});
+			const held = deferred();
+			const h = await boot({
+				metadataFailure: true,
+				dueCount: 0,
+				backlog: [1, 0],
+				hold: { phase: "metadata", call: 2, gate: held.promise, reject },
+			});
+			await h.start("startup");
+			await vi.advanceTimersByTimeAsync(60_000 + 5 * 60_000);
+			await settle();
+			expect(h.counts.get("metadata")).toBe(2);
+			h.callback("steady")();
+			h.callback("retry")();
+			await settle();
+			expect(h.counts.get("history")).toBe(1);
+			expect(h.counts.get("metadata")).toBe(2);
+			const close = await h.closePending();
+			try {
+				expect(close.settled()).toBe(false);
+				await expect(withCleanupMaintenanceGuard(async () => undefined)).rejects.toMatchObject({
+					statusCode: 409,
+				});
+				h.callback("retry")();
+				await settle();
+				expect(h.counts.get("metadata")).toBe(2);
+			} finally {
+				held.resolve();
+				await close.promise;
+			}
+			expect(h.state.pendingAtTeardown).toBe(0);
+			expect(h.state.afterTeardown).toBe(0);
+			expect(h.forbidden).not.toHaveBeenCalled();
+		});
+	}
+
+	it("retains due metadata hints while maintenance denies admission", async () => {
+		vi.useFakeTimers({
+			toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"],
+		});
+		const h = await boot({ metadataFailure: true, dueCount: 0, backlog: [1, 0] });
+		await h.start("startup");
+		await vi.advanceTimersByTimeAsync(60_000);
+		const held = deferred();
+		const maintenance = withCleanupMaintenanceGuard(async () => held.promise);
+		await settle();
+		try {
+			await vi.advanceTimersByTimeAsync(5 * 60_000);
+			await settle();
+			expect(h.counts.get("metadata")).toBe(1);
+		} finally {
+			held.resolve();
+			await maintenance;
+		}
+		h.callback("retry")();
+		await settle();
+		expect(h.counts.get("metadata")).toBe(2);
+		expect(boundary.metadata).toHaveBeenLastCalledWith(
+			expect.objectContaining({ retrySeriesIds: ["failed-series"] }),
+		);
+	});
+
 	const scenarios: Array<{ origin: Origin; phases: Phase[] }> = [
 		{
 			origin: "startup",

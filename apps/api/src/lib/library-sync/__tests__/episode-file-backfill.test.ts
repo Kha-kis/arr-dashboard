@@ -240,6 +240,8 @@ describe("episode sync file replacement", () => {
 		};
 		const result = await runEpisodeFileSync({ app: app as never, seriesCap: 1 });
 		expect(result.errors).toBe(0);
+		expect(result.attemptedSeriesIds).toEqual(["series-1"]);
+		expect(result.failedSeriesIds).toEqual([]);
 		expect(updateSeries).toHaveBeenCalledTimes(2);
 		expect(updateSeries.mock.calls[0]?.[0]?.data).toMatchObject({
 			episodeFileInventoryReceipt: null,
@@ -270,6 +272,8 @@ describe("episode sync file replacement", () => {
 		upsert.mockRejectedValueOnce(new Error("synthetic database failure"));
 		const failed = await runEpisodeFileSync({ app: app as never, seriesCap: 1 });
 		expect(failed.errors).toBeGreaterThan(0);
+		expect(failed.attemptedSeriesIds).toEqual(["series-1"]);
+		expect(failed.failedSeriesIds).toEqual(["series-1"]);
 		expect(updateSeries).toHaveBeenCalledTimes(2);
 		expect(updateSeries.mock.calls[0]?.[0]?.data).toMatchObject({
 			episodeFileInventoryReceipt: null,
@@ -283,6 +287,8 @@ describe("episode sync file replacement", () => {
 		const deleteCount = app.prisma.episodeFileCache.deleteMany.mock.calls.length;
 		const shortened = await runEpisodeFileSync({ app: app as never, seriesCap: 1 });
 		expect(shortened.errors).toBeGreaterThan(0);
+		expect(shortened.attemptedSeriesIds).toEqual(["series-1"]);
+		expect(shortened.failedSeriesIds).toEqual(["series-1"]);
 		expect(app.prisma.episodeFileCache.deleteMany).toHaveBeenCalledTimes(deleteCount);
 		expect(updateSeries).toHaveBeenCalledOnce();
 
@@ -295,6 +301,8 @@ describe("episode sync file replacement", () => {
 		const upsertCount = upsert.mock.calls.length;
 		const changed = await runEpisodeFileSync({ app: app as never, seriesCap: 1 });
 		expect(changed.errors).toBeGreaterThan(0);
+		expect(changed.attemptedSeriesIds).toEqual(["series-1"]);
+		expect(changed.failedSeriesIds).toEqual(["series-1"]);
 		expect(fileRows).toHaveLength(2);
 		expect(upsert).toHaveBeenCalledTimes(upsertCount);
 		expect(deleteFiles).not.toHaveBeenCalled();
@@ -314,6 +322,188 @@ describe("episode sync file replacement", () => {
 		expect(settled.errors).toBe(0);
 		expect(settled.filesDeleted).toBe(1);
 		expect(fileRows).toHaveLength(1);
+	});
+});
+
+describe("episode metadata retry target resolution", () => {
+	function fixture() {
+		const rows = [
+			{ id: "current", instanceId: "enabled", arrItemId: 99, hasFile: true, itemType: "series" },
+			{ id: "unselected", instanceId: "enabled", arrItemId: 2, hasFile: true, itemType: "series" },
+			{ id: "disabled", instanceId: "disabled", arrItemId: 3, hasFile: true, itemType: "series" },
+			{ id: "no-file", instanceId: "enabled", arrItemId: 4, hasFile: false, itemType: "series" },
+			{ id: "movie", instanceId: "enabled", arrItemId: 5, hasFile: true, itemType: "movie" },
+		].map((row) => ({
+			...row,
+			title: "Synthetic",
+			cachedAt: new Date("2026-01-01"),
+			data: JSON.stringify({ statistics: { episodeFileCount: 1 }, sizeOnDisk: 1 }),
+		}));
+		const findSeries = vi.fn(
+			async ({
+				where,
+				take,
+			}: {
+				where: {
+					id: { in: string[] };
+					instanceId: { in: string[] };
+					itemType: string;
+					hasFile: boolean;
+				};
+				take: number;
+			}) =>
+				rows
+					.filter(
+						(row) =>
+							where.id.in.includes(row.id) &&
+							where.instanceId.in.includes(row.instanceId) &&
+							row.itemType === where.itemType &&
+							row.hasFile === where.hasFile,
+					)
+					.slice(0, take),
+		);
+		const updateSeries = vi.fn().mockResolvedValue({ count: 1 });
+		const file = {
+			id: 99,
+			seriesId: 99,
+			seasonNumber: 1,
+			relativePath: "current.mkv",
+			path: "/synthetic/current.mkv",
+			size: 1,
+		};
+		const getSeries = vi
+			.fn()
+			.mockResolvedValue({ id: 99, statistics: { episodeFileCount: 1, sizeOnDisk: 1 } });
+		const getFiles = vi.fn().mockResolvedValue([file]);
+		const tx = {
+			libraryCache: { updateMany: updateSeries },
+			episodeFileCache: {
+				findMany: vi.fn().mockResolvedValue([{ arrEpisodeFileId: 99, path: file.path, size: 1n }]),
+				upsert: vi.fn().mockResolvedValue({}),
+				deleteMany: vi.fn(),
+			},
+		};
+		const app = {
+			prisma: {
+				serviceInstance: {
+					findMany: vi.fn().mockResolvedValue([{ id: "enabled", userId: "owner" }]),
+				},
+				libraryCache: { findMany: findSeries, updateMany: updateSeries },
+				$transaction: vi.fn(async (work: (client: typeof tx) => Promise<unknown>) => work(tx)),
+			},
+			arrClientFactory: {
+				create: vi.fn(() => ({
+					series: { getById: getSeries },
+					episodeFile: { getAll: getFiles },
+				})),
+			},
+		};
+		return { app, tx, findSeries, updateSeries, getSeries, getFiles };
+	}
+
+	it("uses only selected current series on current enabled instances, with no quota-fill scan", async () => {
+		const h = fixture();
+		const result = await runEpisodeFileSync({
+			app: h.app as never,
+			seriesCap: 100,
+			retrySeriesIds: ["current", "disabled", "no-file", "movie", "removed"],
+		});
+		expect(h.app.prisma.serviceInstance.findMany).toHaveBeenCalledWith({
+			where: { service: "SONARR", enabled: true },
+		});
+		expect(h.findSeries).toHaveBeenCalledOnce();
+		expect(h.findSeries).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: {
+					id: { in: ["current", "disabled", "no-file", "movie", "removed"] },
+					instanceId: { in: ["enabled"] },
+					itemType: "series",
+					hasFile: true,
+				},
+				take: 100,
+			}),
+		);
+		expect(h.getSeries).toHaveBeenCalledTimes(2);
+		expect(h.getSeries).toHaveBeenCalledWith(99);
+		expect(h.getFiles).toHaveBeenCalledWith({ seriesId: 99 });
+		expect(result).toMatchObject({
+			seriesScanned: 1,
+			filesUpserted: 1,
+			filesDeleted: 0,
+			errors: 0,
+			attemptedSeriesIds: ["current"],
+			failedSeriesIds: [],
+		});
+		expect(h.updateSeries.mock.calls[0]?.[0].where).toMatchObject({
+			id: "current",
+			instanceId: "enabled",
+			cachedAt: new Date("2026-01-01"),
+		});
+		expect(h.updateSeries.mock.calls[1]?.[0].where).toMatchObject({
+			id: "current",
+			episodeFileInventoryReceipt: null,
+			episodeFileInventoryAttemptToken: expect.any(String),
+		});
+	});
+
+	it("treats an empty or no-longer-eligible selection as empty work", async () => {
+		for (const retrySeriesIds of [[], ["disabled", "removed"]]) {
+			const h = fixture();
+			const result = await runEpisodeFileSync({
+				app: h.app as never,
+				seriesCap: 100,
+				retrySeriesIds,
+			});
+			expect(result).toMatchObject({
+				seriesScanned: 0,
+				filesUpserted: 0,
+				errors: 0,
+				attemptedSeriesIds: [],
+				failedSeriesIds: [],
+			});
+			expect(h.findSeries).toHaveBeenCalledOnce();
+			expect(h.app.arrClientFactory.create).not.toHaveBeenCalled();
+			expect(h.updateSeries).not.toHaveBeenCalled();
+		}
+	});
+
+	it("keeps client failures scoped to selected rows and reports known failed identities", async () => {
+		const h = fixture();
+		h.app.arrClientFactory.create.mockImplementation(() => {
+			throw new Error("Synthetic configuration failure");
+		});
+		const result = await runEpisodeFileSync({
+			app: h.app as never,
+			seriesCap: 100,
+			retrySeriesIds: ["current"],
+		});
+		expect(result).toMatchObject({
+			errors: 1,
+			attemptedSeriesIds: ["current"],
+			failedSeriesIds: ["current"],
+		});
+		expect(h.updateSeries).toHaveBeenCalledWith({
+			where: { instanceId: "enabled", itemType: "series", id: { in: ["current"] } },
+			data: { episodeFileInventoryReceipt: null },
+		});
+		expect(h.tx.episodeFileCache.upsert).not.toHaveBeenCalled();
+		expect(h.tx.episodeFileCache.deleteMany).not.toHaveBeenCalled();
+	});
+
+	it("deduplicates and caps retry selection before reading provider data", async () => {
+		const h = fixture();
+		await runEpisodeFileSync({
+			app: h.app as never,
+			seriesCap: 1,
+			retrySeriesIds: ["current", "current", "unselected"],
+		});
+		expect(h.findSeries).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({ id: { in: ["current"] } }),
+				take: 1,
+			}),
+		);
+		expect(h.getFiles).toHaveBeenCalledTimes(2);
 	});
 });
 
