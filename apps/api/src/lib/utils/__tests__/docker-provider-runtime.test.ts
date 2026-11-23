@@ -31,6 +31,7 @@ const entrypoints = [
 	"launcher",
 	"schema-startup",
 	"combined-startup",
+	"reset-admin-password",
 	"lib/jellyfin/jellyfin-episode-finalizer-worker",
 	"lib/jellyfin/jellyfin-episode-page-worker",
 ];
@@ -189,6 +190,15 @@ describe("test-only provider mock manifests", () => {
 
 describe("immutable Docker provider package admission", () => {
 	it.each(["sqlite", "postgresql"] as const)(
+		"refuses a %s package without the compiled offline recovery actor",
+		(provider) => {
+			const { root } = fixture(provider);
+			rmSync(join(root, "dist/reset-admin-password.js"));
+			manifest(root, provider);
+			expect(check(root, provider).status).toBe(1);
+		},
+	);
+	it.each(["sqlite", "postgresql"] as const)(
 		"validates the actual %s files without writes",
 		(provider) => {
 			const { root } = fixture(provider);
@@ -292,6 +302,7 @@ describe("immutable Docker provider package admission", () => {
 		for (const path of [
 			"dist/index.js",
 			"dist/combined-startup.js",
+			"dist/reset-admin-password.js",
 			"src/generated/prisma/client.ts",
 			"prisma/schema.prisma",
 			"version.json",

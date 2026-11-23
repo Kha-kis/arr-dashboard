@@ -1,12 +1,12 @@
-import { execFileSync } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import Fastify from "fastify";
 import fastifyPlugin from "fastify-plugin";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { PrismaClient } from "../../generated/prisma/client.js";
+import { SqliteSchemaFixture } from "../__tests__/sqlite-schema-fixture.js";
 import { createTestPgClient } from "../__tests__/test-prisma.js";
 import { publishAuthoritativePlexCacheGeneration } from "../plex/plex-cache-storage.js";
 import {
@@ -38,6 +38,9 @@ import jellyfinCacheScheduler from "../../plugins/jellyfin-cache-scheduler.js";
 import plexCacheScheduler from "../../plugins/plex-cache-scheduler.js";
 import { runJellyfinCacheRefreshSingleFlightWithAttempt } from "../jellyfin/jellyfin-cache-singleflight.js";
 
+let schemaFixture: SqliteSchemaFixture | undefined;
+afterAll(() => schemaFixture?.dispose());
+
 const recoveryProducer = vi.hoisted(() => vi.fn());
 vi.mock("../plex/plex-refresh-orchestration.js", () => ({
 	refreshOwnedPlexCacheWithAttempt: recoveryProducer,
@@ -57,7 +60,6 @@ vi.mock("../jellyfin/jellyfin-cache-refresher.js", () => ({
 	},
 }));
 
-const apiRoot = join(process.cwd());
 const log = { warn: vi.fn(), info: vi.fn() };
 const databases: Array<{
 	clients: PrismaClient[];
@@ -689,11 +691,11 @@ afterEach(async () => {
 async function createDatabase(): Promise<PrismaClient> {
 	const directory = await mkdtemp(join(tmpdir(), "provider-cache-status-"));
 	const databasePath = join(directory, "status.db");
-	execFileSync("pnpm", ["exec", "prisma", "db", "push", "--schema", "prisma/schema.prisma"], {
-		cwd: apiRoot,
-		env: { ...process.env, DATABASE_URL: `file:${databasePath}` },
-		stdio: "pipe",
-	});
+	if (!schemaFixture) {
+		schemaFixture = new SqliteSchemaFixture();
+		schemaFixture.initialize();
+	}
+	schemaFixture.copyTo(databasePath);
 	const client = new PrismaClient({
 		adapter: new PrismaBetterSqlite3({ url: databasePath, timeout: 1_000 }),
 	});

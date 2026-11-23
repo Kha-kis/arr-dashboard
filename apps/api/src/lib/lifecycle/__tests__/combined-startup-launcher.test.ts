@@ -1,13 +1,13 @@
 import { EventEmitter } from "node:events";
 import { chmodSync, existsSync, mkdtempSync, rmdirSync } from "node:fs";
-import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
+	type CombinedStartupChannel,
 	prepareCombinedStartupChannel,
 	readCombinedStartupResult,
 	removeCombinedStartupChannel,
-	type CombinedStartupChannel,
 } from "../combined-startup.js";
 
 type Child = EventEmitter & { kill: (signal: string) => boolean; exitCode: number | null };
@@ -48,13 +48,15 @@ vi.mock("node:child_process", () => ({
 let directory: string, context: CombinedStartupChannel;
 const signals = new Map<string, () => void>(),
 	exits: unknown[] = [];
+const logOutput: string[] = [];
 const current = () => boundary.children.at(-1)!;
 function shutdownDiagnostics() {
-	return vi.mocked(console.log).mock.calls.flatMap(([line]) => {
-		if (typeof line !== "string") return [];
+	return logOutput.flatMap((line) => {
 		try {
 			const value = JSON.parse(line);
-			return value.category === "launcher-shutdown-failure" ? [value] : [];
+			return value.category === "launcher-shutdown-failure"
+				? [{ category: value.category, reason: value.reason }]
+				: [];
 		} catch {
 			return [];
 		}
@@ -79,6 +81,11 @@ beforeEach(() => {
 	boundary.captures.length = 0;
 	signals.clear();
 	exits.length = 0;
+	logOutput.length = 0;
+	vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+		logOutput.push(String(chunk));
+		return true;
+	});
 	directory = mkdtempSync(join(tmpdir(), "combined-launcher-test-"));
 	context = prepareCombinedStartupChannel(directory);
 	for (const [key, value] of Object.entries({
@@ -98,7 +105,6 @@ beforeEach(() => {
 		exits.push(code);
 		return undefined as never;
 	});
-	vi.spyOn(console, "log").mockImplementation(() => {});
 });
 afterEach(() => {
 	vi.clearAllTimers();
@@ -299,7 +305,7 @@ it("identifies real handoff revocation failure even when the child joins cleanly
 it("still escalates and joins a held post-ready child when the diagnostic sink throws", async () => {
 	await boot();
 	current().emit("message", message());
-	vi.mocked(console.log).mockImplementation(() => {
+	vi.mocked(process.stdout.write).mockImplementation(() => {
 		throw new Error("Synthetic sink unavailable");
 	});
 	expect(() => signals.get("SIGTERM")!()).not.toThrow();
@@ -316,7 +322,7 @@ it.each(["revocation", "rejection"] as const)(
 	async (failure) => {
 		await boot();
 		current().emit("message", message());
-		vi.mocked(console.log).mockImplementation(() => {
+		vi.mocked(process.stdout.write).mockImplementation(() => {
 			throw new Error("Synthetic sink unavailable");
 		});
 		if (failure === "revocation") chmodSync(context.directory, 0o755);

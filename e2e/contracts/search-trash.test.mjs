@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createServer, request } from "node:http";
 import { createRequire } from "node:module";
 import path from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, parse as parseUrl } from "node:url";
 import vm from "node:vm";
+import nextConfig from "../../apps/web/next.config.mjs";
 
 const candidate = fileURLToPath(new URL("../../", import.meta.url));
 const specRoot = path.join(candidate, "e2e");
@@ -403,3 +405,179 @@ for (const [name, key, state] of [
 		);
 	});
 }
+
+const { proxyRequest } = createRequire(path.join(candidate, "apps/web/package.json"))(
+	"next/dist/server/lib/router-utils/proxy-request.js",
+);
+
+async function delayedProxyPost(t, proxyTimeout, responseDelayMs) {
+	const sockets = new Set(),
+		timers = new Set(),
+		work = new Set();
+	const received = [],
+		proxyErrors = [];
+	// Next logs expected timeout failures; retain only their synthetic error codes.
+	t.mock.method(console, "error", () => {});
+	const track = (server) => {
+		server.on("connection", (socket) => {
+			sockets.add(socket);
+			socket.once("close", () => sockets.delete(socket));
+		});
+		return server;
+	};
+	const listen = async (server) => {
+		await new Promise((resolve, reject) => {
+			server.once("error", reject);
+			server.listen(0, "127.0.0.1", resolve);
+		});
+		return `http://127.0.0.1:${server.address().port}`;
+	};
+	const upstream = track(
+		createServer((req, res) => {
+			let body = "";
+			req.setEncoding("utf8");
+			req.on("data", (chunk) => {
+				body += chunk;
+			});
+			req.on("end", () => {
+				received.push({ method: req.method, url: req.url, headers: req.headers, body });
+				const timer = setTimeout(() => {
+					timers.delete(timer);
+					res.writeHead(200, { "content-type": "application/json", "x-contract": "synthetic" });
+					res.end(JSON.stringify({ success: true }));
+				}, responseDelayMs);
+				timers.add(timer);
+				res.once("close", () => {
+					clearTimeout(timer);
+					timers.delete(timer);
+				});
+			});
+		}),
+	);
+	let proxy;
+	try {
+		const upstreamOrigin = await listen(upstream);
+		const previousHost = process.env.API_HOST;
+		let rewrites;
+		try {
+			process.env.API_HOST = upstreamOrigin;
+			rewrites = await nextConfig.rewrites();
+		} finally {
+			if (previousHost === undefined) delete process.env.API_HOST;
+			else process.env.API_HOST = previousHost;
+		}
+		const rewrite = rewrites.find((entry) => entry.source === "/api/:path*");
+		assert.ok(rewrite, "actual API rewrite must exist");
+		proxy = track(
+			createServer((req, res) => {
+				const target = rewrite.destination.replace(":path*", req.url.slice("/api/".length));
+				const task = proxyRequest(
+					req,
+					res,
+					parseUrl(target, true),
+					undefined,
+					undefined,
+					proxyTimeout,
+				).catch((error) => {
+					proxyErrors.push(error.code ?? "unknown");
+					if (!res.writableEnded) res.end();
+				});
+				work.add(task);
+				void task.finally(() => work.delete(task));
+			}),
+		);
+		const proxyOrigin = await listen(proxy);
+		const body = JSON.stringify({ serviceType: "RADARR", synthetic: true });
+		const result = await new Promise((resolve, reject) => {
+			const req = request(
+				`${proxyOrigin}/api/trash-guides/cache/refresh`,
+				{
+					method: "POST",
+					agent: false,
+					signal: t.signal,
+					headers: {
+						"content-type": "application/json",
+						"content-length": Buffer.byteLength(body),
+						authorization: "Bearer synthetic-contract",
+						cookie: "synthetic=contract",
+					},
+				},
+				(res) => {
+					let responseBody = "";
+					res.setEncoding("utf8");
+					res.on("data", (chunk) => {
+						responseBody += chunk;
+					});
+					res.on("error", reject);
+					res.on("end", () =>
+						resolve({ status: res.statusCode, body: responseBody, headers: res.headers }),
+					);
+				},
+			);
+			const deadline = setTimeout(
+				() => req.destroy(new Error("synthetic client deadline")),
+				45_000,
+			);
+			timers.add(deadline);
+			req.once("close", () => {
+				clearTimeout(deadline);
+				timers.delete(deadline);
+			});
+			req.on("error", reject);
+			req.end(body);
+		});
+		assert.equal(received.length, 1);
+		assert.equal(received[0].method, "POST");
+		assert.equal(received[0].url, "/api/trash-guides/cache/refresh");
+		assert.equal(received[0].body, body);
+		assert.equal(received[0].headers.authorization, "Bearer synthetic-contract");
+		assert.equal(received[0].headers.cookie, "synthetic=contract");
+		assert.equal(received[0].headers["x-forwarded-host"], new URL(proxyOrigin).host);
+		return { ...result, proxyErrors };
+	} finally {
+		for (const timer of timers) clearTimeout(timer);
+		timers.clear();
+		const closed = [...sockets].map(
+			(socket) => new Promise((resolve) => socket.once("close", resolve)),
+		);
+		for (const socket of sockets) socket.destroy();
+		await Promise.all(
+			[upstream, proxy]
+				.filter((server) => server?.listening)
+				.map(
+					(server) =>
+						new Promise((resolve, reject) =>
+							server.close((error) => (error ? reject(error) : resolve())),
+						),
+				),
+		);
+		await Promise.all(closed);
+		await Promise.all([...work]);
+		assert.equal(sockets.size, 0);
+		assert.equal(timers.size, 0);
+		assert.equal(work.size, 0);
+	}
+}
+
+test("actual Next proxy acknowledges a TRaSH-like POST beyond its default 30-second timeout", {
+	timeout: 75_000,
+}, async (t) => {
+	const result = await delayedProxyPost(t, nextConfig.experimental.proxyTimeout, 31_500);
+	assert.equal(result.status, 200, "legitimate delayed success must reach the caller");
+	assert.deepEqual(JSON.parse(result.body), { success: true });
+	assert.equal(result.headers["x-contract"], "synthetic");
+	assert.deepEqual(result.proxyErrors, []);
+	assert.equal(
+		nextConfig.experimental.proxyTimeout,
+		120_000,
+		"manual actions need an explicit finite proxy budget",
+	);
+});
+
+test("actual Next proxy still rejects an unresponsive upstream at a finite configured timeout", {
+	timeout: 8_000,
+}, async (t) => {
+	const result = await delayedProxyPost(t, 100, 1_000);
+	assert.equal(result.status, 500);
+	assert.equal(result.proxyErrors.length, 1);
+});

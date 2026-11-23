@@ -5,6 +5,8 @@
  * to determine if safe patterns list needs expansion.
  */
 
+import { reportDiagnostic } from "./diagnostic-output.js";
+
 const SONARR_URL = process.env.SONARR_URL || "http://localhost:8989";
 const SONARR_API_KEY = process.env.SONARR_API_KEY || "YOUR_SONARR_API_KEY";
 const RADARR_URL = process.env.RADARR_URL || "http://localhost:7878";
@@ -33,139 +35,66 @@ async function fetchQueue(url: string, apiKey: string, apiVersion: string): Prom
 }
 
 async function analyzeStatusMessages() {
-	console.log("📊 Analyzing Status Message Patterns in Pending/Blocked Items\n");
-	console.log("═".repeat(70));
+	reportDiagnostic("status-patterns", "started");
 
-	// Analyze Sonarr
-	console.log("\n📺 SONARR Status Patterns:\n");
-	const sonarrQueue = await fetchQueue(SONARR_URL, SONARR_API_KEY, "v3");
-	const sonarrPatterns = new Map<string, { count: number; sample: string }>();
+	for (const provider of ["sonarr", "radarr"] as const) {
+		const queue =
+			provider === "sonarr"
+				? await fetchQueue(SONARR_URL, SONARR_API_KEY, "v3")
+				: await fetchQueue(RADARR_URL, RADARR_API_KEY, "v3");
+		const patterns = new Map<string, number>();
+		let pendingItems = 0;
+		let blockedItems = 0;
+		let eligibleItems = 0;
+		let messageOccurrences = 0;
 
-	for (const item of sonarrQueue.records ?? []) {
-		const state = item.trackedDownloadState ?? "unknown";
-		if (state !== "importPending" && state !== "importBlocked") continue;
+		for (const item of queue.records ?? []) {
+			const state = item.trackedDownloadState ?? "unknown";
+			if (state !== "importPending" && state !== "importBlocked") continue;
+			if (state === "importPending") pendingItems++;
+			else blockedItems++;
+			const allText: string[] = [];
 
-		if (Array.isArray(item.statusMessages)) {
-			for (const msg of item.statusMessages) {
-				if (msg?.title) {
-					const existing = sonarrPatterns.get(msg.title);
-					if (existing) {
-						existing.count++;
-					} else {
-						sonarrPatterns.set(msg.title, { count: 1, sample: item.title });
+			if (Array.isArray(item.statusMessages)) {
+				for (const msg of item.statusMessages) {
+					if (msg?.title) {
+						patterns.set(msg.title, (patterns.get(msg.title) ?? 0) + 1);
+						messageOccurrences++;
+						allText.push(msg.title);
 					}
-				}
-			}
-		}
-	}
-
-	// Sort by count
-	const sortedSonarr = [...sonarrPatterns.entries()].sort((a, b) => b[1].count - a[1].count);
-	for (const [pattern, { count, sample }] of sortedSonarr) {
-		console.log(`   (${count}x) "${pattern}"`);
-		console.log(`         Sample: ${sample.substring(0, 50)}...`);
-	}
-
-	// Analyze Radarr
-	console.log(`\n${"═".repeat(70)}`);
-	console.log("\n🎬 RADARR Status Patterns:\n");
-	const radarrQueue = await fetchQueue(RADARR_URL, RADARR_API_KEY, "v3");
-	const radarrPatterns = new Map<string, { count: number; sample: string }>();
-
-	for (const item of radarrQueue.records ?? []) {
-		const state = item.trackedDownloadState ?? "unknown";
-		if (state !== "importPending" && state !== "importBlocked") continue;
-
-		if (Array.isArray(item.statusMessages)) {
-			for (const msg of item.statusMessages) {
-				if (msg?.title) {
-					const existing = radarrPatterns.get(msg.title);
-					if (existing) {
-						existing.count++;
-					} else {
-						radarrPatterns.set(msg.title, { count: 1, sample: item.title });
-					}
-				}
-				// Also check nested messages
-				if (Array.isArray(msg?.messages)) {
-					for (const m of msg.messages) {
-						if (typeof m === "string" && m.trim()) {
-							const key = m.substring(0, 60);
-							const existing = radarrPatterns.get(key);
-							if (existing) {
-								existing.count++;
-							} else {
-								radarrPatterns.set(key, { count: 1, sample: item.title });
+					if (provider === "radarr" && Array.isArray(msg?.messages)) {
+						allText.push(...msg.messages.filter((m): m is string => typeof m === "string"));
+						for (const message of msg.messages) {
+							if (typeof message === "string" && message.trim()) {
+								const key = message.substring(0, 60);
+								patterns.set(key, (patterns.get(key) ?? 0) + 1);
+								messageOccurrences++;
 							}
 						}
 					}
 				}
 			}
-		}
-	}
 
-	const sortedRadarr = [...radarrPatterns.entries()].sort((a, b) => b[1].count - a[1].count);
-	for (const [pattern, { count, sample }] of sortedRadarr) {
-		console.log(`   (${count}x) "${pattern}"`);
-		console.log(`         Sample: ${sample.substring(0, 50)}...`);
-	}
-
-	// Show the eligible Radarr item in detail
-	console.log(`\n${"═".repeat(70)}`);
-	console.log("\n✨ ELIGIBLE RADARR ITEM (Full Details):\n");
-
-	for (const item of radarrQueue.records ?? []) {
-		const state = item.trackedDownloadState ?? "unknown";
-		if (state !== "importPending" && state !== "importBlocked") continue;
-
-		const allText: string[] = [];
-		if (Array.isArray(item.statusMessages)) {
-			for (const msg of item.statusMessages) {
-				if (msg?.title) allText.push(msg.title);
-				if (Array.isArray(msg?.messages)) {
-					allText.push(...msg.messages.filter((m): m is string => typeof m === "string"));
-				}
+			if (provider === "radarr") {
+				const safeKeywords = ["waiting for import", "import pending", "manual import"];
+				const hasSafe = safeKeywords.some((k) => allText.join(" ").toLowerCase().includes(k));
+				if (hasSafe) eligibleItems++;
 			}
 		}
 
-		const safeKeywords = ["waiting for import", "import pending", "manual import"];
-		const hasSafe = safeKeywords.some((k) => allText.join(" ").toLowerCase().includes(k));
-
-		if (hasSafe) {
-			console.log(`   Title: ${item.title}`);
-			console.log(`   State: ${state}`);
-			console.log(`   Status Messages:`);
-			for (const text of allText) {
-				console.log(`      • ${text}`);
-			}
-		}
+		reportDiagnostic("status-patterns", "pattern-summary", {
+			provider,
+			totalItems: queue.totalRecords,
+			pendingItems,
+			blockedItems,
+			patterns: patterns.size,
+			messageOccurrences,
+			...(provider === "radarr" ? { eligibleItems } : {}),
+		});
 	}
-
-	console.log(`\n${"═".repeat(70)}`);
-	console.log("\n💡 RECOMMENDATION:");
-	console.log("─".repeat(70));
-
-	// Check if there are common patterns that could be added
-	const _commonPendingPatterns = [
-		"series folder",
-		"episode file",
-		"no files found",
-		"unknown series",
-		"unknown movie",
-	];
-
-	console.log(
-		"\nCurrent safe patterns only match: 'waiting for import', 'import pending', 'manual import'",
-	);
-	console.log("\nMost pending/blocked items don't have these patterns in their status.");
-	console.log("This is expected - 'safe only' mode is conservative by design.\n");
-	console.log("Options:");
-	console.log("  1. Keep 'Safe patterns only' enabled (conservative, may miss items)");
-	console.log("  2. Disable 'Safe patterns only' to auto-import all pending/blocked items");
-	console.log("  3. Add more patterns to the safe list if we identify reliable ones\n");
 }
 
 // Only execute when run directly (not when imported)
 if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, "/"))) {
-	analyzeStatusMessages().catch(console.error);
+	analyzeStatusMessages().catch(() => reportDiagnostic("status-patterns", "provider-failed"));
 }

@@ -230,6 +230,135 @@ describe("executeQueueCleaner — integration", () => {
 		errorMessage: "The download is stalled with no connections",
 	};
 
+	const METADATA_ITEM = {
+		...STALLED_ITEM,
+		added: "2026-11-21T12:00:00.000Z",
+		status: "queued",
+		trackedDownloadState: "downloading",
+		trackedDownloadStatus: "ok",
+		size: 0,
+		sizeleft: 0,
+		statusMessages: [],
+		errorMessage: "qBittorrent is downloading metadata",
+		downloadId: "f".repeat(40),
+	};
+
+	it("keeps metadata-stall preview, dry-run and live matches aligned without duplicate removal", async () => {
+		vi.useFakeTimers({ toFake: ["Date"] });
+		vi.setSystemTime(new Date("2026-11-22T12:00:00.000Z"));
+		try {
+			let records = [METADATA_ITEM];
+			const del = vi.fn(async () => {
+				records = [];
+			});
+			const app = makeApp({ get: async () => ({ records }), del });
+			Object.assign(app.prisma, {
+				libraryCache: { findMany: vi.fn().mockResolvedValue([]) },
+				episodeFileCache: { findMany: vi.fn().mockResolvedValue([]) },
+			});
+			const config = makeConfig({ stalledThresholdMins: 60, lastSeedProtection: true });
+			const expected = {
+				id: 42,
+				rule: "stalled",
+				reason: "Torrent metadata unavailable; in queue for 1440 minutes (threshold: 60m)",
+			};
+			const preview = await executeEnhancedPreview(app, makeInstance(), config);
+			expect(preview.previewItems).toEqual([
+				expect.objectContaining({ ...expected, action: "remove" }),
+			]);
+			expect(preview.wouldRemove).toBe(1);
+			const dry = await executeQueueCleaner(app, makeInstance(), { ...config, dryRunMode: true });
+			expect(dry.isDryRun).toBe(true);
+			expect(dry.itemsCleaned).toBe(0);
+			expect(dry.cleanedItems).toEqual([]);
+			expect(dry.skippedItems).toEqual([
+				expect.objectContaining({
+					...expected,
+					reason: `[DRY RUN] Would remove: ${expected.reason}`,
+				}),
+			]);
+			expect(del).not.toHaveBeenCalled();
+			const live = await executeQueueCleaner(app, makeInstance(), config);
+			expect(live).toMatchObject({ status: "completed", itemsCleaned: 1 });
+			expect(live.cleanedItems).toEqual([expect.objectContaining(expected)]);
+			expect(del).toHaveBeenCalledExactlyOnceWith(42, expect.any(Object));
+			const retry = await executeQueueCleaner(app, makeInstance(), config);
+			expect(retry.itemsCleaned).toBe(0);
+			expect(del).toHaveBeenCalledOnce();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it.each([
+		["missing download identity", "identity"],
+		["missing torrent hash", "identity"],
+		["unavailable references", "reference evidence is unavailable"],
+		["last-seed reference", "library still references"],
+		["empty file manifest", "no torrent file metadata"],
+	])("retains metadata downloads with %s in every mode", async (scenario, reason) => {
+		vi.useFakeTimers({ toFake: ["Date"] });
+		vi.setSystemTime(new Date("2026-11-22T12:00:00.000Z"));
+		try {
+			const item = {
+				...METADATA_ITEM,
+				downloadId:
+					scenario === "missing download identity"
+						? undefined
+						: scenario === "missing torrent hash"
+							? "not-a-torrent-hash"
+							: METADATA_ITEM.downloadId,
+			};
+			const del = vi.fn();
+			const app = makeApp({ get: async () => ({ records: [item] }), del });
+			Object.assign(app.prisma, {
+				libraryCache: {
+					findMany:
+						scenario === "unavailable references"
+							? vi.fn().mockRejectedValue(new Error("fixture reference lookup failure"))
+							: vi
+									.fn()
+									.mockResolvedValue(
+										scenario === "last-seed reference" ? [{ infoHash: item.downloadId }] : [],
+									),
+				},
+				episodeFileCache: { findMany: vi.fn().mockResolvedValue([]) },
+			});
+			const filePolicyEnabled = scenario === "empty file manifest";
+			if (filePolicyEnabled) {
+				quiMocks.listQuiInstances.mockResolvedValue([
+					{ id: "qui-1", userId: "user-1", service: "QUI", enabled: true },
+				]);
+				quiMocks.createQuiClient.mockReturnValue({
+					getTorrentByHash: vi.fn().mockResolvedValue({ hash: item.downloadId, instanceId: 9 }),
+					getTorrentFiles: vi.fn().mockResolvedValue([]),
+				});
+			}
+			const config = makeConfig({
+				stalledThresholdMins: 60,
+				lastSeedProtection: true,
+				fileExtensionAllowlistEnabled: filePolicyEnabled,
+				allowedFileExtensions: filePolicyEnabled ? '["mkv"]' : null,
+				strikeSystemEnabled: true,
+			});
+			const preview = await executeEnhancedPreview(app, makeInstance(), config);
+			expect(preview.previewItems[0]).toMatchObject({
+				action: "skip",
+				reason: expect.stringContaining(reason),
+			});
+			for (const dryRunMode of [true, false]) {
+				const result = await executeQueueCleaner(app, makeInstance(), { ...config, dryRunMode });
+				expect(result.itemsCleaned).toBe(0);
+				expect(result.skippedItems[0]?.reason).toContain(reason);
+			}
+			expect(del).not.toHaveBeenCalled();
+			expect(app.prisma.queueCleanerStrike.create).not.toHaveBeenCalled();
+			expect(app.prisma.queueCleanerStrike.upsert).not.toHaveBeenCalled();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	async function importFixture() {
 		autoImportMocks.attemptAutoImport.mockReset().mockImplementation(async () => ({
 			attempted: false,

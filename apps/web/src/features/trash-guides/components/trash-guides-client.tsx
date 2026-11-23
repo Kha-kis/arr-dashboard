@@ -35,6 +35,7 @@ import { QualityProfileWizard } from "./quality-profile-wizard";
 import { QualitySizeManager } from "./quality-size-manager";
 import { RepoSettingsSection } from "./repo-settings-section";
 import { SchedulerStatusDashboard } from "./scheduler-status-dashboard";
+import { SyncReviewPanel } from "./sync-review-panel";
 import { TemplateEditor } from "./template-editor";
 import { TemplateImportDialog } from "./template-import-dialog";
 import { TemplateList } from "./template-list";
@@ -313,6 +314,7 @@ export function TrashGuidesClient() {
 							</div>
 						</div>
 						<DeploymentHistoryTable />
+						<SyncReviewPanel />
 					</div>
 				);
 			case "bulk-scores":

@@ -14,12 +14,13 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import pino, { type Logger } from "pino";
 import {
+	type CombinedStartupMessage,
 	parseCombinedStartupMessage,
 	publishCombinedStartupResult,
 	readCombinedStartupChannel,
 	revokeCombinedStartupResult,
-	type CombinedStartupMessage,
 } from "./lib/lifecycle/combined-startup.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -48,6 +49,8 @@ type ShutdownFailureReason =
 	| "forced-child-termination"
 	| "handoff-revocation-failed"
 	| "combined-handoff-rejected";
+
+let launcherLogger: Logger | undefined;
 
 function revokeHandoff(): boolean {
 	if (!combinedChannel) return true;
@@ -81,13 +84,18 @@ function terminateChild(child: ReturnType<typeof spawn>, signal: NodeJS.Signals)
 
 /**
  * Best-effort output: logging must never interrupt process lifecycle control.
- * Text retains its launcher prefix; fixed diagnostics are standalone JSON.
+ * Text retains its launcher prefix; diagnostics contain fixed categories only.
  */
 function log(
-	message: string | { category: "launcher-shutdown-failure"; reason: ShutdownFailureReason },
+	message:
+		| string
+		| { category: "launcher-shutdown-failure"; reason: ShutdownFailureReason }
+		| { category: "launcher-spawn-failure" },
 ) {
 	try {
-		console.log(typeof message === "string" ? `[Launcher] ${message}` : JSON.stringify(message));
+		launcherLogger ??= pino({ name: "arr-launcher", base: null }, process.stdout);
+		if (typeof message === "string") launcherLogger.info(`[Launcher] ${message}`);
+		else launcherLogger.error(message);
 	} catch {
 		// Child termination, joins and failure exits remain authoritative without a sink.
 	}
@@ -231,10 +239,10 @@ function startServer() {
 	}
 
 	// Handle spawn errors (e.g., command not found, permission denied)
-	child.on("error", (err) => {
+	child.on("error", () => {
 		if (serverProcess !== child) return;
 		revokeHandoff();
-		log(`ERROR: Failed to spawn server process: ${err.message}`);
+		log({ category: "launcher-spawn-failure" });
 		serverProcess = null;
 		process.exit(1);
 	});

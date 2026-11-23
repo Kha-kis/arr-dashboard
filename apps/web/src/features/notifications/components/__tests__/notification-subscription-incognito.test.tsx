@@ -39,7 +39,7 @@ function PrivacyToggle() {
 	);
 }
 
-function fixture(incognito = false, failRead = false) {
+function fixture(incognito = false, failRead = false, grids = { initial, committed }) {
 	localStorage.setItem("arr-dashboard-incognito-mode", String(incognito));
 	const writes: unknown[] = [];
 	const outOfScope: string[] = [];
@@ -53,18 +53,18 @@ function fixture(incognito = false, failRead = false) {
 		}
 		if (method === "PUT") {
 			writes.push(JSON.parse(String(request.body)));
-			return Response.json({ success: true, grid: committed, omittedCount: 0 });
+			return Response.json({ success: true, grid: grids.committed, omittedCount: 0 });
 		}
 		reads++;
 		return failRead
 			? Response.json({ message: "Private synthetic read failure" }, { status: 503 })
-			: Response.json(committed);
+			: Response.json(grids.committed);
 	});
 	const client = new QueryClient({
 		defaultOptions: { queries: { retry: false, gcTime: 0 }, mutations: { retry: false } },
 	});
 	clients.push(client);
-	client.setQueryData(notificationKeys.subscriptions, initial);
+	client.setQueryData(notificationKeys.subscriptions, grids.initial);
 	render(
 		<QueryClientProvider client={client}>
 			<ColorThemeProvider>
@@ -104,6 +104,49 @@ afterEach(() => {
 });
 
 describe("subscription grid privacy through actual provider, client, hook and cache", () => {
+	it("distinguishes provider device labels while saving the existing Jellyfin event ID", async () => {
+		const providerInitial: Grid = {
+			channels: [initial.channels[0]!],
+			events: ["PLEX_NEW_DEVICE", "JELLYFIN_NEW_DEVICE"],
+			subscriptions: [{ channelId: "first", eventType: "PLEX_NEW_DEVICE" }],
+		};
+		const providerCommitted: Grid = {
+			...providerInitial,
+			subscriptions: [
+				...providerInitial.subscriptions,
+				{ channelId: "first", eventType: "JELLYFIN_NEW_DEVICE" },
+			],
+		};
+		const value = fixture(false, false, {
+			initial: providerInitial,
+			committed: providerCommitted,
+		});
+		expect(screen.getByText("New Device (Plex)")).toBeVisible();
+		expect(screen.getByText("New Device (Jellyfin/Emby)")).toBeVisible();
+		expect(
+			screen.getByRole("button", {
+				name: "Unsubscribe Private synthetic alpha from New Device (Plex)",
+			}),
+		).toBeEnabled();
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "Subscribe Private synthetic alpha from New Device (Jellyfin/Emby)",
+			}),
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+		await waitFor(() =>
+			expect(value.client.getMutationCache().getAll()[0]?.state.status).toBe("success"),
+		);
+		expect(value.writes).toEqual([
+			{ subscriptions: [{ channelId: "first", eventType: "JELLYFIN_NEW_DEVICE", enabled: true }] },
+		]);
+		expect(value.client.getQueryData(notificationKeys.subscriptions)).toEqual(providerCommitted);
+		expect(
+			screen.getByRole("button", {
+				name: "Unsubscribe Private synthetic alpha from New Device (Jellyfin/Emby)",
+			}),
+		).toBeEnabled();
+	});
 	it("keeps distinct real names and accessible actions in ordinary mode", () => {
 		const value = fixture();
 		expect(headers()).toEqual(["Event", "Private synthetic alpha", "Private synthetic beta"]);

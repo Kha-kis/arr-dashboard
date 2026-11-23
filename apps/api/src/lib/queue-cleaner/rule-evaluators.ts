@@ -241,6 +241,23 @@ export function evaluateQueueItem(
 					reason: `No progress for ${Math.round(ageMins)} minutes (threshold: ${config.stalledThresholdMins}m)`,
 				};
 			}
+
+			// Queue age is the existing stalled threshold, not time spent fetching metadata.
+			if (
+				trackedState === "downloading" &&
+				trackedStatus === "ok" &&
+				typeof item.protocol === "string" &&
+				item.protocol.toLowerCase() === "torrent" &&
+				item.size === 0 &&
+				item.sizeleft === 0 &&
+				matchesKeywords(statusTexts, ["downloading metadata"]) &&
+				ageMins > config.stalledThresholdMins
+			) {
+				return {
+					rule: "stalled",
+					reason: `Torrent metadata unavailable; in queue for ${Math.round(ageMins)} minutes (threshold: ${config.stalledThresholdMins}m)`,
+				};
+			}
 		}
 	}
 

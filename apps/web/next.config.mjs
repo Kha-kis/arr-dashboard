@@ -26,7 +26,11 @@ const nextConfig = {
 	output: "standalone",
 	// Next clones rewrite bodies before API validation. Its 10 MiB default
 	// would truncate supported Restore uploads; retain the API's bounded ceiling.
-	experimental: { proxyClientMaxBodySize: RESTORE_UPLOAD_BODY_LIMIT },
+	experimental: {
+		proxyClientMaxBodySize: RESTORE_UPLOAD_BODY_LIMIT,
+		// Manual cache refreshes can exceed Next's 30s default upstream inactivity timeout.
+		proxyTimeout: 120_000,
+	},
 	...(allowedOrigins.length > 0 && { allowedDevOrigins: allowedOrigins }),
 	// Empty turbopack config to silence Next.js 16 warning when using --webpack for builds
 	turbopack: {},

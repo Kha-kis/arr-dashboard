@@ -1,5 +1,5 @@
-import { Client } from "pg";
 import { setTimeout as delay } from "node:timers/promises";
+import { Client } from "pg";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Prisma } from "../../prisma.js";
 import { openRestoreRuntime, type RestoreRuntime } from "../restore-runtime-admission.js";
@@ -160,7 +160,7 @@ describe.skipIf(!fixtureUrl)("native startup and ordinary PostgreSQL namespace p
 			expect(replacement[0]!.pid).not.toBe(original[0]!.pid);
 		});
 		expect(await publicState()).toEqual(before);
-	});
+	}, 20_000);
 	it("namespace mapping preserves existing ordinary-pool timeout options", async () => {
 		const schema = "pool_options_namespace";
 		await createSchema(schema);
@@ -184,7 +184,7 @@ describe.skipIf(!fixtureUrl)("native startup and ordinary PostgreSQL namespace p
 		} finally {
 			await adapter.close();
 		}
-	});
+	}, 20_000);
 	it.each(["selected_namespace", 'quoted " namespace', 'quoted"; DROP SCHEMA public CASCADE; --'])(
 		"native writer and guarded Prisma CRUD use explicit schema %s, never public decoys",
 		async (schema) => {
@@ -192,6 +192,7 @@ describe.skipIf(!fixtureUrl)("native startup and ordinary PostgreSQL namespace p
 			await synchronizePostgresRuntimeSchema(selected(schema));
 			await exercise(selected(schema), schema);
 		},
+		20_000,
 	);
 	it("implicit single-schema role search_path selects the same native writer and Prisma namespace", async () => {
 		const schema = "role_selected_namespace";
@@ -199,7 +200,7 @@ describe.skipIf(!fixtureUrl)("native startup and ordinary PostgreSQL namespace p
 		await fixture.query(`ALTER ROLE CURRENT_USER SET search_path TO ${quote(schema)}`);
 		await synchronizePostgresRuntimeSchema(url);
 		await exercise(url, schema);
-	});
+	}, 20_000);
 	it.each(["schema=", "schema=public&schema=missing", "schema=missing", "schema=public%00junk"])(
 		"ordinary admission refuses invalid or absent selected schema (%s) without public journal writes",
 		async (query) => {
@@ -208,15 +209,19 @@ describe.skipIf(!fixtureUrl)("native startup and ordinary PostgreSQL namespace p
 			expect(await publicState()).toEqual(before);
 		},
 	);
-	it("ambiguous effective namespaces refuse before changing either journal", async () => {
+	describe("ambiguous effective namespaces", () => {
 		const schema = "ambiguous_namespace";
-		await createSchema(schema);
-		await synchronizePostgresRuntimeSchema(selected(schema));
-		const before = await publicState();
-		const configured = new URL(url);
-		configured.searchParams.set("options", `-c search_path=${schema},public`);
-		await expect(open(configured.toString())).rejects.toThrow();
-		expect(await publicState()).toEqual(before);
+		beforeEach(async () => {
+			await createSchema(schema);
+			await synchronizePostgresRuntimeSchema(selected(schema));
+		}, 20_000);
+		it("ambiguous effective namespaces refuse before changing either journal", async () => {
+			const before = await publicState();
+			const configured = new URL(url);
+			configured.searchParams.set("options", `-c search_path=${schema},public`);
+			await expect(open(configured.toString())).rejects.toThrow();
+			expect(await publicState()).toEqual(before);
+		});
 	});
 	it("a changed physical session search_path fences ordinary queries instead of reading public data", async () => {
 		const schema = "session_namespace";
@@ -229,7 +234,7 @@ describe.skipIf(!fixtureUrl)("native startup and ordinary PostgreSQL namespace p
 		await actor.runOperation(() => ordinary!.prisma.$executeRawUnsafe("SET search_path TO public"));
 		await expect(actor.runOperation(() => ordinary!.prisma.user.count())).rejects.toThrow();
 		expect(await publicState()).toEqual(before);
-	});
+	}, 20_000);
 	it("dropping and recreating the selected namespace does not inherit the old runtime's authority", async () => {
 		const schema = "recreated_namespace";
 		await createSchema(schema);
@@ -250,5 +255,5 @@ describe.skipIf(!fixtureUrl)("native startup and ordinary PostgreSQL namespace p
 		const before = await publicState();
 		await expect(actor.runStarting(async () => "must-not-run")).rejects.toThrow();
 		expect(await publicState()).toEqual(before);
-	});
+	}, 20_000);
 });

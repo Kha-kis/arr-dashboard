@@ -26,6 +26,8 @@ prove that an older process has stopped.
 | `start-combined.sh` | Container entrypoint — PUID/PGID setup, provider client preparation, native schema/settings actor, service startup |
 | `validate-runtime.sh` | CI validation script — checks all required files exist in the built image |
 | API `dist/schema-startup.js` | Native actor — validates and applies fixed reviewed schema atoms, commits its destination-local receipt, reads settings, and proves closure before returning JSON |
+| `reset-admin-password.sh` | Installed offline recovery wrapper — selects and validates the immutable provider runtime, retains/drops runtime identity, and runs its compiled recovery actor |
+| API `dist/reset-admin-password.js` | Interactive offline actor — exact local-password account recovery under native ownership; no package manager, HTTP startup or migrations |
 
 ## Running the Container
 
@@ -169,6 +171,64 @@ images together or reuse an inode-bound anchor after a database file replacement
 | `WEBAUTHN_RP_NAME` | `Arr Dashboard` | Display name shown during passkey registration |
 | `WEBAUTHN_RP_ID` | `localhost` | Your domain (no protocol, e.g., `dashboard.example.com`) |
 | `WEBAUTHN_ORIGIN` | `http://localhost:3000` | Public browser origin; also an OIDC callback fallback when `APP_URL` is local |
+
+For `https://dashboard.example.com`, set both
+`WEBAUTHN_RP_ID=dashboard.example.com` and
+`WEBAUTHN_ORIGIN=https://dashboard.example.com`. The RP ID has no protocol, port or
+path; the origin includes protocol/host and any nondefault browser port, without
+a path. `APP_URL` does not infer the RP ID. Recreate/restart the service and retry
+registration after changing configuration; HTTPS alone is insufficient when the
+RP ID is still `localhost` or names another domain.
+
+Keep alternative sign-in available: existing passkeys are bound to their original
+RP ID and are not automatically migrated. A roaming key must support the current
+discoverable FIDO2 credential and user-verification requirements; browser and
+password-manager chooser behavior can differ. No particular physical key is
+verified by this configuration example.
+
+### Offline password recovery
+
+Use the same image, Compose service configuration, mounted `/config`, database
+target and runtime user as the normal service. Stop every API/container first;
+do not use `docker exec` against a live API. Older unguarded images must also be
+stopped, because native ownership cannot establish that an older writer exited.
+Run from a real interactive terminal; Compose allocates the TTY automatically.
+Do not use `-T` or redirect stdin.
+
+```bash
+docker compose stop arr-dashboard
+docker compose run --rm --no-deps --interactive --entrypoint reset-admin-password arr-dashboard
+```
+
+Keep a configured PostgreSQL server available. The wrapper accepts only `file:`,
+`postgres://` and `postgresql://` database URLs; an unset/blank `DATABASE_URL`
+selects the Docker default `file:/config/prod.db`. Preserve your actual configured
+URL and volume mapping rather than relying on that default for another setup.
+It validates the selected immutable provider manifest before running the compiled
+actor, without pnpm, tsx, runtime installation or schema changes.
+
+When invoked as root, the wrapper drops to numeric `PUID`/`PGID` (default
+`911:911`). Non-root execution retains the actual UID/GID and ignores those
+variables. Existing data must already be accessible to that identity; recovery
+does not chown the volume or change permissions.
+
+The terminal prompts for an exact case-sensitive existing username and a hidden
+password/confirmation. All input is hidden; do not pass passwords through argv,
+environment variables, files or redirected stdin. Strict/relaxed `PASSWORD_POLICY`
+and the shared 8–128 character limits apply. Passwordless OIDC/passkey-only
+accounts are refused rather than given a new authentication method.
+
+The single transaction changes only the selected local password and lockout
+fields and revokes only that account's sessions. `mustChangePassword`, other
+accounts, passkeys, OIDC links, configuration, connections and secrets remain.
+The normal API/schedulers are not started by recovery. An active/suspended owner,
+unsafe storage, missing database or invalid runtime package causes refusal.
+Do not remove native coordination files or hand-edit journal records.
+
+After confirmed success, run `docker compose up -d arr-dashboard` and sign in.
+On an unconfirmed outcome, do not automatically replay recovery: restart the
+normal service and verify sign-in first. Cancelled/failed attempts are not
+reported as success.
 
 ### Logging
 

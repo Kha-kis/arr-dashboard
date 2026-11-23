@@ -1,6 +1,8 @@
 import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import pino from "pino";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 type Child = EventEmitter & { kill: (signal: string) => boolean };
@@ -29,6 +31,7 @@ vi.mock("node:child_process", async (original) => ({
 
 const signals = new Map<string, () => void>();
 const exits: Array<string | number | null | undefined> = [];
+const logOutput: string[] = [];
 const currentChild = () => boundary.children[boundary.children.length - 1]!;
 const emit = (signal: "SIGTERM" | "SIGINT") => signals.get(signal)!();
 async function boot(environment: "production" | "development" = "production") {
@@ -51,6 +54,11 @@ beforeEach(() => {
 	boundary.spawns = 0;
 	signals.clear();
 	exits.splice(0);
+	logOutput.length = 0;
+	vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+		logOutput.push(String(chunk));
+		return true;
+	});
 	const originalOn = process.on.bind(process);
 	vi.spyOn(process, "on").mockImplementation((event, callback) => {
 		if (event === "SIGTERM" || event === "SIGINT") {
@@ -63,7 +71,6 @@ beforeEach(() => {
 		exits.push(code);
 		return undefined as never;
 	});
-	vi.spyOn(console, "log").mockImplementation(() => {});
 });
 afterEach(() => {
 	vi.clearAllTimers();
@@ -119,7 +126,7 @@ describe.each(["SIGTERM", "SIGINT"] as const)("launcher termination: %s", (signa
 
 	it("still forwards and joins a clean child when the launcher log sink throws", async () => {
 		await boot();
-		vi.mocked(console.log).mockImplementation(() => {
+		vi.mocked(process.stdout.write).mockImplementation(() => {
 			throw new Error("Synthetic sink unavailable");
 		});
 		expect(() => emit(signal)).not.toThrow();
@@ -174,10 +181,53 @@ it("reports an unexpected signal death as failure without replacement", async ()
 
 it("reports a spawn error without admitting a replacement", async () => {
 	await boot();
-	currentChild().emit("error", new Error("Synthetic spawn unavailable"));
+	const privateError = "synthetic-private-command-path-and-credential";
+	currentChild().emit("error", new Error(privateError));
 	await vi.advanceTimersByTimeAsync(2000);
 	expect(boundary.spawns).toBe(1);
 	expect(exits).toEqual([1]);
+	const output = logOutput.join("\n");
+	expect(output).not.toContain(privateError);
+	expect(output).toContain("launcher-spawn-failure");
+});
+
+it("does not inspect or serialize a spawn error's private properties", async () => {
+	await boot();
+	const error = new Error();
+	const readPrivate = vi.fn(() => {
+		throw new Error("private property must not be read");
+	});
+	Object.defineProperty(error, "message", { get: readPrivate });
+	Object.defineProperty(error, "toJSON", { get: readPrivate });
+	expect(() => currentChild().emit("error", error)).not.toThrow();
+	expect(readPrivate).not.toHaveBeenCalled();
+	expect(exits).toEqual([1]);
+	expect(boundary.spawns).toBe(1);
+});
+
+it("keeps fixed launcher diagnostics readable from actual pino envelopes", () => {
+	const { summarizeLauncher } = createRequire(import.meta.url)(
+		fileURLToPath(
+			new URL("../../../../../../docker/launcher-log-diagnostics.cjs", import.meta.url),
+		),
+	);
+	const lines: string[] = [];
+	const logger = pino({ base: null }, { write: (line) => lines.push(line) });
+	logger.info("[Launcher] Received SIGTERM, shutting down...");
+	for (const reason of [
+		"forced-child-termination",
+		"handoff-revocation-failed",
+		"combined-handoff-rejected",
+	])
+		logger.error({ category: "launcher-shutdown-failure", reason, private: "synthetic-private" });
+	expect(summarizeLauncher(lines.join(""))).toEqual({
+		forcedChild: 1,
+		handoffRevocationFailed: 1,
+		handoffRejected: 1,
+		shutdown: 1,
+		unreadableJson: 0,
+		unrecognizedLauncher: 0,
+	});
 });
 
 describe("configured child shutdown grace", () => {
@@ -323,7 +373,7 @@ const state={spawns:0,forwarded:0,ready:false,drainHeld:false,childSettled:false
 const apiCode=API_CODE_PLACEHOLDER;
 const realExit=process.exit.bind(process);
 process.exit=code=>{writeSync(1,JSON.stringify({phase:"launcher-exit",code,...state})+"\n");realExit(code);};
-console.log=()=>{};
+process.stdout.write=()=>true;
 globalThis.fixtureSpawn=(command,args,options)=>{
  if(command!=="node"||args[0]!=="--enable-source-maps"||options.env.LAUNCHER_MANAGED!=="true"||options.stdio!=="inherit")state.forbidden++;
  state.spawns++;

@@ -152,11 +152,17 @@ function json(value: unknown, status = 200) {
 		headers: { "content-type": "application/json" },
 	});
 }
-function Editor({ onSave }: { onSave: () => void }) {
+function Editor({
+	onSave,
+	channelId = "owned-channel",
+}: {
+	onSave: () => void;
+	channelId?: string | null;
+}) {
 	const [open, setOpen] = useState(true);
 	return open ? (
 		<ChannelForm
-			channelId="owned-channel"
+			channelId={channelId}
 			onSave={() => {
 				onSave();
 				setOpen(false);
@@ -173,6 +179,8 @@ function mount(
 		rejectFirstWrite?: boolean;
 		failFirstRead?: boolean;
 		stored?: Record<string, unknown>;
+		create?: boolean;
+		repair?: boolean;
 	} = {},
 ) {
 	const requests: RequestRecord[] = [];
@@ -197,6 +205,7 @@ function mount(
 		if (path === typesPath && method === "GET" && body === undefined) return json(manifests);
 		if (path === configPath && method === "GET" && body === undefined) {
 			configReads++;
+			if (options.repair) return json({ message: privateError }, 503);
 			if (options.failFirstRead && configReads === 1) return json({ message: privateError }, 503);
 			return json({
 				id: "owned-channel",
@@ -209,6 +218,21 @@ function mount(
 				lastTestResult: null,
 				lastSentAt: null,
 				lastSendResult: null,
+			});
+		}
+		if (
+			path === `${updatePath}/edit-state` &&
+			method === "GET" &&
+			body === undefined &&
+			options.repair
+		) {
+			return json({
+				id: "owned-channel",
+				name: "Stored synthetic channel",
+				type: fixture.type,
+				enabled: true,
+				configRevision: revision,
+				state: "repair-required",
 			});
 		}
 		if (path === updatePath && method === "PUT") {
@@ -232,7 +256,7 @@ function mount(
 		<QueryClientProvider client={client}>
 			<ColorThemeProvider>
 				<IncognitoProvider>
-					<Editor onSave={onSave} />
+					<Editor onSave={onSave} channelId={options.create ? null : "owned-channel"} />
 				</IncognitoProvider>
 			</ColorThemeProvider>
 		</QueryClientProvider>,
@@ -250,6 +274,20 @@ function field(fixture: ProviderCase, key: string) {
 	return found.type === "boolean"
 		? screen.getByRole("switch", { name: found.label })
 		: screen.getByLabelText(found.label);
+}
+function visibleSwitchPurposes(fixture: ProviderCase) {
+	const labels = [
+		...manifest(fixture)
+			.formFields.filter((item) => item.type === "boolean")
+			.map((item) => item.label),
+		"Enabled",
+	];
+	for (const label of labels) {
+		// An aria-label alone must not satisfy the visible-purpose contract.
+		expect(screen.getByRole("switch", { name: label })).toBeVisible();
+		expect(screen.queryAllByText(label, { exact: true })).toHaveLength(1);
+		expect(screen.getByText(label, { exact: true })).toBeVisible();
+	}
 }
 async function ready(fixture: ProviderCase) {
 	await screen.findByRole("button", { name: "Update" });
@@ -317,6 +355,19 @@ describe.each(cases)("actual registered $type editor", (fixture) => {
 	it("renders the real GET catalogue and retained/public controls without dispatching a write", async () => {
 		const view = mount(fixture);
 		await ready(fixture);
+		visibleSwitchPurposes(fixture);
+		for (const control of screen.getAllByRole("switch")) {
+			expect(control.tagName).toBe("BUTTON");
+			expect(control).toHaveAttribute("type", "button");
+			expect(control.tabIndex).toBe(0);
+			control.focus();
+			expect(control).toHaveFocus();
+			const checked = control.getAttribute("aria-checked") === "true";
+			fireEvent.click(control);
+			expect(control).toHaveAttribute("aria-checked", String(!checked));
+			fireEvent.click(control);
+			expect(control).toHaveAttribute("aria-checked", String(checked));
+		}
 		expect(view.requests).toEqual(
 			expect.arrayContaining([
 				{ path: typesPath, method: "GET", body: undefined },
@@ -400,6 +451,7 @@ describe.each(cases)("actual registered $type editor", (fixture) => {
 		localStorage.setItem("arr-dashboard-incognito-mode", "true");
 		const view = mount(fixture);
 		await screen.findByText(/hidden and editing is locked/i);
+		visibleSwitchPurposes(fixture);
 		expect(screen.getByLabelText("Name")).toHaveValue("");
 		for (const descriptor of manifest(fixture).formFields) {
 			const control = field(fixture, descriptor.key);
@@ -408,6 +460,12 @@ describe.each(cases)("actual registered $type editor", (fixture) => {
 				expect((control as HTMLInputElement).value).toBe("");
 			} else if (descriptor.type !== "boolean") expect(control).toHaveValue("");
 			expect(control).toBeDisabled();
+		}
+		for (const control of screen.getAllByRole("switch")) {
+			expect(control).toBeDisabled();
+			const checked = control.getAttribute("aria-checked");
+			control.click();
+			expect(control).toHaveAttribute("aria-checked", checked);
 		}
 		const submit = screen.getByRole("button", { name: "Update" });
 		expect(submit).toBeDisabled();
@@ -421,6 +479,42 @@ describe.each(cases)("actual registered $type editor", (fixture) => {
 });
 
 describe("real descriptor typed/optional controls", () => {
+	it("EMAIL creation shows switch purposes and retains untouched TLS and Enabled defaults", async () => {
+		const fixture = cases.find((item) => item.type === "EMAIL")!;
+		const view = mount(fixture, { create: true });
+		await screen.findByRole("button", { name: "Create" });
+		fireEvent.change(screen.getByLabelText("Type"), { target: { value: "EMAIL" } });
+
+		visibleSwitchPurposes(fixture);
+		expect(screen.getByRole("switch", { name: "Use TLS" })).toHaveAttribute(
+			"aria-checked",
+			"false",
+		);
+		expect(screen.getByRole("switch", { name: "Enabled" })).toHaveAttribute("aria-checked", "true");
+		expect(view.requests).toEqual([{ path: typesPath, method: "GET", body: undefined }]);
+		expect(view.onSave).not.toHaveBeenCalled();
+	});
+	it("repair keeps Enabled visibly named and disabled while TLS remains editable", async () => {
+		const fixture = cases.find((item) => item.type === "EMAIL")!;
+		const view = mount(fixture, { repair: true });
+		fireEvent.click(await screen.findByRole("button", { name: "Check repair options" }));
+		fireEvent.click(await screen.findByRole("button", { name: "Re-enter configuration" }));
+		await screen.findByRole("button", { name: "Save replacement" });
+
+		visibleSwitchPurposes(fixture);
+		const enabled = screen.getByRole("switch", { name: "Enabled" });
+		expect(enabled).toBeDisabled();
+		enabled.click();
+		expect(enabled).toHaveAttribute("aria-checked", "true");
+		const tls = screen.getByRole("switch", { name: "Use TLS" });
+		expect(tls).not.toBeDisabled();
+		expect(tls).toHaveAttribute("aria-checked", "false");
+		fireEvent.click(tls);
+		expect(tls).toHaveAttribute("aria-checked", "true");
+		expect(view.requests.every((request) => request.method === "GET")).toBe(true);
+		expect(view.requests).toHaveLength(3);
+		expect(view.onSave).not.toHaveBeenCalled();
+	});
 	it("EMAIL edits remain numeric/boolean in the saved configuration", async () => {
 		const fixture = cases.find((item) => item.type === "EMAIL")!;
 		const view = mount(fixture);

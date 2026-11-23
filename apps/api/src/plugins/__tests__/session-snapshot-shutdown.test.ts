@@ -1254,11 +1254,20 @@ afterEach(async () => {
 	}
 	if (errors.length) throw new AggregateError(errors, "Native fixture teardown failed");
 });
-async function start(fixture: Awaited<ReturnType<typeof boot>>, origin: Origin) {
+async function start(
+	fixture: Awaited<ReturnType<typeof boot>>,
+	origin: Origin,
+	rebuildPlatformBaseline: boolean,
+) {
 	if (origin === "interval") {
 		fixture.callback("startup")();
 		await fixture.idle();
 		await fixture.activateSources();
+		if (rebuildPlatformBaseline) {
+			expect(fixture.counts.platformRead).toBe(1);
+			// Expire only the scheduler's business clock; do not fire unrelated timers.
+			vi.setSystemTime(virtualNow() + 6 * 60 * 60 * 1000 + 1);
+		}
 	}
 	fixture.callback(origin)();
 }
@@ -1283,13 +1292,16 @@ describe("Session snapshot scheduler lifetime", () => {
 							gate: gate.promise,
 							reject,
 							call:
-								origin === "interval" && (phase === "plexLookup" || phase === "mediaLookup")
+								origin === "interval" &&
+								(phase === "plexLookup" || phase === "mediaLookup" || phase === "platformRead")
 									? 2
 									: 1,
 						},
 					});
-					await start(f, origin);
+					await start(f, origin, phase === "platformRead");
 					await f.entered;
+					if (origin === "interval" && phase === "platformRead")
+						expect(f.counts.platformRead).toBe(2);
 					let closed = false;
 					const close = f.app.close().then(() => {
 						closed = true;
@@ -1408,6 +1420,11 @@ describe("Session snapshot scheduler lifetime", () => {
 		it("preserves accepted child admission after preClose without admitting ordinary notifications", async () => {
 			f.callback("startup")();
 			await f.entered;
+			expect(
+				await waitForNative(() =>
+					allowedEvents.every((event) => f.subscriptionEntries.includes(event)),
+				),
+			).toBe(true);
 			const close = f.app.close();
 			await f.closing;
 			await settle();

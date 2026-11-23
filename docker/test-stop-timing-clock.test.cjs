@@ -8,6 +8,112 @@ const test = require("node:test");
 const clockPath = path.join(__dirname, "stop-timing-clock.cjs");
 const queryPath = path.join(__dirname, "stop-timing-query.sh");
 const { withinTimingLimit } = require("./stop-timing-clock.cjs");
+const { summarizeLauncher } = require("./launcher-log-diagnostics.cjs");
+
+test("launcher diagnostics accept structured and legacy fields without exposing private data", () => {
+	const rows = [
+		"[Launcher] Received SIGTERM, shutting down...",
+		JSON.stringify({ level: 30, time: 1234, msg: "[Launcher] Received SIGINT, shutting down..." }),
+		JSON.stringify({
+			level: 50,
+			time: 1234,
+			category: "launcher-shutdown-failure",
+			reason: "forced-child-termination",
+			private: "synthetic-private",
+		}),
+		'{ "reason": "handoff-revocation-failed", "category": "launcher-shutdown-failure" }',
+		'{"category":"launcher-shutdown-failure","reason":"combined-handoff-rejected"}',
+		'{"category":"launcher-shutdown-failure","reason":"synthetic-private"}',
+		'{"category":"other","reason":"forced-child-termination"}',
+		'{"msg":"synthetic-private"}',
+		'{"category":',
+	];
+	assert.deepEqual(summarizeLauncher(rows.join("\n")), {
+		forcedChild: 1,
+		handoffRevocationFailed: 1,
+		handoffRejected: 1,
+		shutdown: 2,
+		unreadableJson: 1,
+		unrecognizedLauncher: 1,
+	});
+	assert.throws(() => summarizeLauncher("x".repeat(256 * 1024 + 1)), /input-limit/);
+	assert.throws(() => summarizeLauncher("\n".repeat(1000)), /input-limit/);
+});
+
+test("launcher diagnostic CLI refuses unavailable input without printing raw data", () => {
+	const script = path.join(__dirname, "launcher-log-diagnostics.cjs");
+	const output = spawnSync(process.execPath, [script], {
+		input: '{"private":"synthetic-private"}\n',
+		encoding: "utf8",
+	});
+	assert.equal(output.status, 0, output.stderr);
+	assert.equal(
+		output.stdout,
+		"forced_child=0 handoff_revocation_failed=0 handoff_rejected=0 shutdown=0 unreadable_json=0 unrecognized_launcher=0\n",
+	);
+	for (const args of [[], ["unexpected"]]) {
+		const failure = spawnSync(process.execPath, [script, ...args], {
+			input: "synthetic-private".repeat(20000),
+			encoding: "utf8",
+			timeout: 5000,
+		});
+		assert.equal(failure.status, 1);
+		assert.equal(failure.stdout + failure.stderr, "");
+	}
+});
+
+test("launcher shutdown-grace consumer counts structured events and hides raw logs", (t) => {
+	const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "launcher-grace-diagnostics-"));
+	t.after(() => fs.rmSync(fixture, { recursive: true, force: true }));
+	fs.writeFileSync(
+		path.join(fixture, "logs"),
+		[
+			JSON.stringify({ level: 30, msg: "[Launcher] Received SIGTERM, shutting down..." }),
+			JSON.stringify({
+				level: 50,
+				category: "launcher-shutdown-failure",
+				reason: "forced-child-termination",
+				private: "synthetic-private",
+			}),
+			JSON.stringify({
+				category: "launcher-shutdown-failure",
+				reason: "handoff-revocation-failed",
+			}),
+			JSON.stringify({
+				reason: "combined-handoff-rejected",
+				category: "launcher-shutdown-failure",
+			}),
+			"synthetic-private",
+		].join("\n"),
+	);
+	writeExecutable(
+		path.join(fixture, "docker"),
+		'#!/bin/sh\ncase "$1" in\n inspect) echo false ;;\n logs) cat "$FAKE_LOGS" ;;\n *) exit 64 ;;\nesac\n',
+	);
+	const script = fs.readFileSync(path.join(__dirname, "test-shutdown-grace.sh"), "utf8");
+	const start = script.indexOf("report_shutdown_failure() {");
+	const end = script.indexOf("\n}\n", start);
+	assert(start >= 0 && end > start);
+	const result = spawnSync(
+		"/bin/sh",
+		["-c", `${script.slice(start, end + 3)}\nreport_shutdown_failure synthetic 1 1`],
+		{
+			encoding: "utf8",
+			timeout: 5000,
+			env: {
+				PATH: `${fixture}:${process.env.PATH}`,
+				SCRIPT_DIR: __dirname,
+				FAKE_LOGS: path.join(fixture, "logs"),
+			},
+		},
+	);
+	assert.equal(result.status, 0, result.stderr);
+	assert.match(
+		result.stderr,
+		/shutdown diagnostic launcher forced_child=1 handoff_revocation_failed=1 handoff_rejected=1 shutdown=1/,
+	);
+	assert.doesNotMatch(result.stdout + result.stderr, /synthetic-private/);
+});
 
 function runQuery(args, options = {}) {
 	return spawnSync("/bin/sh", [queryPath, ...args], {
@@ -93,7 +199,7 @@ case "$1" in
 				echo "  API did not stop within 90s - sending SIGKILL" >&2
 				echo "ERROR: Services required forced or failed termination" >&2
 				echo "raw-fixture-log-must-not-appear" >&2
-				echo '{"category":"launcher-shutdown-failure","reason":"forced-child-termination"}'
+				echo '{"level":50,"time":1234,"category":"launcher-shutdown-failure","reason":"forced-child-termination"}'
 				echo '{"category":"shutdown-progress","phase":"fastify","elapsedMs":85000,"runningSchedulers":1,"private":"raw-fixture-progress-must-not-appear"}'
 				echo '{"category":"launcher-shutdown-failure","reason":"raw-fixture-launcher-must-not-appear"}'
 			else
@@ -149,7 +255,7 @@ esac
 		result.stderr,
 		/rootless normal stop launcher forced_child=1 handoff_revocation_failed=0 handoff_rejected=0/,
 	);
-	const progress = result.stderr.match(/^  rootless normal stop API progress: (.*)$/m);
+	const progress = result.stderr.match(/^ {2}rootless normal stop API progress: (.*)$/m);
 	assert(progress);
 	assert.deepEqual(JSON.parse(progress[1]), {
 		observations: 1,
@@ -188,15 +294,13 @@ test("one process measures one command with the monotonic clock", () => {
 });
 
 test("one process propagates the measured command failure", () => {
-	const result = spawnSync(process.execPath, [
-		clockPath,
-		"measure",
+	const result = spawnSync(
 		process.execPath,
-		"-e",
-		"process.exit(23)",
-	], {
-		encoding: "utf8",
-	});
+		[clockPath, "measure", process.execPath, "-e", "process.exit(23)"],
+		{
+			encoding: "utf8",
+		},
+	);
 	assert.equal(result.status, 23, result.stderr);
 	assert.match(result.stdout, /^\d+\n$/);
 });
@@ -205,20 +309,14 @@ test("whole-second subtraction can false-fail restart", () => {
 	const startMilliseconds = 999;
 	const endMilliseconds = 10_998;
 	assert.equal(endMilliseconds - startMilliseconds, 9_999);
-	assert.equal(
-		Math.floor(endMilliseconds / 1_000) - Math.floor(startMilliseconds / 1_000),
-		10,
-	);
+	assert.equal(Math.floor(endMilliseconds / 1_000) - Math.floor(startMilliseconds / 1_000), 10);
 });
 
 test("whole-second subtraction can false-pass stubborn stop", () => {
 	const startMilliseconds = 0;
 	const endMilliseconds = 9_999;
 	assert.equal(endMilliseconds - startMilliseconds, 9_999);
-	assert.equal(
-		Math.floor(endMilliseconds / 1_000) - Math.floor(startMilliseconds / 1_000),
-		9,
-	);
+	assert.equal(Math.floor(endMilliseconds / 1_000) - Math.floor(startMilliseconds / 1_000), 9);
 });
 
 test("exact boundaries preserve every timing contract", () => {
@@ -365,10 +463,9 @@ test("failed unknown and mismatched release retain exact ownership", (t) => {
 		["generation-a", "running", "present", "paused", 1],
 		["generation-a", "absent", "query-error", "running", 2],
 	]) {
-		const result = runQuery(
-			["release-ports", ledger, owner, "owned-container", expectedState],
-			{ env: env(dockerMode, runtimeState) },
-		);
+		const result = runQuery(["release-ports", ledger, owner, "owned-container", expectedState], {
+			env: env(dockerMode, runtimeState),
+		});
 		assert.equal(result.status, expectedStatus, result.stderr);
 		const stillReserved = runQuery([
 			"record-port",
@@ -400,13 +497,7 @@ test("restart generation transition retires old active mappings", (t) => {
 	}
 
 	const retired = runQuery(
-		[
-			"release-ports",
-			ledger,
-			"restart-generation-1",
-			"owned-container",
-			"running",
-		],
+		["release-ports", ledger, "restart-generation-1", "owned-container", "running"],
 		{ env: env("present", "running") },
 	);
 	assert.equal(retired.status, 0, retired.stderr);
@@ -434,13 +525,7 @@ test("restart generation transition retires old active mappings", (t) => {
 	);
 
 	const finalRelease = runQuery(
-		[
-			"release-ports",
-			ledger,
-			"restart-generation-2",
-			"owned-container",
-			"absent",
-		],
+		["release-ports", ledger, "restart-generation-2", "owned-container", "absent"],
 		{ env: env("absent") },
 	);
 	assert.equal(finalRelease.status, 0, finalRelease.stderr);
@@ -508,10 +593,9 @@ test("corrupt ledgers preserve QUERY_ERROR for record and release", (t) => {
 	assert.equal(record.status, 2, record.stderr);
 	assert.equal(record.stdout, "QUERY_ERROR\n");
 
-	const release = runQuery(
-		["release-ports", ledger, "generation-a", "owned-container", "absent"],
-		{ env: env("absent") },
-	);
+	const release = runQuery(["release-ports", ledger, "generation-a", "owned-container", "absent"], {
+		env: env("absent"),
+	});
 	assert.equal(release.status, 2, release.stderr);
 	assert.equal(release.stdout, "QUERY_ERROR\n");
 });

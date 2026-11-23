@@ -4,7 +4,8 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Worker } from "node:worker_threads";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import { SqliteSchemaFixture } from "../../__tests__/sqlite-schema-fixture.js";
 import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
 import {
 	acquireJellyfinEpisodePreparation,
@@ -16,6 +17,9 @@ import {
 	verifyPreparedJellyfinEpisodeGeneration,
 } from "../jellyfin-episode-generation-repository.js";
 import { fingerprintJellyfinEpisodeRows } from "../jellyfin-generation-metadata.js";
+
+let schemaFixture: SqliteSchemaFixture | undefined;
+afterAll(() => schemaFixture?.dispose());
 
 const databases: Array<{ directory: string; prisma: ReturnType<typeof createTestPrismaClient> }> =
 	[];
@@ -31,7 +35,11 @@ function syncDisposableSchema(dbPath: string): void {
 async function database() {
 	const directory = mkdtempSync(join(tmpdir(), "jellyfin-episode-generation-"));
 	const dbPath = join(directory, "test.db");
-	syncDisposableSchema(dbPath);
+	if (!schemaFixture) {
+		schemaFixture = new SqliteSchemaFixture();
+		schemaFixture.initialize();
+	}
+	schemaFixture.copyTo(dbPath);
 	const prisma = createTestPrismaClient(dbPath);
 	databases.push({ directory, prisma });
 	await prisma.user.create({ data: { id: "owner", username: "episode-generation-test" } });

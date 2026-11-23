@@ -2,6 +2,7 @@ import type { FastifyBaseLogger } from "fastify";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ArrClientFactory, ClientInstanceData } from "../../arr/client-factory.js";
 import { SeerrApiError, SeerrMutationOutcomeUnknownError } from "../../errors.js";
+import { UpstreamValidationError } from "../../validation/parse-upstream.js";
 import { GENRE_TTL_MS, type SeerrCache } from "../seerr-cache.js";
 import type { SeerrCircuitBreaker } from "../seerr-circuit-breaker.js";
 import { SeerrClient } from "../seerr-client.js";
@@ -517,6 +518,75 @@ describe("discover funnel (shared)", () => {
 // ===========================================================================
 // 10. getMovieGenres
 // ===========================================================================
+
+describe("getTvDetailsFull", () => {
+	function upcomingTvDetails(fields: Record<string, unknown> = {}) {
+		return {
+			id: 1396,
+			name: "Upcoming Series",
+			firstAirDate: "2027-01-15",
+			status: "Planned",
+			genres: [{ id: 18, name: "Drama" }],
+			credits: { cast: [], crew: [] },
+			keywords: [],
+			seasons: [{ id: 1, seasonNumber: 1, episodeCount: 7, airDate: "2027-01-15" }],
+			recommendations: { page: 1, totalPages: 1, totalResults: 0, results: [] },
+			similar: { page: 1, totalPages: 1, totalResults: 0, results: [] },
+			...fields,
+		};
+	}
+
+	it.each([
+		{ label: "null", fields: { lastAirDate: null }, expected: null },
+		{ label: "absent", fields: {}, expected: undefined },
+		{ label: "string", fields: { lastAirDate: "2027-01-15" }, expected: "2027-01-15" },
+	])("returns populated seasons when lastAirDate is $label", async ({ fields, expected }) => {
+		factory.rawRequest.mockResolvedValue(mockResponse(upcomingTvDetails(fields)));
+
+		const result = await client.getTvDetailsFull(1396);
+
+		expect(result.id).toBe(1396);
+		expect(result.name).toBe("Upcoming Series");
+		expect(result.lastAirDate).toBe(expected);
+		expect(result.seasons).toEqual([
+			{ id: 1, seasonNumber: 1, episodeCount: 7, airDate: "2027-01-15" },
+		]);
+		expect(factory.rawRequest).toHaveBeenCalledOnce();
+		expect(factory.rawRequest).toHaveBeenCalledWith(
+			instance,
+			"/api/v1/tv/1396",
+			expect.objectContaining({ method: "GET" }),
+		);
+	});
+
+	it.each([
+		{ label: "number", value: 0 },
+		{ label: "boolean", value: false },
+		{ label: "object", value: {} },
+		{ label: "array", value: [] },
+	])("reports structured 502 for a $label lastAirDate", async ({ value }) => {
+		factory.rawRequest.mockResolvedValue(mockResponse(upcomingTvDetails({ lastAirDate: value })));
+
+		const result = client.getTvDetailsFull(1396);
+
+		await expect(result).rejects.toBeInstanceOf(UpstreamValidationError);
+		await expect(result).rejects.toMatchObject({
+			statusCode: 502,
+			integration: "seerr",
+			category: "getTvDetailsFull",
+			issues: [expect.stringContaining("lastAirDate:")],
+		});
+	});
+
+	it("still reports structured 502 when seasons are absent", async () => {
+		factory.rawRequest.mockResolvedValue(mockResponse(upcomingTvDetails({ seasons: undefined })));
+
+		await expect(client.getTvDetailsFull(1396)).rejects.toMatchObject({
+			statusCode: 502,
+			issues: [expect.stringContaining("seasons:")],
+		});
+	});
+});
 
 describe("getMovieGenres", () => {
 	it("fetches from API on cache miss and stores in cache", async () => {

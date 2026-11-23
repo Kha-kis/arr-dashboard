@@ -627,13 +627,21 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const payload = validateRequest(serviceUpdateSchema, request.body);
 		const userId = request.currentUser!.id;
 
-		const withTopologyLease =
-			payload.enabled === false
-				? withExclusiveCleanupTopologyMutationLease
-				: withCleanupTopologyMutationLease;
+		// Full-form edits include enabled:false even when the service is already disabled.
+		// Only an actual disable needs exclusion against independent background work.
+		const requiresExclusiveLease =
+			payload.enabled === false && (await requireInstance(app, userId, id)).enabled;
+		const withTopologyLease = requiresExclusiveLease
+			? withExclusiveCleanupTopologyMutationLease
+			: withCleanupTopologyMutationLease;
 		return await withTopologyLease({ prisma: app.prisma, log: request.log }, userId, async () => {
 			const updateConnection = async () => {
 				const existing = await requireInstance(app, userId, id);
+				if (payload.enabled === false && existing.enabled && !requiresExclusiveLease) {
+					throw new ConflictError(
+						"This service became enabled while the edit was being prepared. Retry the change.",
+					);
+				}
 				const targetServiceName = payload.service ?? existing.service.toLowerCase();
 				const keepsExistingHttpAuth =
 					payload.httpAuth === undefined && Boolean(existing.encryptedHttpAuthCredentials);
@@ -654,7 +662,12 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 				const resetOtherDefaults = async (
 					prisma: Pick<typeof app.prisma, "serviceInstance">,
 				): Promise<void> => {
-					if (payload.isDefault === true || payload.service) {
+					if (
+						payload.isDefault === true ||
+						(targetService !== existing.service &&
+							existing.isDefault &&
+							payload.isDefault !== false)
+					) {
 						await prisma.serviceInstance.updateMany({
 							where: { service: targetService, userId, NOT: { id } },
 							data: { isDefault: false },

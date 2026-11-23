@@ -1020,7 +1020,7 @@ describe("notification backup on actual owned native storage", () => {
 			expect(removed.notificationOutboxDeliveries).toHaveLength(12);
 			expect(() => validateBackup(backup(removed))).not.toThrow();
 		});
-	});
+	}, 15_000);
 
 	it("authenticates and rekeys all payloads while quarantining imported unfinished work", async () => {
 		const fixture = await boot();

@@ -83,6 +83,126 @@ function makeQueueItem(overrides: Partial<RawQueueItem> = {}): RawQueueItem {
 
 const now = new Date();
 
+describe("evaluateQueueItem: zero-size metadata download (issue #857)", () => {
+	const metadataNow = new Date("2026-11-22T12:00:00.000Z");
+	const metadataItem = makeQueueItem({
+		added: "2026-11-21T12:00:00.000Z",
+		status: "queued",
+		trackedDownloadState: "downloading",
+		trackedDownloadStatus: "ok",
+		size: 0,
+		sizeleft: 0,
+		statusMessages: [],
+		errorMessage: "qBittorrent is downloading metadata",
+	});
+
+	it("matches the report-shaped old metadata download with only the default stalled rule", () => {
+		const result = evaluateQueueItem(
+			metadataItem,
+			baseConfig({ stalledEnabled: true, stalledThresholdMins: 60 }),
+			metadataNow,
+		);
+		expect(result).toEqual({
+			rule: "stalled",
+			reason: "Torrent metadata unavailable; in queue for 1440 minutes (threshold: 60m)",
+		});
+	});
+
+	it("already matches the report's error message through the custom-pattern-only rule", () => {
+		const result = evaluateQueueItem(
+			metadataItem,
+			baseConfig({
+				errorPatternsEnabled: true,
+				errorPatterns: '["downloading metadata"]',
+			}),
+			metadataNow,
+		);
+		expect(result).toEqual({
+			rule: "error_pattern",
+			reason: 'Matched error pattern: "downloading metadata"',
+		});
+	});
+
+	it.each([
+		["missing added", { added: undefined }],
+		["invalid added", { added: "invalid" }],
+		["invalid Date", { added: new Date(Number.NaN) }],
+		["future added", { added: "2026-11-22T12:01:00.000Z" }],
+		["young item", { added: "2026-11-22T11:30:00.000Z" }],
+		["exact threshold", { added: "2026-11-22T11:00:00.000Z" }],
+		["missing size", { size: undefined }],
+		["null size", { size: null }],
+		["string size", { size: "0" }],
+		["missing remaining size", { sizeleft: undefined }],
+		["null remaining size", { sizeleft: null }],
+		["string remaining size", { sizeleft: "0" }],
+		["unknown protocol", { protocol: "unknown" }],
+		["missing protocol", { protocol: undefined }],
+		["Usenet", { protocol: "usenet" }],
+		["non-metadata text", { errorMessage: "qBittorrent is downloading" }],
+		["missing status text", { errorMessage: null }],
+		["different state", { trackedDownloadState: "queued" }],
+		["missing state", { trackedDownloadState: undefined }],
+		["different status", { trackedDownloadStatus: "paused" }],
+		["missing status", { trackedDownloadStatus: undefined }],
+		["positive download progress", { size: 100, sizeleft: 50 }],
+		["completed positive-size download", { size: 100, sizeleft: 0 }],
+	])("does not classify %s as a metadata stall", (_label, overrides) => {
+		expect(
+			evaluateQueueItem(
+				{ ...metadataItem, ...overrides },
+				baseConfig({ stalledEnabled: true, stalledThresholdMins: 60 }),
+				metadataNow,
+			),
+		).toBeNull();
+	});
+
+	it("requires the stalled rule to be enabled", () => {
+		expect(evaluateQueueItem(metadataItem, baseConfig(), metadataNow)).toBeNull();
+	});
+
+	it("does not match with an invalid evaluation clock", () => {
+		expect(
+			evaluateQueueItem(metadataItem, baseConfig({ stalledEnabled: true }), new Date(Number.NaN)),
+		).toBeNull();
+	});
+
+	it("matches just above the threshold using collected status text case-insensitively", () => {
+		const item = {
+			...metadataItem,
+			added: "2026-11-22T10:59:59.999Z",
+			protocol: "TORRENT",
+			errorMessage: null,
+			statusMessages: [{ title: "Download status", messages: ["Downloading Metadata"] }],
+		};
+		expect(
+			evaluateQueueItem(item, baseConfig({ stalledEnabled: true }), metadataNow),
+		).toMatchObject({ rule: "stalled", reason: expect.stringContaining("in queue for") });
+	});
+
+	it("preserves the existing warning keyword and positive-size no-progress branches", () => {
+		const config = baseConfig({ stalledEnabled: true });
+		expect(
+			evaluateQueueItem(
+				{
+					...metadataItem,
+					trackedDownloadStatus: "warning",
+					errorMessage: "The download is stalled",
+				},
+				config,
+				metadataNow,
+			),
+		).toEqual({ rule: "stalled", reason: "Stalled: The download is stalled" });
+		expect(
+			evaluateQueueItem(
+				{ ...metadataItem, size: 100, sizeleft: 100, errorMessage: null },
+				config,
+				metadataNow,
+			),
+		).toEqual({ rule: "stalled", reason: "No progress for 1440 minutes (threshold: 60m)" });
+	});
+});
+
 // ---------------------------------------------------------------------------
 // Tests: Import Blocked Detection (Issue #129 — Primary Bug)
 // ---------------------------------------------------------------------------

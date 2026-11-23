@@ -76,20 +76,21 @@ report_shutdown_failure() {
                 else if ($3 == "status=137") wait_kill++
                 else wait_other++
             }
-            /^\[Launcher\] Received (SIGTERM|SIGINT), shutting down\.\.\.$/ { launcher_shutdown++ }
-            $0 == "{\"category\":\"launcher-shutdown-failure\",\"reason\":\"forced-child-termination\"}" { launcher_kill++ }
-            $0 == "{\"category\":\"launcher-shutdown-failure\",\"reason\":\"handoff-revocation-failed\"}" { launcher_revoke++ }
-            $0 == "{\"category\":\"launcher-shutdown-failure\",\"reason\":\"combined-handoff-rejected\"}" { launcher_reject++ }
             END {
                 printf "  shutdown diagnostic markers supervisor_shutdown=%d supervisor_graceful=%d supervisor_failed=%d",
                     shutdown, graceful, failed
                 printf " supervisor_web_sigkill=%d supervisor_api_sigkill=%d", web_kill, api_kill
                 printf " supervisor_wait_ok=%d supervisor_wait_sigterm=%d supervisor_wait_sigkill=%d supervisor_wait_other=%d",
                     wait_ok, wait_term, wait_kill, wait_other
-                printf " launcher_shutdown=%d launcher_forced_child=%d launcher_handoff_revocation_failed=%d launcher_handoff_rejected=%d\n",
-                    launcher_shutdown, launcher_kill, launcher_revoke, launcher_reject
+                printf "\n"
             }
         ' >&2; then
+        if launcher=$(printf '%s\n' "$diagnostic_logs" |
+            node "$SCRIPT_DIR/launcher-log-diagnostics.cjs" 2>/dev/null); then
+            printf '  shutdown diagnostic launcher %s\n' "$launcher" >&2
+        else
+            echo '  shutdown diagnostic unavailable: launcher markers' >&2
+        fi
         if progress=$(printf '%s\n' "$diagnostic_logs" |
             node "$SCRIPT_DIR/shutdown-progress-diagnostics.cjs" 2>/dev/null); then
             printf '  shutdown progress: %s\n' "$progress" >&2

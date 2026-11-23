@@ -154,8 +154,10 @@ function makeRule(over: Partial<AutoTagRuleInput> = {}): AutoTagRuleInput {
 		id: "rule-1",
 		userId: "user-1",
 		name: "Tag premium",
-		ruleType: "audio_channels",
-		parameters: { operator: "greater_than", channels: 5 },
+		// This suite mocks evaluation to isolate orchestration. File evidence is
+		// exercised with the real evaluator in auto-tag-file-evidence-flow.test.ts.
+		ruleType: "year_range",
+		parameters: { operator: "after", year: 2000 },
 		operator: null,
 		conditions: null,
 		serviceFilter: null,

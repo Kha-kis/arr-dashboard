@@ -4,6 +4,8 @@ import { registerHooks, stripTypeScriptTypes } from "node:module";
 import { fileURLToPath } from "node:url";
 
 const indexUrl = new URL("../../../../index.ts", import.meta.url).href;
+const launcherUrl = new URL("../../../../launcher.ts", import.meta.url).href;
+const pinoUrl = import.meta.resolve("pino");
 const serverUrl = new URL("./restart-action-server.mjs", import.meta.url).href;
 const loggerUrl = new URL("../../../logger.js", import.meta.url).href;
 const versionUrl = new URL("../../../utils/version.js", import.meta.url).href;
@@ -36,6 +38,12 @@ export const getRestoreRuntimeShutdownStatus=()=>({});`,
 
 registerHooks({
 	resolve(specifier, context, next) {
+		// Keep real launcher logs off the strict stdout fixture-event protocol.
+		if (context.parentURL === launcherUrl && specifier === "pino")
+			return {
+				url: `data:text/javascript,${encodeURIComponent(`import pino from ${JSON.stringify(pinoUrl)}; export default options=>pino(options,process.stderr);`)}`,
+				shortCircuit: true,
+			};
 		if (context.parentURL === indexUrl) {
 			if (specifier === "./server.js") return { url: serverUrl, shortCircuit: true };
 			if (stubs.has(specifier))

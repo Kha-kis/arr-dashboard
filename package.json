@@ -9,7 +9,8 @@
 		"build": "turbo run build",
 		"lint": "turbo run lint",
 		"typecheck": "turbo run typecheck",
-		"test": "pnpm run test:dependency-patches && turbo run test && pnpm run test:jellyfin-authority-contract && pnpm run test:e2e-ui-contract",
+		"test": "pnpm run test:dependency-patches && turbo run test && pnpm run test:jellyfin-authority-contract && pnpm run test:e2e-ui-contract && pnpm run test:ci-workflow",
+		"test:ci-workflow": "node --test scripts/ci-workflow.test.mjs",
 		"test:dependency-patches": "node --test scripts/check-braces-depth.test.mjs",
 		"format": "turbo run format",
 		"validate:pr": "pnpm run format && pnpm --filter @arr/shared build && pnpm run typecheck && pnpm run test && pnpm run lint && pnpm run test:pr-review-contract",
@@ -39,7 +40,7 @@
 			"fast-uri@>=4.0.0 <4.2.3": "4.2.3",
 			"postcss@<8.5.23": "8.5.23",
 			"nanoid@<3.3.18": "3.3.18",
-			"dompurify@>=3.0.0 <3.4.17": "3.4.17",
+			"dompurify@>=3.0.0 <3.4.18": "3.4.18",
 			"minimatch@<3.1.4": "3.1.4",
 			"minimatch@>=9.0.0 <9.0.7": "9.0.7",
 			"minimatch@>=10.0.0 <10.2.3": "10.2.3",
@@ -79,6 +80,7 @@
 		"eslint-plugin-unused-imports": "^4.4.1",
 		"knip": "^6.27.0",
 		"turbo": "^2.10.5",
-		"typescript": "^6.0.3"
+		"typescript": "^6.0.3",
+		"yaml": "2.8.3"
 	}
 }
