@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { EPISODE_INVENTORY_REFRESH_MS } from "./episode-inventory-policy.js";
 
 export interface EpisodeFileIdentity {
 	arrEpisodeFileId: number;
@@ -158,7 +159,7 @@ export function hasCompleteEpisodeFileInventory(
 		if (typeof parsed !== "object" || parsed === null) return false;
 		const value = parsed as Record<string, unknown>;
 		return (
-			value.v === 2 &&
+			(value.v === 2 || (value.v === 3 && validObservationFields(value))) &&
 			value.seriesCachedAt === seriesCachedAt.toISOString() &&
 			value.fileCount === files.length &&
 			typeof value.episodeWithFileCount === "number" &&
@@ -170,4 +171,134 @@ export function hasCompleteEpisodeFileInventory(
 	} catch {
 		return false;
 	}
+}
+
+function validIsoTime(value: unknown): value is string {
+	if (typeof value !== "string") return false;
+	const date = new Date(value);
+	return Number.isFinite(date.getTime()) && date.toISOString() === value;
+}
+
+function validDigest(value: unknown): value is string {
+	return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+}
+
+function validObservationFields(value: Record<string, unknown>): boolean {
+	return (
+		validIsoTime(value.observedAt) &&
+		validDigest(value.seriesContentDigest) &&
+		validDigest(value.sourceFingerprint)
+	);
+}
+
+type InventorySource =
+	| { status: "legacy" | "invalid" }
+	| { status: "current"; sourceFingerprint: string; seriesContentDigest: string };
+
+/** Only absent historical provenance may use the legacy publication contract. */
+export function readEpisodeFileInventorySource(
+	seriesData: string,
+	sourceFingerprint: string | null,
+): InventorySource {
+	try {
+		const data: unknown = JSON.parse(seriesData);
+		if (typeof data !== "object" || data === null || Array.isArray(data))
+			return { status: "invalid" };
+		const value = data as Record<string, unknown>;
+		if (!Object.hasOwn(value, "_arrDashboardSource")) return { status: "legacy" };
+		const marker = value._arrDashboardSource;
+		if (
+			!validDigest(sourceFingerprint) ||
+			typeof marker !== "object" ||
+			marker === null ||
+			(marker as Record<string, unknown>).serviceFingerprint !== sourceFingerprint
+		)
+			return { status: "invalid" };
+		return {
+			status: "current",
+			sourceFingerprint,
+			seriesContentDigest: createHash("sha256").update(seriesData).digest("hex"),
+		};
+	} catch {
+		return { status: "invalid" };
+	}
+}
+
+/** New provider observations only; never upgrades an existing receipt. */
+export function createEpisodeFileObservationReceipt(
+	seriesCachedAt: Date,
+	files: readonly EpisodeFileIdentity[],
+	evidence: SonarrSeriesFileEvidence,
+	seriesData: string,
+	sourceFingerprint: string | null,
+	observedAt: Date,
+): string | null {
+	const legacy = createEpisodeFileInventoryReceipt(seriesCachedAt, files, evidence);
+	const source = readEpisodeFileInventorySource(seriesData, sourceFingerprint);
+	if (!legacy || source.status !== "current" || !Number.isFinite(observedAt.getTime())) return null;
+	return JSON.stringify({
+		...JSON.parse(legacy),
+		v: 3,
+		observedAt: observedAt.toISOString(),
+		seriesContentDigest: source.seriesContentDigest,
+		sourceFingerprint: source.sourceFingerprint,
+	});
+}
+
+export interface EpisodeInventoryDisplay {
+	status: "fresh" | "stale" | "unknown";
+	observedAt: string | null;
+}
+
+/** Display evidence only. This must never authorize cache pruning or mutation. */
+export function readEpisodeFileInventoryDisplay(
+	receipt: string | null | undefined,
+	seriesCachedAt: Date | null | undefined,
+	files: readonly EpisodeFileIdentity[],
+	seriesData: string | null | undefined,
+	sourceFingerprint: string | null,
+	now = Date.now(),
+): { complete: boolean; sourceMatches: boolean; episodeInventory?: EpisodeInventoryDisplay } {
+	const unknown: EpisodeInventoryDisplay = { status: "unknown", observedAt: null };
+	const source = readEpisodeFileInventorySource(seriesData ?? "{}", sourceFingerprint);
+	// Revocation or a legacy/malformed receipt must never bypass a known
+	// source mismatch. An absent historical marker remains distinguishable.
+	if (source.status === "invalid")
+		return { complete: false, sourceMatches: false, episodeInventory: unknown };
+	const incomplete = {
+		complete: false,
+		sourceMatches: true,
+		...(source.status === "current" ? { episodeInventory: unknown } : {}),
+	};
+	let value: Record<string, unknown>;
+	try {
+		const parsed: unknown = JSON.parse(receipt ?? "null");
+		if (typeof parsed !== "object" || parsed === null) return incomplete;
+		value = parsed as Record<string, unknown>;
+	} catch {
+		return incomplete;
+	}
+	if (value.v === 2)
+		return {
+			complete: hasCompleteEpisodeFileInventory(receipt, seriesCachedAt, files),
+			sourceMatches: true,
+		};
+	const sourceMatches =
+		source.status === "current" && value.sourceFingerprint === source.sourceFingerprint;
+	if (
+		value.v !== 3 ||
+		!sourceMatches ||
+		source.status !== "current" ||
+		!validObservationFields(value) ||
+		!validIsoTime(value.seriesCachedAt) ||
+		value.seriesContentDigest !== source.seriesContentDigest ||
+		!hasCompleteEpisodeFileInventory(receipt, new Date(value.seriesCachedAt), files)
+	)
+		return { complete: false, sourceMatches, episodeInventory: unknown };
+	const observedAt = value.observedAt as string;
+	const age = now - Date.parse(observedAt);
+	if (!Number.isFinite(age) || age < 0)
+		return { complete: false, sourceMatches, episodeInventory: unknown };
+	const status = age < EPISODE_INVENTORY_REFRESH_MS ? "fresh" : "stale";
+	return { complete: status === "fresh", sourceMatches, episodeInventory: { status, observedAt } };
 }

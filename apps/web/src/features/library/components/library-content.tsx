@@ -13,6 +13,7 @@ import { useMemo } from "react";
 import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
 import { Pagination } from "../../../components/ui";
 import { useLibrarySeedingSummary, useTrackerIcons } from "../../../hooks/api/useQui";
+import type { LibrarySeedingSummary } from "../../../lib/api-client/qui";
 import { buildJellyfinUrl, buildPlexUrl } from "../lib/library-utils";
 
 /**
@@ -56,7 +57,12 @@ interface LibraryCardProps {
 	/** qui torrent state (seeding/ratio) for at-a-glance card pill */
 	quiState?: { state: string; ratio: number | null } | null;
 	/** Per-item tracker summary (count + top hostnames) from qui correlation */
-	seedingSummary?: { trackerCount: number; topHosts: string[]; complete: boolean } | null;
+	seedingSummary?: {
+		trackerCount: number;
+		topHosts: string[];
+		complete: boolean;
+		episodeInventory?: LibrarySeedingSummary["episodeInventory"];
+	} | null;
 	/** qui's tracker-meta map (hostname → {iconUrl, name}) for brand icons */
 	trackerIcons?: Record<string, { iconUrl?: string; name?: string }>;
 }
@@ -292,9 +298,7 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 	// Lookup helper that matches the backend's `arrInstanceId|type:id` key
 	// shape. Returns null when the item isn't correlated (qui doesn't
 	// know about its hashes, or it's an artist/author).
-	const getSeedingSummary = (
-		item: LibraryItem,
-	): { trackerCount: number; topHosts: string[]; complete: boolean } | null => {
+	const getSeedingSummary = (item: LibraryItem): LibraryCardProps["seedingSummary"] => {
 		if (!item.instanceId || typeof item.id !== "number") return null;
 		const key = `${item.instanceId}|${item.type}:${item.id}`;
 		const s = summaries[key];
@@ -303,6 +307,7 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 			trackerCount: s.trackerCount,
 			topHosts: s.topHosts,
 			complete: trackerCoverageStatus === "available",
+			episodeInventory: s.episodeInventory,
 		};
 	};
 	const typesPresent = [grouped.movies, grouped.series, grouped.artists, grouped.authors].filter(
