@@ -1,7 +1,8 @@
 import { performance } from "node:perf_hooks";
 import Fastify, { type FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { SqliteSchemaFixture } from "../../lib/__tests__/sqlite-schema-fixture.js";
 import {
 	registerRestoreBootstrapPlugin,
 	registerRestoreRuntimeActivation,
@@ -16,6 +17,17 @@ import { SyncEngine, type SyncOptions } from "../../lib/trash-guides/sync-engine
 import notificationServicePlugin from "../notification-service.js";
 import schedulerRegistryPlugin from "../scheduler-registry.js";
 import trashSyncSchedulerPlugin from "../trash-sync-scheduler.js";
+
+let sqliteSchema: SqliteSchemaFixture | undefined;
+beforeAll(() => {
+	if ((process.env.NOTIFICATION_OUTBOX_TEST_ENGINE ?? "sqlite") !== "sqlite") return;
+	sqliteSchema = new SqliteSchemaFixture();
+	sqliteSchema.initialize();
+});
+
+afterAll(() => {
+	sqliteSchema?.dispose();
+});
 
 const apps: FastifyInstance[] = [];
 const releases: Array<() => void> = [];
@@ -45,7 +57,7 @@ async function boot(
 		twoOwners?: boolean;
 	} = {},
 ) {
-	const native = await createNotificationOutboxNativeFixture();
+	const native = await createNotificationOutboxNativeFixture({ sqliteSchema });
 	natives.push(native);
 	const templates: Array<{ id: string; userId: string }> = [];
 	ownedTemplates.set(native, templates);

@@ -2,7 +2,8 @@ import { performance } from "node:perf_hooks";
 import type { BackupFileInfo } from "@arr/shared";
 import Fastify, { type FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { SqliteSchemaFixture } from "../../lib/__tests__/sqlite-schema-fixture.js";
 import { BackupService } from "../../lib/backup/backup-service.js";
 import {
 	registerRestoreBootstrapPlugin,
@@ -19,6 +20,17 @@ import { JOB_ID } from "../../lib/scheduler-registry/job-definitions.js";
 import backupSchedulerPlugin from "../backup-scheduler.js";
 import notificationServicePlugin from "../notification-service.js";
 import schedulerRegistryPlugin from "../scheduler-registry.js";
+
+let sqliteSchema: SqliteSchemaFixture | undefined;
+beforeAll(() => {
+	if ((process.env.NOTIFICATION_OUTBOX_TEST_ENGINE ?? "sqlite") !== "sqlite") return;
+	sqliteSchema = new SqliteSchemaFixture();
+	sqliteSchema.initialize();
+});
+
+afterAll(() => {
+	sqliteSchema?.dispose();
+});
 
 const apps: FastifyInstance[] = [];
 type NativeFixture = Awaited<ReturnType<typeof createNotificationOutboxNativeFixture>>;
@@ -110,7 +122,7 @@ async function boot(
 			state.pending--;
 		}
 	};
-	const native = await createNotificationOutboxNativeFixture();
+	const native = await createNotificationOutboxNativeFixture({ sqliteSchema });
 	natives.push(native);
 	await native.run(async () => {
 		await native.prisma.notificationSubscription.createMany({

@@ -1,9 +1,10 @@
 import { performance } from "node:perf_hooks";
 import Fastify, { type FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
-import { afterEach, beforeEach, describe, expect, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, vi } from "vitest";
 import { registerSchedulers } from "../../bootstrap/schedulers.js";
 import { nativeLifecycleTest } from "../../lib/__tests__/native-lifecycle-test.js";
+import { SqliteSchemaFixture } from "../../lib/__tests__/sqlite-schema-fixture.js";
 import {
 	registerRestoreBootstrapPlugin,
 	registerRestoreRuntimeActivation,
@@ -53,6 +54,17 @@ type Native = Awaited<ReturnType<typeof createNotificationOutboxNativeFixture>>;
 type AwaitOnly<T> = T extends (...args: infer Args) => unknown
 	? (...args: Args) => PromiseLike<unknown>
 	: never;
+let sqliteSchema: SqliteSchemaFixture | undefined;
+beforeAll(() => {
+	if ((process.env.NOTIFICATION_OUTBOX_TEST_ENGINE ?? "sqlite") !== "sqlite") return;
+	sqliteSchema = new SqliteSchemaFixture();
+	sqliteSchema.initialize();
+});
+
+afterAll(() => {
+	sqliteSchema?.dispose();
+});
+
 const apps: FastifyInstance[] = [],
 	releases: Array<() => void> = [],
 	tasks: Promise<unknown>[] = [];
@@ -158,7 +170,7 @@ async function boot(
 		preCloseGate?: Promise<void>;
 	} = {},
 ) {
-	const native = await createNotificationOutboxNativeFixture();
+	const native = await createNotificationOutboxNativeFixture({ sqliteSchema });
 	const ownerRows = [
 		{ userId: native.userId, channelId: native.channelId },
 		await native.createOwner(),

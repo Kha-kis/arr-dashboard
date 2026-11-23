@@ -3,6 +3,7 @@ import { chmod, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
+import type { SqliteSchemaFixture } from "../../__tests__/sqlite-schema-fixture.js";
 import { Encryptor } from "../../auth/encryption.js";
 import { openRestoreRuntime } from "../../backup/restore-runtime-admission.js";
 import { createRuntimePrismaClient } from "../../backup/restore-runtime-client.js";
@@ -11,7 +12,9 @@ import { createNotificationOutboxRepository } from "../outbox-repository.js";
 import type { NotificationPayload } from "../types.js";
 
 /** Only newly-owned synthetic databases; no app configuration or provider connection. */
-export async function createNotificationOutboxNativeFixture() {
+export async function createNotificationOutboxNativeFixture(
+	options: Readonly<{ sqliteSchema?: SqliteSchemaFixture }> = {},
+) {
 	const engine = process.env.NOTIFICATION_OUTBOX_TEST_ENGINE ?? "sqlite";
 	let url: string;
 	if (engine === "postgresql") {
@@ -34,7 +37,8 @@ export async function createNotificationOutboxNativeFixture() {
 		const directory = await mkdtemp(join(tmpdir(), "arr-outbox-worker-"));
 		await chmod(directory, 0o700);
 		const file = join(directory, "owned.db");
-		new Database(file).close();
+		if (options.sqliteSchema) options.sqliteSchema.copyTo(file);
+		else new Database(file).close();
 		await chmod(file, 0o600);
 		url = `file:${file}`;
 	} else throw new Error("Owned notification database required.");

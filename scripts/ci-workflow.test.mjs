@@ -101,7 +101,7 @@ test("actual aggregate script succeeds only for the exact complete successful re
 test("SQLite shards own only SQLite and native PostgreSQL runs once", () => {
 	assert.deepEqual(jobs["api-sqlite"].strategy, {
 		"fail-fast": false,
-		matrix: { shardIndex: [1, 2], shardTotal: [2] },
+		matrix: { shardIndex: [1, 2, 3, 4], shardTotal: [4] },
 	});
 	const sqlite = step("api-sqlite", "Run API SQLite shard");
 	assert.equal(
