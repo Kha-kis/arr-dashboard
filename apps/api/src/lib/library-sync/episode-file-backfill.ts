@@ -54,6 +54,7 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import type { ArrClientFactory } from "../arr/client-factory.js";
+import { withIsolatedRuntimePrismaTransaction } from "../backup/restore-runtime-client.js";
 import type { ServiceInstance } from "../prisma.js";
 import { createQuiClient } from "../qui/client-factory.js";
 import { withQuiObservationTopologyGuard } from "../qui/observation-topology-guard.js";
@@ -61,6 +62,7 @@ import {
 	assertQuiTopologyGenerationCurrent,
 	captureQuiTopologyGeneration,
 } from "../qui/topology-generation.js";
+import { withSqliteTransactionWriteIntent } from "../sqlite-transaction-intent.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import {
 	cachedSonarrSeriesFileEvidence,
@@ -246,19 +248,23 @@ export async function runEpisodeFileSync({
 			// rows. A crash, malformed provider row, or partial write then leaves
 			// only positive lower-bound evidence, never a false exact list.
 			try {
-				const invalidated = await app.prisma.libraryCache.updateMany({
-					where: {
-						id: series.id,
-						instanceId: sonarrInstance.id,
-						itemType: "series",
-						cachedAt: series.cachedAt,
-					},
-					data: {
-						episodeFileInventoryReceipt: null,
-						episodeFileInventoryAttemptedAt: new Date(),
-						episodeFileInventoryAttemptToken: attemptToken,
-					},
-				});
+				const invalidated = await withSqliteTransactionWriteIntent(() =>
+					withIsolatedRuntimePrismaTransaction(app.prisma, (tx) =>
+						tx.libraryCache.updateMany({
+							where: {
+								id: series.id,
+								instanceId: sonarrInstance.id,
+								itemType: "series",
+								cachedAt: series.cachedAt,
+							},
+							data: {
+								episodeFileInventoryReceipt: null,
+								episodeFileInventoryAttemptedAt: new Date(),
+								episodeFileInventoryAttemptToken: attemptToken,
+							},
+						}),
+					),
+				);
 				if (invalidated.count !== 1) {
 					result.errors++;
 					failedSeriesIds.push(series.id);
@@ -372,136 +378,139 @@ export async function runEpisodeFileSync({
 			// Claim this exact attempt before writing any rows; all writes and
 			// receipt publication must commit or roll back together.
 			try {
-				const counts = await app.prisma.$transaction(
-					async (tx) => {
-						const claimed = await tx.libraryCache.updateMany({
-							where: {
-								id: series.id,
-								instanceId: sonarrInstance.id,
-								itemType: "series",
-								cachedAt: series.cachedAt,
-								episodeFileInventoryReceipt: null,
-								episodeFileInventoryAttemptToken: attemptToken,
-							},
-							data: {
-								episodeFileInventoryReceipt: stableReceipt,
-								episodeFileInventoryAttemptToken: null,
-							},
-						});
-						if (claimed.count !== 1) throw new Error("series attempt was superseded");
-						const existingRows = await tx.episodeFileCache.findMany({
-							where: { instanceId: sonarrInstance.id, arrSeriesId: series.arrItemId },
-							select: { arrEpisodeFileId: true, path: true, size: true },
-						});
-						const existingById = new Map(existingRows.map((row) => [row.arrEpisodeFileId, row]));
-						const seenFileIds: number[] = [];
-						for (const ef of episodeFiles) {
-							if (
-								typeof ef.id !== "number" ||
-								typeof ef.seasonNumber !== "number" ||
-								typeof ef.size !== "number" ||
-								!ef.path ||
-								!ef.relativePath
-							) {
-								throw new Error("validated provider file lost required fields");
-							}
-							seenFileIds.push(ef.id);
-							const previous = existingById.get(ef.id);
-							const fileChanged =
-								previous !== undefined &&
-								(previous.path !== ef.path || previous.size !== BigInt(ef.size));
-							await tx.episodeFileCache.upsert({
+				const counts = await withSqliteTransactionWriteIntent(() =>
+					withIsolatedRuntimePrismaTransaction(
+						app.prisma,
+						async (tx) => {
+							const claimed = await tx.libraryCache.updateMany({
 								where: {
-									instanceId_arrEpisodeFileId: {
+									id: series.id,
+									instanceId: sonarrInstance.id,
+									itemType: "series",
+									cachedAt: series.cachedAt,
+									episodeFileInventoryReceipt: null,
+									episodeFileInventoryAttemptToken: attemptToken,
+								},
+								data: {
+									episodeFileInventoryReceipt: stableReceipt,
+									episodeFileInventoryAttemptToken: null,
+								},
+							});
+							if (claimed.count !== 1) throw new Error("series attempt was superseded");
+							const existingRows = await tx.episodeFileCache.findMany({
+								where: { instanceId: sonarrInstance.id, arrSeriesId: series.arrItemId },
+								select: { arrEpisodeFileId: true, path: true, size: true },
+							});
+							const existingById = new Map(existingRows.map((row) => [row.arrEpisodeFileId, row]));
+							const seenFileIds: number[] = [];
+							for (const ef of episodeFiles) {
+								if (
+									typeof ef.id !== "number" ||
+									typeof ef.seasonNumber !== "number" ||
+									typeof ef.size !== "number" ||
+									!ef.path ||
+									!ef.relativePath
+								) {
+									throw new Error("validated provider file lost required fields");
+								}
+								seenFileIds.push(ef.id);
+								const previous = existingById.get(ef.id);
+								const fileChanged =
+									previous !== undefined &&
+									(previous.path !== ef.path || previous.size !== BigInt(ef.size));
+								await tx.episodeFileCache.upsert({
+									where: {
+										instanceId_arrEpisodeFileId: {
+											instanceId: sonarrInstance.id,
+											arrEpisodeFileId: ef.id,
+										},
+									},
+									update: {
+										arrSeriesId: series.arrItemId,
+										seasonNumber: ef.seasonNumber,
+										relativePath: ef.relativePath,
+										path: ef.path,
+										size: BigInt(ef.size),
+										qualityName: ef.quality?.quality?.name ?? null,
+										releaseGroup: ef.releaseGroup ?? null,
+										...(fileChanged
+											? {
+													infoHash: null,
+													infoHashSource: null,
+													inodeBackfillRetryAfter: null,
+													torrentState: null,
+													torrentRatio: null,
+													torrentSyncedAt: null,
+												}
+											: {}),
+									},
+									create: {
 										instanceId: sonarrInstance.id,
 										arrEpisodeFileId: ef.id,
+										arrSeriesId: series.arrItemId,
+										seasonNumber: ef.seasonNumber,
+										relativePath: ef.relativePath,
+										path: ef.path,
+										size: BigInt(ef.size),
+										qualityName: ef.quality?.quality?.name ?? null,
+										releaseGroup: ef.releaseGroup ?? null,
 									},
-								},
-								update: {
-									arrSeriesId: series.arrItemId,
-									seasonNumber: ef.seasonNumber,
-									relativePath: ef.relativePath,
-									path: ef.path,
-									size: BigInt(ef.size),
-									qualityName: ef.quality?.quality?.name ?? null,
-									releaseGroup: ef.releaseGroup ?? null,
-									...(fileChanged
-										? {
-												infoHash: null,
-												infoHashSource: null,
-												inodeBackfillRetryAfter: null,
-												torrentState: null,
-												torrentRatio: null,
-												torrentSyncedAt: null,
-											}
-										: {}),
-								},
-								create: {
-									instanceId: sonarrInstance.id,
-									arrEpisodeFileId: ef.id,
-									arrSeriesId: series.arrItemId,
-									seasonNumber: ef.seasonNumber,
-									relativePath: ef.relativePath,
-									path: ef.path,
-									size: BigInt(ef.size),
-									qualityName: ef.quality?.quality?.name ?? null,
-									releaseGroup: ef.releaseGroup ?? null,
-								},
-							});
-						}
+								});
+							}
 
-						// Reap rows whose EpisodeFile id no longer appears in Sonarr's
-						// latest response. This catches the upgrade-replaces-old-file
-						// case (Sonarr swaps file id 123 for file id 456 on a quality
-						// upgrade; row 123 must go) and manual deletions.
-						//
-						// Two correctness traps the naive `notIn` approach hits:
-						//   1. SQLite (via Prisma) has a parameter-count limit on
-						//      `IN/NOT IN` clauses. A series with thousands of
-						//      episodes (long-running soaps, kids' content) overflows
-						//      it. We saw this crash live on the first production run.
-						//   2. A single failed delete was bringing down the whole
-						//      sync — error propagated out, no try/catch, sync aborted
-						//      partway with no resumption signal.
-						//
-						// Re-read deletion targets after a source-snapshot CAS, then delete
-						// and publish the receipt in one transaction. If another worker has
-						// refreshed this series or any row write fails, neither the delete
-						// nor the exactness claim commits.
-						const seenSet = new Set(seenFileIds);
-						const currentRows = await tx.episodeFileCache.findMany({
-							where: { instanceId: sonarrInstance.id, arrSeriesId: series.arrItemId },
-							select: { arrEpisodeFileId: true, path: true, size: true },
-						});
-						const staleIds = currentRows
-							.map((row) => row.arrEpisodeFileId)
-							.filter((id) => !seenSet.has(id));
-						let deleted = 0;
-						// Chunk to stay below even older SQLite parameter caps.
-						const CHUNK = 500;
-						for (let i = 0; i < staleIds.length; i += CHUNK) {
-							const batch = staleIds.slice(i, i + CHUNK);
-							const result = await tx.episodeFileCache.deleteMany({
-								where: {
-									instanceId: sonarrInstance.id,
-									arrSeriesId: series.arrItemId,
-									arrEpisodeFileId: { in: batch },
-								},
+							// Reap rows whose EpisodeFile id no longer appears in Sonarr's
+							// latest response. This catches the upgrade-replaces-old-file
+							// case (Sonarr swaps file id 123 for file id 456 on a quality
+							// upgrade; row 123 must go) and manual deletions.
+							//
+							// Two correctness traps the naive `notIn` approach hits:
+							//   1. SQLite (via Prisma) has a parameter-count limit on
+							//      `IN/NOT IN` clauses. A series with thousands of
+							//      episodes (long-running soaps, kids' content) overflows
+							//      it. We saw this crash live on the first production run.
+							//   2. A single failed delete was bringing down the whole
+							//      sync — error propagated out, no try/catch, sync aborted
+							//      partway with no resumption signal.
+							//
+							// Re-read deletion targets after a source-snapshot CAS, then delete
+							// and publish the receipt in one transaction. If another worker has
+							// refreshed this series or any row write fails, neither the delete
+							// nor the exactness claim commits.
+							const seenSet = new Set(seenFileIds);
+							const currentRows = await tx.episodeFileCache.findMany({
+								where: { instanceId: sonarrInstance.id, arrSeriesId: series.arrItemId },
+								select: { arrEpisodeFileId: true, path: true, size: true },
 							});
-							if (result.count !== batch.length)
-								throw new Error("series stale-row delete was incomplete");
-							deleted += result.count;
-						}
-						const retainedRows = await tx.episodeFileCache.findMany({
-							where: { instanceId: sonarrInstance.id, arrSeriesId: series.arrItemId },
-							select: { arrEpisodeFileId: true, path: true, size: true },
-						});
-						if (!hasCompleteEpisodeFileInventory(stableReceipt, series.cachedAt, retainedRows)) {
-							throw new Error("series file rows do not match verified provider receipt");
-						}
-						return { upserted: episodeFiles.length, deleted };
-					},
-					{ timeout: 30_000 },
+							const staleIds = currentRows
+								.map((row) => row.arrEpisodeFileId)
+								.filter((id) => !seenSet.has(id));
+							let deleted = 0;
+							// Chunk to stay below even older SQLite parameter caps.
+							const CHUNK = 500;
+							for (let i = 0; i < staleIds.length; i += CHUNK) {
+								const batch = staleIds.slice(i, i + CHUNK);
+								const result = await tx.episodeFileCache.deleteMany({
+									where: {
+										instanceId: sonarrInstance.id,
+										arrSeriesId: series.arrItemId,
+										arrEpisodeFileId: { in: batch },
+									},
+								});
+								if (result.count !== batch.length)
+									throw new Error("series stale-row delete was incomplete");
+								deleted += result.count;
+							}
+							const retainedRows = await tx.episodeFileCache.findMany({
+								where: { instanceId: sonarrInstance.id, arrSeriesId: series.arrItemId },
+								select: { arrEpisodeFileId: true, path: true, size: true },
+							});
+							if (!hasCompleteEpisodeFileInventory(stableReceipt, series.cachedAt, retainedRows)) {
+								throw new Error("series file rows do not match verified provider receipt");
+							}
+							return { upserted: episodeFiles.length, deleted };
+						},
+						{ timeout: 30_000 },
+					),
 				);
 				result.filesUpserted += counts.upserted;
 				result.filesDeleted += counts.deleted;
