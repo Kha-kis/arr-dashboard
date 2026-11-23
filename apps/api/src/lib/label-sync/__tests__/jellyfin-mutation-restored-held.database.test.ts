@@ -2,7 +2,8 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { SqliteSchemaFixture } from "../../__tests__/sqlite-schema-fixture.js";
 import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
 import {
 	JellyfinMutationRepository,
@@ -11,6 +12,9 @@ import {
 } from "../jellyfin-mutation-repository.js";
 import { prepareRestoredLabelSyncMutationAttempt } from "../jellyfin-mutation-restore.js";
 import { parseLabelSyncMutationAttempt } from "../jellyfin-mutation-state.js";
+
+let schemaFixture: SqliteSchemaFixture | undefined;
+afterAll(() => schemaFixture?.dispose());
 
 const fixtures: Array<{ directory: string; prisma: ReturnType<typeof createTestPrismaClient> }> =
 	[];
@@ -33,11 +37,11 @@ const input: MutationClaimInput = {
 async function database() {
 	const directory = mkdtempSync(join(tmpdir(), "jellyfin-mutation-restored-held-"));
 	const path = join(directory, "test.db");
-	execFileSync("pnpm", ["exec", "prisma", "db", "push", "--schema", "prisma/schema.prisma"], {
-		cwd: process.cwd(),
-		env: { ...process.env, DATABASE_URL: `file:${path}` },
-		stdio: "ignore",
-	});
+	if (!schemaFixture) {
+		schemaFixture = new SqliteSchemaFixture();
+		schemaFixture.initialize();
+	}
+	schemaFixture.copyTo(path);
 	const prisma = createTestPrismaClient(path);
 	fixtures.push({ directory, prisma });
 	await prisma.user.create({ data: { id: input.userId, username: "held-fixture" } });

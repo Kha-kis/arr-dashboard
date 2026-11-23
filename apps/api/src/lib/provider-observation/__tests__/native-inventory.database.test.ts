@@ -1,8 +1,8 @@
-import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { SqliteSchemaFixture } from "../../__tests__/sqlite-schema-fixture.js";
 import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
 import type { PrismaClient, ServiceInstance } from "../../prisma.js";
 import { createProviderPublicationAuthority } from "../../services/provider-identity-guard.js";
@@ -25,6 +25,9 @@ import {
 	publishNativeInventoryRun,
 } from "../native-inventory-job-repository.js";
 
+let schemaFixture: SqliteSchemaFixture | undefined;
+afterAll(() => schemaFixture?.dispose());
+
 const databases: Array<{ directory: string; prisma: PrismaClient }> = [];
 const NOW = new Date("2026-09-14T12:00:00.000Z");
 
@@ -42,11 +45,11 @@ async function database(): Promise<{
 }> {
 	const directory = mkdtempSync(join(tmpdir(), "native-inventory-"));
 	const dbPath = join(directory, "test.db");
-	execFileSync("pnpm", ["exec", "prisma", "db", "push", "--schema", "prisma/schema.prisma"], {
-		cwd: process.cwd(),
-		env: { ...process.env, DATABASE_URL: `file:${dbPath}` },
-		stdio: "ignore",
-	});
+	if (!schemaFixture) {
+		schemaFixture = new SqliteSchemaFixture();
+		schemaFixture.initialize();
+	}
+	schemaFixture.copyTo(dbPath);
 
 	const prisma = createTestPrismaClient(dbPath);
 	databases.push({ directory, prisma });
