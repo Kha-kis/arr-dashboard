@@ -2,8 +2,9 @@ import { AsyncResource } from "node:async_hooks";
 import { performance } from "node:perf_hooks";
 import Fastify, { type FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerSchedulers } from "../../bootstrap/schedulers.js";
+import { SqliteSchemaFixture } from "../../lib/__tests__/sqlite-schema-fixture.js";
 import {
 	registerRestoreBootstrapPlugin,
 	registerRestoreRuntimeActivation,
@@ -37,6 +38,17 @@ type Outcome = "completed" | "found" | "error" | "throw" | "skipped";
 type AwaitOnly<T> = T extends (...args: infer A) => unknown
 	? (...args: A) => PromiseLike<unknown>
 	: never;
+let sqliteSchema: SqliteSchemaFixture | undefined;
+beforeAll(() => {
+	if ((process.env.NOTIFICATION_OUTBOX_TEST_ENGINE ?? "sqlite") !== "sqlite") return;
+	sqliteSchema = new SqliteSchemaFixture();
+	sqliteSchema.initialize();
+});
+
+afterAll(() => {
+	sqliteSchema?.dispose();
+});
+
 const apps: FastifyInstance[] = [],
 	releases: Array<() => void> = [];
 const fixtures: Array<{ dispose: () => Promise<void> }> = [];
@@ -82,7 +94,7 @@ async function boot(
 		hold?: { phase: Phase; gate: Promise<void>; reject?: boolean };
 	} = {},
 ) {
-	const native = await createNotificationOutboxNativeFixture();
+	const native = await createNotificationOutboxNativeFixture({ sqliteSchema });
 	let normalDispose: (() => Promise<void>) | undefined;
 	fixtures.push({ dispose: () => (normalDispose ? normalDispose() : native.close()) });
 	// Capture native lineage before admission, independently of the outbox graph.
