@@ -674,13 +674,17 @@ export async function syncInstance(
 
 		for (let attempt = 0; attempt < 5; attempt++) {
 			try {
-				await prisma.librarySyncStatus.update({
-					where: { instanceId: instance.id },
-					data: {
-						syncInProgress: false,
-						lastError: errorMessage,
-					},
-				});
+				await withSqliteTransactionWriteIntent(() =>
+					withIsolatedRuntimePrismaTransaction(prisma, (tx) =>
+						tx.librarySyncStatus.update({
+							where: { instanceId: instance.id },
+							data: {
+								syncInProgress: false,
+								lastError: errorMessage,
+							},
+						}),
+					),
+				);
 				break;
 			} catch (updateError) {
 				if (!isTransientStatusWriteError(updateError) || attempt === 4) {

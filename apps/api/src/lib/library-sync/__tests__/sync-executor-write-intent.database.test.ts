@@ -11,6 +11,7 @@ import {
 } from "../../__tests__/scoped-write-intent-fixture.js";
 import type { ArrClientFactory } from "../../arr/client-factory.js";
 import type { Encryptor } from "../../auth/encryption.js";
+import { RestoreRuntimeAdmissionError } from "../../backup/restore-runtime-admission.js";
 import { type LibraryStreamFn, syncInstance } from "../sync-executor.js";
 
 afterEach(closeScopedWriteFixtures);
@@ -60,6 +61,7 @@ async function fixture() {
 	return {
 		...f,
 		instance,
+		logger,
 		run(streamLibraryItems: LibraryStreamFn) {
 			return f.runtime.runOperation(() =>
 				syncInstance(
@@ -90,6 +92,145 @@ const item = {
 };
 
 describe("Library sync batch write admission", { timeout: 30_000 }, () => {
+	// An ordinary status UPDATE exhausts its connection-local admission deadline
+	// here. Failure bookkeeping must use the available writer while this reader holds.
+	it("settles failed sync status while the ordinary native reader is held without replay", async () => {
+		const f = await fixture();
+		const before = await f.plain.libraryCache.findMany();
+		const protectedRows = snapshotProtectedRows(f);
+		let release!: () => void;
+		let entered!: () => void;
+		let requestReader!: () => void;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const ready = new Promise<void>((resolve) => {
+			entered = resolve;
+		});
+		const requested = new Promise<void>((resolve) => {
+			requestReader = resolve;
+		});
+		let streams = 0;
+		let readerSettled = false;
+		let writerAvailable = false;
+		// Admit the competing operation outside the sync's context so its
+		// legitimate ticket remains active until the held reader physically joins.
+		const transaction = f.runtime.runOperation(async () => {
+			await requested;
+			await f.client.prisma.$transaction(
+				async (tx) => {
+					await tx.$queryRawUnsafe("SELECT value FROM CompetitionProbe WHERE id=1");
+					entered();
+					await gate;
+				},
+				{ timeout: 10_000 },
+			);
+			readerSettled = true;
+		});
+		try {
+			const result = await f.run(async function* () {
+				streams++;
+				requestReader();
+				await ready;
+				f.writer.exec("BEGIN IMMEDIATE;ROLLBACK");
+				writerAvailable = true;
+				yield item;
+				throw new Error("Synthetic catalog failure before publication");
+			});
+			const status = await f.plain.librarySyncStatus.findUniqueOrThrow({
+				where: { instanceId: f.instance.id },
+			});
+			recordScopedWriteEvidence("library-status-reader-held-settlement", {
+				result,
+				status,
+				streams,
+				readerSettled,
+				writerAvailable,
+				losses: f.losses,
+			});
+			expect(result).toMatchObject({
+				success: false,
+				itemsProcessed: 0,
+				itemsUpdated: 0,
+				itemsAdded: 0,
+				itemsRemoved: 0,
+				newDownloads: [],
+				error: "Synthetic catalog failure before publication",
+			});
+			expect(readerSettled).toBe(false);
+			expect(writerAvailable).toBe(true);
+			expect(streams).toBe(1);
+			expect(await f.plain.libraryCache.findMany()).toEqual(before);
+			expect(snapshotProtectedRows(f)).toEqual(protectedRows);
+			expect(f.losses).toEqual([]);
+			expect(status).toMatchObject({
+				syncInProgress: false,
+				lastFullSync: null,
+				lastError: "Synthetic catalog failure before publication",
+			});
+		} finally {
+			requestReader();
+			release();
+			await transaction;
+		}
+	});
+
+	// The same generic category after an actual owner-lock loss is unsafe to
+	// recover: neither settlement nor a fresh operation may write through it.
+	it("refuses failed-sync settlement after actual native ownership loss", async () => {
+		const handles = new Set<Database.Database>();
+		const prepare = Database.prototype.prepare;
+		vi.spyOn(Database.prototype, "prepare").mockImplementation(function (
+			this: Database.Database,
+			sql,
+		) {
+			handles.add(this);
+			return prepare.call(this, sql);
+		});
+		const f = await fixture();
+		const before = await f.plain.libraryCache.findMany();
+		const protectedRows = snapshotProtectedRows(f);
+		let streams = 0;
+		const result = await f.run(async function* () {
+			streams++;
+			const owner = [...handles].find(
+				(db) => db.open && db.inTransaction && db.name.endsWith("/owner.sqlite3"),
+			);
+			expect(owner).toBeDefined();
+			owner!.exec("ROLLBACK");
+			throw new Error("Synthetic catalog failure before publication");
+		});
+		const status = await f.plain.librarySyncStatus.findUniqueOrThrow({
+			where: { instanceId: f.instance.id },
+		});
+		const logged = vi
+			.mocked(f.logger.error)
+			.mock.calls.find((call) => call[1] === "Failed to update sync status with error");
+		const refusal = (logged?.[0] as { err?: unknown } | undefined)?.err;
+		recordScopedWriteEvidence("library-status-native-owner-loss", {
+			result,
+			status,
+			streams,
+			losses: f.losses,
+			refusal: refusal instanceof Error ? { name: refusal.name, message: refusal.message } : null,
+		});
+		expect(result).toMatchObject({ success: false, itemsProcessed: 0, newDownloads: [] });
+		expect(refusal).toBeInstanceOf(RestoreRuntimeAdmissionError);
+		expect(streams).toBe(1);
+		expect(status).toMatchObject({ syncInProgress: true, lastFullSync: null, lastError: null });
+		expect(await f.plain.libraryCache.findMany()).toEqual(before);
+		expect(snapshotProtectedRows(f)).toEqual(protectedRows);
+		expect(f.losses).toEqual(["native-owner-unavailable"]);
+		await expect(
+			f.runtime.runOperation(() =>
+				f.client.prisma.librarySyncStatus.update({
+					where: { instanceId: f.instance.id },
+					data: { syncInProgress: false },
+				}),
+			),
+		).rejects.toBeInstanceOf(RestoreRuntimeAdmissionError);
+	});
+
 	// Break caught: an actual commit between guard reads and the cache UPDATE
 	// invalidates an unreserved WAL snapshot and aborts this otherwise valid sync.
 	it("commits a cached-row update once while preventing a competing stale-snapshot commit", async () => {
@@ -198,7 +339,12 @@ describe("Library sync batch write admission", { timeout: 30_000 }, () => {
 			newDownloads: [],
 		});
 		expect(streams).toBe(1);
-		expect(competition?.reservations).toBe(1);
+		// One reservation entered the rolled-back batch; the second writes only
+		// its failed status, without publishing or replaying any cache effects.
+		expect(competition?.reservations).toBe(2);
+		expect(
+			await f.plain.librarySyncStatus.findUniqueOrThrow({ where: { instanceId: f.instance.id } }),
+		).toMatchObject({ syncInProgress: false, lastFullSync: null, lastError: result.error });
 		expect(await f.plain.libraryCache.findMany()).toEqual(before);
 		expect(snapshotProtectedRows(f)).toEqual(protectedRows);
 		expect(f.losses).toEqual([]);

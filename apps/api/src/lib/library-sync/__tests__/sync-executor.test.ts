@@ -171,15 +171,16 @@ function createMockPrisma(
 	// Shared spy list — the transaction closure captures these by reference
 	const txCreates: Array<{ data: Record<string, unknown> }> = [];
 	const txUpdates: Array<{ where: { id: string }; data: Record<string, unknown> }> = [];
+	const librarySyncStatus = {
+		upsert: vi.fn().mockResolvedValue({}),
+		update: vi.fn().mockResolvedValue({}),
+	};
 
 	return {
 		_selectCalls: selectCalls,
 		_txCreates: txCreates,
 		_txUpdates: txUpdates,
-		librarySyncStatus: {
-			upsert: vi.fn().mockResolvedValue({}),
-			update: vi.fn().mockResolvedValue({}),
-		},
+		librarySyncStatus,
 		libraryCache: {
 			findMany: vi.fn().mockImplementation((args: { select?: Record<string, unknown> }) => {
 				selectCalls.push(args?.select);
@@ -192,6 +193,7 @@ function createMockPrisma(
 		$transaction: vi.fn().mockImplementation(
 			async (
 				fn: (tx: {
+					librarySyncStatus: typeof librarySyncStatus;
 					libraryCache: {
 						update: (args: {
 							where: { id: string };
@@ -202,6 +204,7 @@ function createMockPrisma(
 				}) => Promise<unknown>,
 			) => {
 				const tx = {
+					librarySyncStatus,
 					libraryCache: {
 						update: async (args: { where: { id: string }; data: Record<string, unknown> }) => {
 							txUpdates.push(args);
@@ -1179,6 +1182,7 @@ describe("syncInstance", () => {
 			expect(result.error).toBe("provider unavailable");
 			expect(streamStarts).toBe(1);
 			expect(statusUpdate).toHaveBeenCalledTimes(2);
+			expect(mockPrisma.$transaction).toHaveBeenCalledTimes(2);
 			for (const [write] of statusUpdate.mock.calls) {
 				expect(write).toEqual({
 					where: { instanceId: instance.id },
@@ -1202,6 +1206,7 @@ describe("syncInstance", () => {
 
 			expect(result.success).toBe(false);
 			expect(statusUpdate).toHaveBeenCalledTimes(5);
+			expect(mockPrisma.$transaction).toHaveBeenCalledTimes(5);
 			expect(log.error).toHaveBeenCalledWith(
 				expect.objectContaining({ err: expect.any(Error) }),
 				"Failed to update sync status with error",
@@ -1221,6 +1226,7 @@ describe("syncInstance", () => {
 
 			expect(result.success).toBe(false);
 			expect(statusUpdate).toHaveBeenCalledTimes(1);
+			expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
 		});
 	});
 
