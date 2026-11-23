@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import Database from "better-sqlite3";
 import type { FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -8,6 +9,7 @@ import {
 	recordScopedWriteEvidence,
 	snapshotProtectedRows,
 } from "../../__tests__/scoped-write-intent-fixture.js";
+import { createArrServiceFingerprint } from "../../arr/service-fingerprint.js";
 import { runEpisodeFileSync } from "../episode-file-backfill.js";
 import {
 	createEpisodeFileInventoryReceipt,
@@ -20,7 +22,7 @@ async function fixture() {
 	const f = await createScopedWriteFixture();
 	const cachedAt = new Date("2026-01-01T00:00:00.000Z");
 	for (const id of ["synthetic-sonarr", "synthetic-neighbor"]) {
-		await f.plain.serviceInstance.create({
+		const instance = await f.plain.serviceInstance.create({
 			data: {
 				id,
 				userId: "synthetic-user",
@@ -39,7 +41,11 @@ async function fixture() {
 				itemType: "series",
 				title: "Synthetic same title",
 				hasFile: true,
-				data: JSON.stringify({ statistics: { episodeFileCount: 2 }, sizeOnDisk: 2 }),
+				data: JSON.stringify({
+					statistics: { episodeFileCount: 2 },
+					sizeOnDisk: 2,
+					_arrDashboardSource: { serviceFingerprint: createArrServiceFingerprint(instance) },
+				}),
 				cachedAt,
 				episodeFileInventoryReceipt: createEpisodeFileInventoryReceipt(
 					cachedAt,
@@ -70,11 +76,13 @@ async function fixture() {
 	}
 	let afterProviderReads: (() => void) | undefined;
 	let providerReads = 0;
+	let lastProviderReadAt = 0;
 	const providerRead = () => {
 		// An actual independent writer can commit during every provider request.
 		// This fails if either write transaction leaks across provider I/O.
 		f.writer.exec("BEGIN IMMEDIATE;UPDATE CompetitionProbe SET value=value+1 WHERE id=1;COMMIT");
 		providerReads++;
+		lastProviderReadAt = Date.now();
 	};
 	const getSeries = vi.fn(async () => {
 		providerRead();
@@ -104,6 +112,7 @@ async function fixture() {
 		...f,
 		getSeries,
 		getFiles,
+		lastProviderReadAt: () => lastProviderReadAt,
 		armPublication(action: () => void) {
 			afterProviderReads = action;
 		},
@@ -138,6 +147,26 @@ async function expectPublished(f: Awaited<ReturnType<typeof fixture>>) {
 		where: { instanceId: "synthetic-sonarr", arrSeriesId: 1 },
 	});
 	expect(series.episodeFileInventoryAttemptToken).toBeNull();
+	const receipt = JSON.parse(series.episodeFileInventoryReceipt!);
+	expect(receipt).toMatchObject({
+		v: 3,
+		sourceFingerprint: expect.any(String),
+		seriesContentDigest: expect.any(String),
+	});
+	expect(Date.parse(receipt.observedAt)).toBeGreaterThanOrEqual(f.lastProviderReadAt());
+	expect(receipt.seriesContentDigest).toBe(createHash("sha256").update(series.data).digest("hex"));
+	const instance = await f.plain.serviceInstance.findUniqueOrThrow({
+		where: { id: series.instanceId },
+	});
+	expect(receipt.sourceFingerprint).toBe(createArrServiceFingerprint(instance));
+	expect(Date.parse(receipt.observedAt)).toBeLessThanOrEqual(Date.now());
+	expect(
+		hasCompleteEpisodeFileInventory(
+			series.episodeFileInventoryReceipt,
+			new Date(series.cachedAt.getTime() + 1),
+			files,
+		),
+	).toBe(false);
 	expect(
 		hasCompleteEpisodeFileInventory(series.episodeFileInventoryReceipt, series.cachedAt, files),
 	).toBe(true);
@@ -147,6 +176,45 @@ async function expectPublished(f: Awaited<ReturnType<typeof fixture>>) {
 }
 
 describe("Sonarr episode metadata write admission", { timeout: 30_000 }, () => {
+	it.each([null, {}, { serviceFingerprint: "changed-source" }])(
+		"refuses present invalid provenance without pruning: %j",
+		async (marker) => {
+			const f = await fixture();
+			await f.plain.libraryCache.update({
+				where: { id: "synthetic-sonarr-series" },
+				data: {
+					data: JSON.stringify({
+						statistics: { episodeFileCount: 2 },
+						sizeOnDisk: 2,
+						_arrDashboardSource: marker,
+					}),
+				},
+			});
+			const before = await f.plain.episodeFileCache.findMany({ orderBy: { id: "asc" } });
+			const result = await f.run();
+			expect(result).toMatchObject({ errors: 1, filesUpserted: 0, filesDeleted: 0 });
+			expect(await f.plain.episodeFileCache.findMany({ orderBy: { id: "asc" } })).toEqual(before);
+			expect(
+				await f.plain.libraryCache.findUniqueOrThrow({ where: { id: "synthetic-sonarr-series" } }),
+			).toMatchObject({ episodeFileInventoryReceipt: null });
+		},
+	);
+
+	it("keeps absent historical source provenance on v2 without inventing an observation time", async () => {
+		const f = await fixture();
+		await f.plain.libraryCache.update({
+			where: { id: "synthetic-sonarr-series" },
+			data: { data: JSON.stringify({ statistics: { episodeFileCount: 2 }, sizeOnDisk: 2 }) },
+		});
+		expect(await f.run()).toMatchObject({ errors: 0, filesUpserted: 1, filesDeleted: 1 });
+		const row = await f.plain.libraryCache.findUniqueOrThrow({
+			where: { id: "synthetic-sonarr-series" },
+		});
+		const receipt = JSON.parse(row.episodeFileInventoryReceipt!);
+		expect(receipt.v).toBe(2);
+		expect(receipt).not.toHaveProperty("observedAt");
+	});
+
 	for (const phase of ["invalidation", "publication"] as const) {
 		// Both boundaries must reserve before the guard pins its WAL snapshot.
 		// Publication is armed only after invalidation and all provider reads.

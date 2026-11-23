@@ -26,6 +26,7 @@ import {
 import { memo } from "react";
 import { ServiceBadge, StatusBadge } from "../../../components/layout";
 import { Button } from "../../../components/ui";
+import type { LibrarySeedingSummary } from "../../../lib/api-client/qui";
 import {
 	getLinuxInstanceName,
 	getLinuxIsoName,
@@ -133,6 +134,7 @@ interface LibraryCardProps {
 		trackerCount: number;
 		topHosts: string[];
 		complete: boolean;
+		episodeInventory?: LibrarySeedingSummary["episodeInventory"];
 	} | null;
 	/**
 	 * qui's tracker-meta map (hostname → {iconUrl, name}). Same map the
@@ -140,6 +142,37 @@ interface LibraryCardProps {
 	 * for the `topHosts` returned in seedingSummary.
 	 */
 	trackerIcons?: Record<string, { iconUrl?: string; name?: string }>;
+}
+
+function getSeedingSummaryDisplay(
+	summary: NonNullable<LibraryCardProps["seedingSummary"]>,
+	isSeries: boolean,
+) {
+	const inventory = isSeries ? summary.episodeInventory : undefined;
+	const observedAt = inventory?.observedAt ? Date.parse(inventory.observedAt) : Number.NaN;
+	const knownCheckTime =
+		inventory?.status !== "unknown" && Number.isFinite(observedAt) && observedAt <= Date.now();
+	const complete =
+		summary.complete && (!inventory || (inventory.status === "fresh" && knownCheckTime));
+	const count = complete
+		? `Seeding at ${summary.trackerCount} tracker${summary.trackerCount === 1 ? "" : "s"}`
+		: `At least ${summary.trackerCount} trackers observed`;
+	if (!inventory) return { title: count, check: null };
+	if (!knownCheckTime) {
+		return {
+			title: `${count}. Episode file check time unavailable.`,
+			check: { label: "Episode file check time unavailable.", observedAt: null, checkedAt: null },
+		};
+	}
+	const checkedAt = new Date(observedAt).toLocaleString();
+	const label =
+		inventory.status === "stale"
+			? "Episode files out of date; last checked"
+			: "Episode files last checked";
+	return {
+		title: `${count}. ${label} ${checkedAt}.`,
+		check: { label, observedAt: inventory.observedAt, checkedAt },
+	};
 }
 
 function SeriesProgressDisplay({
@@ -283,6 +316,9 @@ export const LibraryCard = memo(function LibraryCard({
 	trackerIcons,
 }: LibraryCardProps) {
 	const [incognitoMode] = useIncognitoMode();
+	const seedingDisplay = seedingSummary
+		? getSeedingSummaryDisplay(seedingSummary, item.type === "series")
+		: null;
 	const monitored = item.monitored ?? false;
 	const hasFile = item.hasFile ?? false;
 	const sizeLabel = formatBytes(item.sizeOnDisk);
@@ -669,12 +705,8 @@ export const LibraryCard = memo(function LibraryCard({
 							 */}
 							{seedingSummary && seedingSummary.trackerCount > 0 && (
 								<span
-									className="inline-flex items-center gap-0.5 rounded-md border border-border/40 bg-card/50 px-1 py-0.5"
-									title={
-										seedingSummary.complete
-											? `Seeding at ${seedingSummary.trackerCount} tracker${seedingSummary.trackerCount === 1 ? "" : "s"}`
-											: `At least ${seedingSummary.trackerCount} trackers observed`
-									}
+									className="inline-flex min-w-0 max-w-full flex-wrap items-center gap-0.5 rounded-md border border-border/40 bg-card/50 px-1 py-0.5"
+									title={seedingDisplay?.title}
 								>
 									{seedingSummary.topHosts.slice(0, 4).map((host) => {
 										const meta = trackerIcons?.[host];
@@ -710,6 +742,20 @@ export const LibraryCard = memo(function LibraryCard({
 									{seedingSummary.trackerCount > 4 && (
 										<span className="px-0.5 text-[9px] font-mono text-muted-foreground">
 											+{seedingSummary.trackerCount - 4}
+										</span>
+									)}
+									{seedingDisplay?.check && (
+										<span className="min-w-0 max-w-full break-words text-[10px] leading-tight text-muted-foreground">
+											{seedingDisplay.check.label}
+											{seedingDisplay.check.observedAt && (
+												<>
+													{" "}
+													<time dateTime={seedingDisplay.check.observedAt}>
+														{seedingDisplay.check.checkedAt}
+													</time>
+													.
+												</>
+											)}
 										</span>
 									)}
 								</span>

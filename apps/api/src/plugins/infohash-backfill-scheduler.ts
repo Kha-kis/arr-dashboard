@@ -39,6 +39,7 @@ import {
 	runEpisodeBackfillSweep,
 	runEpisodeFileSync,
 } from "../lib/library-sync/episode-file-backfill.js";
+import { EPISODE_INVENTORY_REFRESH_MS } from "../lib/library-sync/episode-inventory-policy.js";
 import {
 	type BackfillSweepResult,
 	countBackfillCandidates,
@@ -49,7 +50,7 @@ import {
 import { runPathBackfillSweep } from "../lib/library-sync/infohash-backfill-by-path.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 
-const INTERVAL_MS = 6 * 60 * 60_000; // 6h steady-state cadence
+const INTERVAL_MS = EPISODE_INVENTORY_REFRESH_MS; // unchanged 6h steady-state cadence
 const RETRY_PROBE_INTERVAL_MS = 5 * 60_000; // lightweight due-only probe
 const STARTUP_DELAY_MS = 30_000; // 30s before first action
 const CATCHUP_GAP_MS = 60_000; // 60s breathing room between catch-up batches

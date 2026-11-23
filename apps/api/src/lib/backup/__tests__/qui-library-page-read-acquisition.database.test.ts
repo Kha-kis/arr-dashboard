@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fastifyCookie from "@fastify/cookie";
 import Database from "better-sqlite3";
 import Fastify from "fastify";
@@ -10,13 +11,20 @@ import {
 	createScopedWriteFixture,
 	type ScopedWriteFixture,
 } from "../../__tests__/scoped-write-intent-fixture.js";
+import { createArrServiceFingerprint } from "../../arr/service-fingerprint.js";
 import { SessionService } from "../../auth/session.js";
 import { createEpisodeFileInventoryReceipt } from "../../library-sync/episode-file-coverage.js";
 import { createRuntimeSessionMetadataPrismaClient } from "../restore-runtime-client.js";
 
 // Only external filesystem/provider work is synthetic. Session signing,
 // runtime admission, ownership joins and every SQL statement remain real.
-const external = vi.hoisted(() => ({ paths: [] as string[], ordinary: undefined as unknown }));
+const external = vi.hoisted(() => ({
+	paths: [] as string[],
+	ordinary: undefined as unknown,
+	trackerReads: 0,
+	arrReads: 0,
+	trackerGate: undefined as Promise<void> | undefined,
+}));
 vi.mock("../../library-sync/infohash-backfill-by-inode.js", () => ({
 	buildFileIdIndex: async (
 		_client: unknown,
@@ -40,7 +48,11 @@ vi.mock("../../library-sync/infohash-backfill-by-inode.js", () => ({
 vi.mock("../../qui/client-factory.js", () => ({
 	createQuiClient: () => ({
 		getTorrentByHash: async () => ({ instanceId: 1 }),
-		getTrackers: async () => [{ url: "https://tracker.invalid/announce" }],
+		getTrackers: async () => {
+			external.trackerReads++;
+			await external.trackerGate;
+			return [{ url: "https://tracker.invalid/announce" }];
+		},
 	}),
 }));
 vi.mock("../../qui/torrent-list-cache.js", () => ({ getCachedAllTorrents: async () => [] }));
@@ -111,6 +123,9 @@ async function seedItems(f: ScopedWriteFixture, items: Item[]) {
 
 async function createApp(f: ScopedWriteFixture) {
 	external.paths = [];
+	external.trackerReads = 0;
+	external.arrReads = 0;
+	external.trackerGate = undefined;
 	external.ordinary = f.client.prisma;
 	const app = Fastify({ logger: false });
 	const env = envSchema.parse({ NODE_ENV: "test", DATABASE_URL: `file:${f.path}` });
@@ -118,6 +133,12 @@ async function createApp(f: ScopedWriteFixture) {
 	const sessions = new SessionService(f.client.prisma, env, app.log, metadata.prisma);
 	const session = await f.runtime.runOperation(() => sessions.createSession("synthetic-user"));
 	app.decorate("prisma", f.client.prisma);
+	app.decorate("arrClientFactory", {
+		create: () => {
+			external.arrReads++;
+			throw new Error("summary must not query Sonarr");
+		},
+	} as never);
 	app.decorate("restoreRuntime", f.runtime);
 	app.decorate("sessionService", sessions);
 	await app.register(fastifyCookie, { secret: "synthetic-signing-secret".repeat(2) });
@@ -167,73 +188,113 @@ function observePathSelects(f: ScopedWriteFixture) {
 	return queries;
 }
 
+async function seedV3Observation(f: ScopedWriteFixture, item: Item, observedAt = new Date()) {
+	await seedItems(f, [item]);
+	const key = `${item.arrInstanceId}|series:${item.itemId}`;
+	const instance = await f.plain.serviceInstance.findUniqueOrThrow({
+		where: { id: item.arrInstanceId },
+	});
+	const sourceFingerprint = createArrServiceFingerprint(instance);
+	const data = JSON.stringify({
+		id: item.itemId,
+		statistics: { episodeFileCount: 3 },
+		sizeOnDisk: 300,
+		_arrDashboardSource: { serviceFingerprint: sourceFingerprint },
+	});
+	const row = await f.plain.libraryCache.findUniqueOrThrow({ where: { id: key } });
+	// Construct the proposed wire format independently, so RED exercises the
+	// existing route rather than failing because a new helper is absent.
+	const receipt = JSON.stringify({
+		...JSON.parse(row.episodeFileInventoryReceipt!),
+		v: 3,
+		observedAt: observedAt.toISOString(),
+		seriesContentDigest: createHash("sha256").update(data).digest("hex"),
+		sourceFingerprint,
+	});
+	await f.plain.libraryCache.update({
+		where: { id: key },
+		data: { data, episodeFileInventoryReceipt: receipt },
+	});
+	return { key, data, receipt, observedAt };
+}
+
 describe("qUI full-page cached path SELECT acquisition", { timeout: 30_000 }, () => {
 	// Break caught: restoring a per-item SELECT loop amplifies guarded native
-	// queries from two sets to an entire page, even on a leased read connection.
-	it.each([50, 500])("uses two path SELECTs for a populated mixed page of %i", async (size) => {
-		const f = await createScopedWriteFixture({ writeIntent: true });
-		await seedSources(f);
-		const items: Item[] = Array.from({ length: size }, (_, index) => ({
-			arrInstanceId: index % 4 < 2 ? "arr-b" : "arr-a",
-			itemId: Math.floor(index / 2) + 1,
-			itemType: index % 2 === 0 ? "series" : "movie",
-		}));
-		await seedItems(f, items);
-		const { app, request } = await createApp(f);
-		let release = () => {};
-		let entered = () => {};
-		const started = new Promise<void>((resolve) => {
-			entered = resolve;
-		});
-		const held = new Promise<void>((resolve) => {
-			release = resolve;
-		});
-		const rollback = new Error("synthetic-page-publication-rollback");
-		const publication = f.runtime
-			.runOperation(() =>
-				f.client.prisma.$transaction(
-					async (tx) => {
-						await tx.libraryCache.update({ where: { id: "arr-b|movie:1" }, data: { data: "{}" } });
-						await tx.episodeFileCache.updateMany({
-							where: { instanceId: "arr-b", arrSeriesId: 1 },
-							data: { path: "/uncommitted" },
-						});
-						entered();
-						await held;
-						throw rollback;
-					},
-					{ timeout: 20_000 },
-				),
-			)
-			.catch((error: unknown) => error);
-		try {
-			await started;
-			const queries = observePathSelects(f);
-			const response = await request(items);
-			expect(response.statusCode, response.body).toBe(200);
-			const result = response.json();
-			expect(result.status).toBe("available");
-			expect(Object.keys(result.summaries)).toEqual(
-				items.map((item) => `${item.arrInstanceId}|${item.itemType}:${item.itemId}`),
-			);
-			for (const item of items)
-				expect(result.summaries[`${item.arrInstanceId}|${item.itemType}:${item.itemId}`]).toEqual({
-					trackerCount: 1,
-					topHosts: ["tracker.invalid"],
-					hashCount: item.itemType === "series" ? 2 : 1,
-				});
-			expect(external.paths).toHaveLength(size * 1.5);
-			expect(external.paths).toContain("/arr-b|movie:1/movie.mkv");
-			expect(external.paths).toContain("/arr-b|series:1/a.mkv");
-			expect(external.paths).not.toContain("/uncommitted");
-			expect(queries).toHaveLength(2);
-		} finally {
-			release();
-			expect(await publication).toBe(rollback);
-			await app.close();
-		}
-		expect(f.losses).toEqual([]);
-	});
+	// queries from fixed sets to an entire page, even on a leased read connection.
+	it.each([50, 500])(
+		"uses three bounded content/file/movie SELECTs for a populated mixed page of %i",
+		async (size) => {
+			const f = await createScopedWriteFixture({ writeIntent: true });
+			await seedSources(f);
+			const items: Item[] = Array.from({ length: size }, (_, index) => ({
+				arrInstanceId: index % 4 < 2 ? "arr-b" : "arr-a",
+				itemId: Math.floor(index / 2) + 1,
+				itemType: index % 2 === 0 ? "series" : "movie",
+			}));
+			await seedItems(f, items);
+			const { app, request } = await createApp(f);
+			let release = () => {};
+			let entered = () => {};
+			const started = new Promise<void>((resolve) => {
+				entered = resolve;
+			});
+			const held = new Promise<void>((resolve) => {
+				release = resolve;
+			});
+			const rollback = new Error("synthetic-page-publication-rollback");
+			const publication = f.runtime
+				.runOperation(() =>
+					f.client.prisma.$transaction(
+						async (tx) => {
+							await tx.libraryCache.update({
+								where: { id: "arr-b|movie:1" },
+								data: { data: "{}" },
+							});
+							await tx.episodeFileCache.updateMany({
+								where: { instanceId: "arr-b", arrSeriesId: 1 },
+								data: { path: "/uncommitted" },
+							});
+							entered();
+							await held;
+							throw rollback;
+						},
+						{ timeout: 20_000 },
+					),
+				)
+				.catch((error: unknown) => error);
+			try {
+				await started;
+				const queries = observePathSelects(f);
+				const response = await request(items);
+				expect(response.statusCode, response.body).toBe(200);
+				const result = response.json();
+				expect(result.status).toBe("available");
+				expect(Object.keys(result.summaries)).toEqual(
+					items.map((item) => `${item.arrInstanceId}|${item.itemType}:${item.itemId}`),
+				);
+				for (const item of items)
+					expect(result.summaries[`${item.arrInstanceId}|${item.itemType}:${item.itemId}`]).toEqual(
+						{
+							trackerCount: 1,
+							topHosts: ["tracker.invalid"],
+							hashCount: item.itemType === "series" ? 2 : 1,
+						},
+					);
+				expect(external.paths).toHaveLength(size * 1.5);
+				expect(external.paths).toContain("/arr-b|movie:1/movie.mkv");
+				expect(external.paths).toContain("/arr-b|series:1/a.mkv");
+				expect(external.paths).not.toContain("/uncommitted");
+				// The existing series authority SELECT now includes content for v3.
+				// Episode paths and movie paths remain one set each, never per item.
+				expect(queries).toHaveLength(3);
+			} finally {
+				release();
+				expect(await publication).toBe(rollback);
+				await app.close();
+			}
+			expect(f.losses).toEqual([]);
+		},
+	);
 
 	it("keeps foreign, missing and mismatched tuples unknown while preserving same-ID instances and types", async () => {
 		const f = await createScopedWriteFixture({ writeIntent: true });
@@ -328,6 +389,254 @@ describe("qUI full-page cached path SELECT acquisition", { timeout: 30_000 }, ()
 			await app.close();
 		}
 		expect(f.losses).toEqual([]);
+	});
+
+	it("retains independently observed inventory after an unchanged catalog timestamp advance", async () => {
+		const f = await createScopedWriteFixture();
+		await seedSources(f);
+		const item: Item = { arrInstanceId: "arr-b", itemId: 1, itemType: "series" };
+		const observation = await seedV3Observation(f, item);
+		await f.plain.libraryCache.update({
+			where: { id: observation.key },
+			data: { cachedAt: new Date(cachedAt.getTime() + 1) },
+		});
+		const { app, request } = await createApp(f);
+		try {
+			const response = await request([item]);
+			expect(response.statusCode, response.body).toBe(200);
+			expect(response.json()).toMatchObject({
+				status: "available",
+				summaries: {
+					[observation.key]: {
+						trackerCount: 1,
+						hashCount: 2,
+						episodeInventory: { status: "fresh", observedAt: observation.observedAt.toISOString() },
+					},
+				},
+			});
+			const trackerReads = external.trackerReads;
+			const fileReads = external.paths.length;
+			await f.plain.libraryCache.update({
+				where: { id: observation.key },
+				data: { cachedAt: new Date(cachedAt.getTime() + 2) },
+			});
+			expect((await request([item])).json()).toEqual(response.json());
+			expect(external.trackerReads).toBe(trackerReads);
+			expect(external.paths).toHaveLength(fileReads);
+			expect(external.arrReads).toBe(0);
+		} finally {
+			await app.close();
+		}
+		expect(f.losses).toEqual([]);
+	});
+
+	it("expires an observation inside the ten-minute available summary cache", async () => {
+		const f = await createScopedWriteFixture();
+		await seedSources(f);
+		const item: Item = { arrInstanceId: "arr-b", itemId: 1, itemType: "series" };
+		const now = Date.now();
+		const observation = await seedV3Observation(
+			f,
+			item,
+			new Date(now - 6 * 60 * 60_000 + 5 * 60_000),
+		);
+		const { app, request } = await createApp(f);
+		const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+		try {
+			expect((await request([item])).json()).toMatchObject({
+				status: "available",
+				summaries: { [observation.key]: { episodeInventory: { status: "fresh" } } },
+			});
+			const reads = external.trackerReads;
+			// The inventory's five-hour-old as-of clock must not become the
+			// ten-minute tracker-cache build time and force repeat fanout.
+			expect((await request([item])).json().status).toBe("available");
+			expect(external.trackerReads).toBe(reads);
+			clock.mockReturnValue(now + 5 * 60_000);
+			expect((await request([item])).json()).toMatchObject({
+				status: "partial",
+				summaries: {
+					[observation.key]: {
+						trackerCount: 1,
+						hashCount: 2,
+						episodeInventory: { status: "stale", observedAt: observation.observedAt.toISOString() },
+					},
+				},
+			});
+			expect(external.arrReads).toBe(0);
+		} finally {
+			clock.mockRestore();
+			await app.close();
+		}
+	});
+
+	it.each([
+		"receipt",
+		"source",
+		"content",
+		"file",
+		"future",
+		"malformed",
+		"marker",
+		"revoked source",
+		"malformed receipt source",
+		"legacy receipt source",
+	])("invalidates cached available inventory on %s changes", async (defect) => {
+		const f = await createScopedWriteFixture();
+		await seedSources(f);
+		const item: Item = { arrInstanceId: "arr-b", itemId: 1, itemType: "series" };
+		const observation = await seedV3Observation(f, item);
+		const { app, request } = await createApp(f);
+		try {
+			expect((await request([item])).json().status).toBe("available");
+			if (defect === "source")
+				await f.plain.serviceInstance.update({
+					where: { id: "arr-b" },
+					data: { encryptedApiKey: "replacement" },
+				});
+			if (defect === "content")
+				await f.plain.libraryCache.update({
+					where: { id: observation.key },
+					data: { data: `${observation.data} ` },
+				});
+			if (defect === "marker")
+				await f.plain.libraryCache.update({
+					where: { id: observation.key },
+					data: {
+						data: JSON.stringify({ ...JSON.parse(observation.data), _arrDashboardSource: null }),
+					},
+				});
+			if (defect === "file")
+				await f.plain.episodeFileCache.updateMany({
+					where: { instanceId: "arr-b", arrEpisodeFileId: 2 },
+					data: { path: "/replaced.mkv" },
+				});
+			if (defect === "receipt" || defect === "future" || defect === "malformed")
+				await f.plain.libraryCache.update({
+					where: { id: observation.key },
+					data: {
+						episodeFileInventoryReceipt:
+							defect === "receipt"
+								? null
+								: JSON.stringify({
+										...JSON.parse(observation.receipt),
+										observedAt:
+											defect === "future" ? new Date(Date.now() + 60_000).toISOString() : "invalid",
+									}),
+					},
+				});
+			if (defect.endsWith(" source")) {
+				await f.plain.serviceInstance.update({
+					where: { id: "arr-b" },
+					data: { encryptedApiKey: "replacement" },
+				});
+				const legacy = JSON.parse(observation.receipt);
+				delete legacy.observedAt;
+				delete legacy.sourceFingerprint;
+				delete legacy.seriesContentDigest;
+				legacy.v = 2;
+				await f.plain.libraryCache.update({
+					where: { id: observation.key },
+					data: {
+						episodeFileInventoryReceipt:
+							defect === "revoked source"
+								? null
+								: defect === "malformed receipt source"
+									? "invalid"
+									: JSON.stringify(legacy),
+					},
+				});
+			}
+			const result = (await request([item])).json();
+			expect(result.status).toBe("partial");
+			if (defect !== "receipt")
+				expect(result.summaries[observation.key].episodeInventory).toEqual({
+					status: "unknown",
+					observedAt: null,
+				});
+			if (defect === "source" || defect === "marker" || defect.endsWith(" source"))
+				expect(result.summaries[observation.key]).toMatchObject({
+					hashCount: 0,
+					trackerCount: 0,
+				});
+			expect(external.arrReads).toBe(0);
+		} finally {
+			await app.close();
+		}
+	});
+
+	it("keeps independent observations scoped across same-title, same-ID instances and foreign owners", async () => {
+		const f = await createScopedWriteFixture();
+		await seedSources(f);
+		const other = await f.plain.serviceInstance.findUniqueOrThrow({ where: { id: "arr-b" } });
+		await f.plain.serviceInstance.create({ data: { ...other, id: "arr-c" } });
+		const items: Item[] = ["arr-b", "arr-c", "foreign-arr"].map((arrInstanceId) => ({
+			arrInstanceId,
+			itemId: 1,
+			itemType: "series",
+		}));
+		const observations = [];
+		for (const item of items) observations.push(await seedV3Observation(f, item));
+		// Matching file counts/bytes, title and provider IDs do not transfer
+		// one instance's source authority to another instance.
+		await f.plain.libraryCache.update({
+			where: { id: observations[1]!.key },
+			data: { episodeFileInventoryReceipt: observations[0]!.receipt },
+		});
+		const { app, request } = await createApp(f);
+		try {
+			const result = (await request(items)).json();
+			expect(result.status).toBe("partial");
+			expect(result.summaries[observations[0]!.key]).toMatchObject({
+				trackerCount: 1,
+				hashCount: 2,
+				episodeInventory: { status: "fresh" },
+			});
+			expect(result.summaries[observations[1]!.key]).toMatchObject({
+				trackerCount: 0,
+				hashCount: 0,
+				episodeInventory: { status: "unknown", observedAt: null },
+			});
+			expect(result.summaries[observations[2]!.key]).toEqual({
+				trackerCount: 0,
+				hashCount: 0,
+				topHosts: [],
+			});
+			expect(external.paths).toEqual(["/arr-b|series:1/a.mkv", "/arr-b|series:1/b.mkv"]);
+			expect(external.arrReads).toBe(0);
+		} finally {
+			await app.close();
+		}
+	});
+
+	it("resumes meaningful tracker collection across an unchanged catalog poll", async () => {
+		const f = await createScopedWriteFixture();
+		await seedSources(f);
+		const item: Item = { arrInstanceId: "arr-b", itemId: 1, itemType: "series" };
+		const observation = await seedV3Observation(f, item);
+		const { app, request } = await createApp(f);
+		let release = () => {};
+		external.trackerGate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		try {
+			expect((await request([item])).json().status).toBe("building");
+			expect(external.trackerReads).toBe(2);
+			await f.plain.libraryCache.update({
+				where: { id: observation.key },
+				data: { cachedAt: new Date(cachedAt.getTime() + 1) },
+			});
+			release();
+			expect((await request([item])).json()).toMatchObject({
+				status: "available",
+				summaries: { [observation.key]: { trackerCount: 1, hashCount: 2 } },
+			});
+			expect(external.trackerReads).toBe(2);
+			expect(external.arrReads).toBe(0);
+		} finally {
+			release();
+			await app.close();
+		}
 	});
 
 	it("requires the exact series receipt, count, snapshot and file identities for complete coverage", async () => {
