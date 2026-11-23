@@ -1,13 +1,18 @@
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { normalizeTorrentState } from "@arr/shared";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { createArrServiceFingerprint } from "../../lib/arr/service-fingerprint.js";
 import { withIsolatedRuntimePrismaReadClient } from "../../lib/backup/restore-runtime-client.js";
 import {
 	runEpisodeBackfillSweep,
 	runEpisodeFileSync,
 } from "../../lib/library-sync/episode-file-backfill.js";
-import { hasCompleteEpisodeFileInventory } from "../../lib/library-sync/episode-file-coverage.js";
+import {
+	type EpisodeInventoryDisplay,
+	readEpisodeFileInventoryDisplay,
+} from "../../lib/library-sync/episode-file-coverage.js";
 import {
 	buildFileIdIndex,
 	clearFileIdIndexCache,
@@ -769,6 +774,7 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 	const LIBRARY_SUMMARY_TTL_MS = 10 * 60 * 1000;
 	const LIBRARY_PARTIAL_SUMMARY_TTL_MS = 60 * 1000;
 	interface LibrarySeedingSummaryEntry {
+		episodeInventory?: EpisodeInventoryDisplay;
 		trackerCount: number;
 		topHosts: string[];
 		hashCount: number;
@@ -885,41 +891,101 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 			.join(",");
 		const collectionSlot = JSON.stringify([userId, sortedKey]);
 		const seriesItems = body.items.filter((item) => item.itemType === "series");
-		const seriesRows =
+		const [seriesRows, episodeRows] =
 			seriesItems.length > 0
 				? await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
-						prisma.libraryCache.findMany({
-							where: {
-								itemType: "series",
-								instance: { userId },
-								OR: seriesItems.map((item) => ({
-									instanceId: item.arrInstanceId,
-									arrItemId: item.itemId,
-								})),
-							},
-							select: {
-								instanceId: true,
-								arrItemId: true,
-								cachedAt: true,
-								episodeFileInventoryReceipt: true,
-							},
-						}),
+						Promise.all([
+							prisma.libraryCache.findMany({
+								where: {
+									itemType: "series",
+									instance: { userId },
+									OR: seriesItems.map((item) => ({
+										instanceId: item.arrInstanceId,
+										arrItemId: item.itemId,
+									})),
+								},
+								select: {
+									instanceId: true,
+									arrItemId: true,
+									cachedAt: true,
+									data: true,
+									instance: true,
+									episodeFileInventoryReceipt: true,
+								},
+							}),
+							prisma.episodeFileCache.findMany({
+								where: {
+									instance: { userId },
+									OR: seriesItems.map((item) => ({
+										instanceId: item.arrInstanceId,
+										arrSeriesId: item.itemId,
+									})),
+								},
+								select: {
+									instanceId: true,
+									arrSeriesId: true,
+									arrEpisodeFileId: true,
+									path: true,
+									size: true,
+								},
+							}),
+						]),
 					)
-				: [];
+				: [[], []];
+		const episodesBySeries = new Map<string, typeof episodeRows>();
+		for (const row of episodeRows) {
+			const key = `${row.instanceId}|series:${row.arrSeriesId}`;
+			const episodes = episodesBySeries.get(key) ?? [];
+			episodes.push(row);
+			episodesBySeries.set(key, episodes);
+		}
 		const seriesAuthority = new Map(
 			seriesRows.map((row) => [`${row.instanceId}|series:${row.arrItemId}`, row]),
 		);
-		// Receipt revocation or a new Sonarr series snapshot must invalidate
-		// even a previously exact ten-minute summary cache entry.
+		const currentSourceFingerprints = new Map<string, string | null>();
+		for (const [key, row] of seriesAuthority) {
+			let fingerprint: string | null = null;
+			if (row.instance.service === "SONARR" && row.instance.enabled) {
+				try {
+					fingerprint = createArrServiceFingerprint(row.instance);
+				} catch {
+					/* unavailable identity fails closed */
+				}
+			}
+			currentSourceFingerprints.set(key, fingerprint);
+		}
+		const readSeriesDisplay = (key: string) => {
+			const row = seriesAuthority.get(key);
+			return readEpisodeFileInventoryDisplay(
+				row?.episodeFileInventoryReceipt,
+				row?.cachedAt,
+				episodesBySeries.get(key) ?? [],
+				row?.data,
+				currentSourceFingerprints.get(key) ?? null,
+			);
+		};
+		// Read authority before cache hits. Independent observations survive a
+		// timestamp-only poll, but never source/content/files changes or expiry.
 		const seriesAuthorityKey = seriesItems
 			.map((item) => {
 				const key = `${item.arrInstanceId}|series:${item.itemId}`;
 				const row = seriesAuthority.get(key);
-				return JSON.stringify([
-					key,
-					row?.cachedAt.getTime() ?? null,
-					row?.episodeFileInventoryReceipt ?? null,
-				]);
+				const display = readSeriesDisplay(key);
+				return createHash("sha256")
+					.update(
+						JSON.stringify([
+							key,
+							display.episodeInventory ? null : (row?.cachedAt.getTime() ?? null),
+							row?.episodeFileInventoryReceipt ?? null,
+							...(display.episodeInventory
+								? [currentSourceFingerprints.get(key), row?.data, display.episodeInventory.status]
+								: []),
+							(episodesBySeries.get(key) ?? [])
+								.map((file) => [file.arrEpisodeFileId, file.path, file.size.toString()])
+								.sort((a, b) => Number(a[0]) - Number(b[0])),
+						]),
+					)
+					.digest("hex");
 			})
 			.sort()
 			.join(",");
@@ -1042,49 +1108,22 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 			app.prisma,
 			async (prisma) => {
 				const movieItems = body.items.filter((item) => item.itemType === "movie");
-				const [movieRows, episodeRows] = await Promise.all([
-					movieItems.length > 0
-						? prisma.libraryCache.findMany({
-								where: {
-									itemType: "movie",
-									instance: { userId },
-									OR: movieItems.map((item) => ({
-										instanceId: item.arrInstanceId,
-										arrItemId: item.itemId,
-									})),
-								},
-								select: { instanceId: true, arrItemId: true, data: true },
-							})
-						: [],
-					seriesItems.length > 0
-						? prisma.episodeFileCache.findMany({
-								where: {
-									instance: { userId },
-									OR: seriesItems.map((item) => ({
-										instanceId: item.arrInstanceId,
-										arrSeriesId: item.itemId,
-									})),
-								},
-								select: {
-									instanceId: true,
-									arrSeriesId: true,
-									arrEpisodeFileId: true,
-									path: true,
-									size: true,
-								},
-							})
-						: [],
-				]);
+				const movieRows = await (movieItems.length > 0
+					? prisma.libraryCache.findMany({
+							where: {
+								itemType: "movie",
+								instance: { userId },
+								OR: movieItems.map((item) => ({
+									instanceId: item.arrInstanceId,
+									arrItemId: item.itemId,
+								})),
+							},
+							select: { instanceId: true, arrItemId: true, data: true },
+						})
+					: []);
 				const movies = new Map(
 					movieRows.map((row) => [`${row.instanceId}|movie:${row.arrItemId}`, row]),
 				);
-				const episodesBySeries = new Map<string, typeof episodeRows>();
-				for (const row of episodeRows) {
-					const key = `${row.instanceId}|series:${row.arrSeriesId}`;
-					const episodes = episodesBySeries.get(key) ?? [];
-					episodes.push(row);
-					episodesBySeries.set(key, episodes);
-				}
 				return body.items.map(({ arrInstanceId, itemId, itemType }) => {
 					// Key includes the *arr instance ID so two instances with
 					// overlapping arrItemIds don't collide in the summary map.
@@ -1114,19 +1153,14 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 						}
 						return { key, paths: [], pathInventoryComplete: false };
 					}
-					// A nonempty series file cache is only positive evidence. Exact
-					// coverage requires a successful same-snapshot Sonarr sync receipt
-					// that matches every cached file identity, including the count.
-					const series = seriesAuthority.get(key);
+					const display = readSeriesDisplay(key);
 					const episodes = episodesBySeries.get(key) ?? [];
 					return {
 						key,
-						paths: episodes.map((episode) => episode.path).filter(Boolean),
-						pathInventoryComplete: hasCompleteEpisodeFileInventory(
-							series?.episodeFileInventoryReceipt,
-							series?.cachedAt,
-							episodes,
-						),
+						paths: display.sourceMatches
+							? episodes.map((episode) => episode.path).filter(Boolean)
+							: [],
+						pathInventoryComplete: display.complete,
 					};
 				});
 			},
@@ -1473,7 +1507,10 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 		// Union distinct hosts and hashes across all enabled qUI instances.
 		const summaries: Record<string, LibrarySeedingSummaryEntry> = {};
 		for (const [key, hosts] of itemHosts) {
+			const display = seriesAuthority.has(key) ? readSeriesDisplay(key) : undefined;
+			if (display && !display.complete) coverageComplete = false;
 			summaries[key] = {
+				...(display?.episodeInventory ? { episodeInventory: display.episodeInventory } : {}),
 				trackerCount: hosts.size,
 				topHosts: Array.from(hosts).slice(0, 4),
 				hashCount: itemAllHashes.get(key)?.size ?? 0,

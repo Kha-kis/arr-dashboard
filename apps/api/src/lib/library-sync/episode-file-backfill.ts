@@ -54,6 +54,7 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import type { ArrClientFactory } from "../arr/client-factory.js";
+import { createArrServiceFingerprint } from "../arr/service-fingerprint.js";
 import { withIsolatedRuntimePrismaTransaction } from "../backup/restore-runtime-client.js";
 import type { ServiceInstance } from "../prisma.js";
 import { createQuiClient } from "../qui/client-factory.js";
@@ -67,9 +68,11 @@ import { getErrorMessage } from "../utils/error-message.js";
 import {
 	cachedSonarrSeriesFileEvidence,
 	createEpisodeFileInventoryReceipt,
+	createEpisodeFileObservationReceipt,
 	currentSonarrSeriesFileEvidence,
 	episodeFileIdentitiesFromSonarr,
 	hasCompleteEpisodeFileInventory,
+	readEpisodeFileInventorySource,
 } from "./episode-file-coverage.js";
 import { buildFileIdIndex, matchLibraryByFileId } from "./infohash-backfill-by-inode.js";
 import { CURRENT_INODE_SOURCE } from "./inode-correlation-upgrade.js";
@@ -312,19 +315,40 @@ export async function runEpisodeFileSync({
 				const secondSeries = await sonarrClient.series.getById(series.arrItemId);
 				const secondFiles =
 					(await sonarrClient.episodeFile.getAll({ seriesId: series.arrItemId })) ?? [];
+				// One observation clock after both settled provider reads. Preserve
+				// v2 only for genuinely absent historical source provenance.
+				const observedAt = new Date();
+				let sourceFingerprint: string | null = null;
+				try {
+					sourceFingerprint = createArrServiceFingerprint(sonarrInstance);
+				} catch {
+					/* validated below */
+				}
+				const source = readEpisodeFileInventorySource(series.data, sourceFingerprint);
+				if (source.status === "invalid") throw new Error("series source provenance is not current");
+				const makeReceipt = (
+					identities: NonNullable<ReturnType<typeof episodeFileIdentitiesFromSonarr>>,
+					evidence: NonNullable<ReturnType<typeof currentSonarrSeriesFileEvidence>>,
+				) =>
+					source.status === "legacy"
+						? createEpisodeFileInventoryReceipt(series.cachedAt, identities, evidence)
+						: createEpisodeFileObservationReceipt(
+								series.cachedAt,
+								identities,
+								evidence,
+								series.data,
+								sourceFingerprint,
+								observedAt,
+							);
 				const cachedEvidence = cachedSonarrSeriesFileEvidence(series.data);
 				const firstEvidence = currentSonarrSeriesFileEvidence(firstSeries, series.arrItemId);
 				const secondEvidence = currentSonarrSeriesFileEvidence(secondSeries, series.arrItemId);
 				const firstIdentities = episodeFileIdentitiesFromSonarr(firstFiles, series.arrItemId);
 				const secondIdentities = episodeFileIdentitiesFromSonarr(secondFiles, series.arrItemId);
 				const firstReceipt =
-					firstIdentities && firstEvidence
-						? createEpisodeFileInventoryReceipt(series.cachedAt, firstIdentities, firstEvidence)
-						: null;
+					firstIdentities && firstEvidence ? makeReceipt(firstIdentities, firstEvidence) : null;
 				const secondReceipt =
-					secondIdentities && secondEvidence
-						? createEpisodeFileInventoryReceipt(series.cachedAt, secondIdentities, secondEvidence)
-						: null;
+					secondIdentities && secondEvidence ? makeReceipt(secondIdentities, secondEvidence) : null;
 				if (
 					!cachedEvidence ||
 					!firstEvidence ||

@@ -762,6 +762,11 @@ export interface LibrarySeedingSummary {
 	topHosts: string[];
 	/** Total unique torrent hashes covering this item (cross-seed redundancy). */
 	hashCount: number;
+	/** Original provider check time for new-format series episode-file observations. */
+	episodeInventory?: {
+		status: "fresh" | "stale" | "unknown";
+		observedAt: string | null;
+	};
 }
 
 export interface LibrarySeedingSummaryResponse {

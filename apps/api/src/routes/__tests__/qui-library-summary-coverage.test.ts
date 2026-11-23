@@ -37,7 +37,7 @@ let logs: Array<Record<string, unknown>>;
 let releasePendingReads: Array<() => void>;
 let authenticatedUser: { id: string; username: string };
 let movieRow: Mock<() => Promise<{ data: string }>>;
-let seriesRows: Mock<() => Promise<unknown[]>>;
+let seriesRows: Mock<() => Promise<Record<string, unknown>[]>>;
 let episodeRows: Mock<() => Promise<Record<string, unknown>[]>>;
 function deferredRead<T>(value: T): Promise<T> {
 	return new Promise((resolve) => {
@@ -93,7 +93,23 @@ beforeEach(async () => {
 		},
 		libraryCache: {
 			findMany: vi.fn().mockImplementation(async ({ where }) => {
-				if (where.itemType !== "movie") return seriesRows();
+				if (where.itemType !== "movie")
+					return (await seriesRows()).map((row) => ({
+						// Selected source/content fields exist on real Prisma rows.
+						// These original scenarios exercise absent-provenance v2.
+						data: "{}",
+						instance: {
+							id: "arr-1",
+							service: "SONARR",
+							enabled: true,
+							baseUrl: "http://synthetic.invalid",
+							encryptedApiKey: "synthetic",
+							encryptionIv: "synthetic",
+							encryptedHttpAuthCredentials: null,
+							httpAuthEncryptionIv: null,
+						},
+						...row,
+					}));
 				return Promise.all(
 					where.OR.map(async (identity: { instanceId: string; arrItemId: number }) => ({
 						...identity,
