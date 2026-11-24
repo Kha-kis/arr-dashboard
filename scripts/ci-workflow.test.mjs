@@ -275,3 +275,55 @@ test("actions stay immutable under expected owners and registry writes require t
 	);
 	assert.equal(build.with.push, false);
 });
+
+test("release staging has only a manual trigger and no stable alias operation", () => {
+	const stage = parse(readFileSync(new URL(".github/workflows/docker-combined.yml", root), "utf8"));
+	assert.deepEqual(Object.keys(stage.on), ["workflow_dispatch"]);
+	assert.ok(stage.jobs.qualify, "a terminal qualification job must exist");
+	assert.deepEqual(stage.jobs.qualify.needs, ["assemble", "verify"]);
+	assert.notEqual(stage.jobs.qualify.if, "always()");
+	assert.ok(stage.jobs.verify.needs.includes("build"));
+	assert.ok(stage.jobs.assemble.needs.includes("verify"));
+	assert.equal(stage.jobs.verify.permissions.packages, undefined);
+	assert.equal(stage.jobs.qualify.permissions.packages, undefined);
+	const scanner = stage.jobs.verify.steps.find((step) =>
+		step.uses?.startsWith("aquasecurity/trivy-action@"),
+	);
+	assert.equal(String(scanner.with["exit-code"]), "1");
+	assert.match(scanner.with["image-ref"], /steps[.].*[.]outputs[.]/);
+	const assembly = stage.jobs.assemble.steps.flatMap((step) => step.run?.split("\n") ?? []);
+	const create = assembly.filter((line) => line.includes("imagetools create"));
+	assert.equal(create.length, 2);
+	assert.ok(create.every((line) => line.includes("--prefer-index=false")));
+	assert.ok(stage.jobs.verify.steps.some((step) =>
+		step.if === "always()" && step.with?.name?.startsWith("release-candidate-evidence-"),
+	));
+	assert.ok(!JSON.stringify(stage).includes("type=raw,value=latest"));
+});
+
+test("stable promotion is an approved, serialized dispatch with no build", () => {
+	const promote = parse(
+		readFileSync(new URL(".github/workflows/docker-promote.yml", root), "utf8"),
+	);
+	assert.deepEqual(Object.keys(promote.on), ["workflow_dispatch"]);
+	assert.equal(promote.concurrency["cancel-in-progress"], false);
+	assert.equal(promote.jobs.promote.environment.name, "stable-release");
+	assert.ok(promote.jobs.promote.needs.includes("preflight"));
+	assert.equal(promote.jobs.preflight.permissions.packages, undefined);
+	const commands = promote.jobs.promote.steps.map((step) => step.run).filter(Boolean);
+	assert.deepEqual(commands, [
+		"python3 -B scripts/release_promotion.py authorize",
+		"python3 -B scripts/release_promotion.py promote",
+	]);
+	assert.match(JSON.stringify(promote.jobs.promote.steps), /STABLE_DOCKERHUB_TOKEN/);
+	assert.ok(!JSON.stringify(promote).includes("docker/build-push-action"));
+});
+
+test("release promotion and registry guards fail closed in offline fixtures", () => {
+	const command = spawnSync(
+		"python3",
+		["-B", "-m", "unittest", "discover", "-s", "scripts", "-p", "test_release_*.py"],
+		{ cwd: root, encoding: "utf8" },
+	);
+	assert.equal(command.status, 0, command.error?.message ?? command.stdout + command.stderr);
+});

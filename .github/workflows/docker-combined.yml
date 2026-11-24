@@ -1,251 +1,308 @@
-name: Build and Push Release Docker Image
-
+name: Qualify Immutable Release Candidate
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
-
-# Cancel in-progress runs when a new run is triggered
+    inputs:
+      source_sha: {description: Exact main source SHA, required: true, type: string}
+      version: {description: Exact package version, required: true, type: string}
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
+  group: release-candidate-${{ inputs.version }}-${{ inputs.source_sha }}
+  cancel-in-progress: false
+permissions: {contents: read}
 env:
   DOCKERHUB_IMAGE: khak1s/arr-dashboard
   GHCR_IMAGE: ghcr.io/kha-kis/arr-dashboard
-
 jobs:
-  # Ensure the tagged commit exists on main (prevents accidental releases from feature branches)
-  validate-tag:
-    name: Validate Release Tag
+  preflight:
     runs-on: ubuntu-latest
-    # Skip for manual workflow_dispatch runs
-    if: github.event_name == 'push'
+    outputs:
+      source: ${{ steps.identity.outputs.source }}
+      tree: ${{ steps.identity.outputs.tree }}
+      version: ${{ steps.identity.outputs.version }}
+      date: ${{ steps.identity.outputs.date }}
+      tag: ${{ steps.identity.outputs.tag }}
     steps:
-      - name: Checkout repository (full history for ancestry check)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-
-      - name: Verify tagged commit is on main
+      - name: Require canonical main and exact source
+        env:
+          REF: "${{ github.ref }}"
+          REPOSITORY: "${{ github.repository }}"
+          ATTEMPT: "${{ github.run_attempt }}"
+          SHA: "${{ github.sha }}"
+          INPUT_SHA: "${{ inputs.source_sha }}"
+          INPUT_VERSION: "${{ inputs.version }}"
         run: |
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
-            echo "::error::Tagged commit $GITHUB_SHA is NOT reachable from origin/main."
-            echo "::error::Release tags must only be created from commits on the main branch."
-            exit 1
-          fi
-          echo "Tag is on main (${GITHUB_SHA::7}) — proceeding with release."
-
-  # Build each platform in parallel for speed.
-  # Each matrix leg runs on a native runner for its target architecture to
-  # avoid QEMU user-mode emulation (previously SIGILL'd during pnpm install
-  # on arm64 legs; see v2.16.0 release postmortem).
+          set -euo pipefail
+          test "$REPOSITORY" = Kha-kis/arr-dashboard && test "$REF" = refs/heads/main && test "$SHA" = "$INPUT_SHA" && test "$ATTEMPT" = 1
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ && "$INPUT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+            ref: "${{ github.sha }}"
+            persist-credentials: "false"
+      - name: Require dispatch source remains current main
+        env:
+          INPUT_SHA: "${{ inputs.source_sha }}"
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          test "$(git rev-parse FETCH_HEAD)" = "$INPUT_SHA"
+      - id: identity
+        env:
+          INPUT_SHA: "${{ inputs.source_sha }}"
+          INPUT_VERSION: "${{ inputs.version }}"
+          RUN_ID: "${{ github.run_id }}"
+          ATTEMPT: "${{ github.run_attempt }}"
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$INPUT_SHA" && test -z "$(git status --porcelain)"
+          test "$(node -p 'require("./package.json").version')" = "$INPUT_VERSION"
+          echo "source=$INPUT_SHA" >> "$GITHUB_OUTPUT"
+          echo "tree=$(git rev-parse HEAD^{tree})" >> "$GITHUB_OUTPUT"
+          echo "version=$INPUT_VERSION" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+          echo "tag=candidate-$INPUT_VERSION-$RUN_ID-$ATTEMPT" >> "$GITHUB_OUTPUT"
   build:
+    needs: preflight
     runs-on: ${{ matrix.runner }}
-    needs: [validate-tag]
-    # Always run after validate-tag succeeds, or when validate-tag is skipped (workflow_dispatch)
-    if: always() && (needs.validate-tag.result == 'success' || needs.validate-tag.result == 'skipped')
-    permissions:
-      contents: read
-      packages: write
+    permissions: {contents: read, packages: write}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: linux/amd64
-            runner: ubuntu-latest
-          - platform: linux/arm64
-            runner: ubuntu-24.04-arm
-
+          - {arch: amd64, platform: linux/amd64, runner: ubuntu-latest}
+          - {arch: arm64, platform: linux/arm64, runner: ubuntu-24.04-arm}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-
-      - name: Log in to Docker Hub
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+            ref: "${{ needs.preflight.outputs.source }}"
+            persist-credentials: "false"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract platform name
-        id: platform
-        run: echo "name=${PLATFORM//\//-}" >> $GITHUB_OUTPUT
+            username: "${{ secrets.DOCKERHUB_USERNAME }}"
+            password: "${{ secrets.DOCKERHUB_TOKEN }}"
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+            registry: "ghcr.io"
+            username: "${{ github.actor }}"
+            password: "${{ secrets.GITHUB_TOKEN }}"
+      - name: Require native architecture build host
         env:
-          PLATFORM: ${{ matrix.platform }}
-
-      - name: Extract version metadata
-        id: version
-        env:
-          REF_TYPE: ${{ github.ref_type }}
-          REF_NAME: ${{ github.ref_name }}
-          GH_SHA: ${{ github.sha }}
+          ARCH: ${{ matrix.arch }}
         run: |
-          # Extract version from tag (strip 'v' prefix) or use 'dev' for manual runs
-          if [[ "$REF_TYPE" == "tag" ]]; then
-            VERSION="$REF_NAME"
-            VERSION="${VERSION#v}"  # Remove 'v' prefix
-          else
-            VERSION="dev"
-          fi
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "commit_sha=${GH_SHA}" >> "$GITHUB_OUTPUT"
-          echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
-
-      - name: Verify commit SHA is available
-        run: |
-          if [[ -z "${{ steps.version.outputs.commit_sha }}" || "${{ steps.version.outputs.commit_sha }}" == "unknown" ]]; then
-            echo "::error::COMMIT_SHA is empty or unknown — version traceability will be broken."
-            exit 1
-          fi
-          echo "Commit SHA: ${{ steps.version.outputs.commit_sha }}"
-
-      - name: Build and push by digest
-        id: build
+          set -euo pipefail
+          if [[ "$ARCH" == amd64 ]]; then test "$(uname -m)" = x86_64; else test "$(uname -m)" = aarch64; fi
+      - id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           platforms: ${{ matrix.platform }}
           provenance: true
           sbom: true
-          build-args: |
-            VERSION=${{ steps.version.outputs.version }}
-            COMMIT_SHA=${{ steps.version.outputs.commit_sha }}
-            BUILD_DATE=${{ steps.version.outputs.build_date }}
-          outputs: type=image,name=${{ env.DOCKERHUB_IMAGE }},push-by-digest=true,name-canonical=true,push=true
-          cache-from: type=registry,ref=${{ env.DOCKERHUB_IMAGE }}:buildcache-${{ steps.platform.outputs.name }}
-          cache-to: type=registry,ref=${{ env.DOCKERHUB_IMAGE }}:buildcache-${{ steps.platform.outputs.name }},mode=max
-
-      - name: Export digest
-        run: |
-          mkdir -p /tmp/digests
-          digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests/${digest#sha256:}"
-
-      - name: Upload digest
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: digests-${{ steps.platform.outputs.name }}
-          path: /tmp/digests/*
-          if-no-files-found: error
-          retention-days: 1
-
-  # Merge platform images into multi-arch manifest
-  merge:
-    runs-on: ubuntu-latest
-    needs: build
-    permissions:
-      contents: read
-      packages: write
-
-    steps:
-      - name: Download digests
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          path: /tmp/digests
-          pattern: digests-*
-          merge-multiple: true
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-
-      - name: Log in to Docker Hub
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata (tags, labels)
-        id: meta
-        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
-        with:
-          images: |
-            ${{ env.DOCKERHUB_IMAGE }}
-            ${{ env.GHCR_IMAGE }}
+          push: true
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=raw,value=latest
-
-      - name: Create manifest list and push to Docker Hub
-        working-directory: /tmp/digests
+            ${{ env.DOCKERHUB_IMAGE }}:${{ needs.preflight.outputs.tag }}-${{ matrix.arch }}
+            ${{ env.GHCR_IMAGE }}:${{ needs.preflight.outputs.tag }}-${{ matrix.arch }}
+          build-args: |
+            VERSION=${{ needs.preflight.outputs.version }}
+            COMMIT_SHA=${{ needs.preflight.outputs.source }}
+            BUILD_DATE=${{ needs.preflight.outputs.date }}
+          cache-from: type=registry,ref=${{ env.DOCKERHUB_IMAGE }}:buildcache-linux-${{ matrix.arch }}
+          cache-to: type=registry,ref=${{ env.DOCKERHUB_IMAGE }}:buildcache-linux-${{ matrix.arch }},mode=max
+      - env:
+          ARCH: "${{ matrix.arch }}"
+          DIGEST: "${{ steps.build.outputs.digest }}"
         run: |
-          TAGS=$(echo "${{ steps.meta.outputs.tags }}" | grep "${{ env.DOCKERHUB_IMAGE }}" | xargs -I {} echo "-t {}" | tr '\n' ' ')
-          docker buildx imagetools create $TAGS \
-            $(printf '${{ env.DOCKERHUB_IMAGE }}@sha256:%s ' *)
-
-      - name: Create manifest list and push to GHCR
-        working-directory: /tmp/digests
-        run: |
-          TAGS=$(echo "${{ steps.meta.outputs.tags }}" | grep "${{ env.GHCR_IMAGE }}" | xargs -I {} echo "-t {}" | tr '\n' ' ')
-          docker buildx imagetools create $TAGS \
-            $(printf '${{ env.DOCKERHUB_IMAGE }}@sha256:%s ' *)
-
-      - name: Checkout for Docker Hub description
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Update Docker Hub Description
-        uses: peter-evans/dockerhub-description@1b9a80c056b620d92cedb9d9b5a223409c68ddfa # v5.0.0
+          set -euo pipefail
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          mkdir -p "$RUNNER_TEMP/build"
+          printf '{"architecture":"%s","digest":"%s"}\n' "$ARCH" "$DIGEST" > "$RUNNER_TEMP/build/$ARCH.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-          repository: ${{ env.DOCKERHUB_IMAGE }}
-          short-description: ${{ github.event.repository.description }}
-          readme-filepath: ./DOCKERHUB.md
-
-  # Security scan the released image
-  security:
-    name: Security Scan
-    runs-on: ubuntu-latest
-    needs: merge
-    permissions:
-      contents: read
-      security-events: write
-
+          name: "build-${{ matrix.arch }}"
+          path: "${{ runner.temp }}/build/${{ matrix.arch }}.json"
+          if-no-files-found: "error"
+  verify:
+    needs: [preflight, build]
+    runs-on: ${{ matrix.runner }}
+    permissions: {contents: read}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: amd64, platform: linux/amd64, runner: ubuntu-latest}
+          - {arch: arm64, platform: linux/arm64, runner: ubuntu-24.04-arm}
     steps:
-      - name: Determine scan tag
-        id: scan-tag
-        env:
-          REF_NAME: ${{ github.ref_name }}
-          REF_TYPE: ${{ github.ref_type }}
-        run: |
-          # Use exact version tag (strip 'v' prefix) for tag pushes, 'latest' for manual runs
-          if [[ "$REF_TYPE" == "tag" ]]; then
-            echo "tag=${REF_NAME#v}" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag=latest" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          image-ref: ${{ env.DOCKERHUB_IMAGE }}:${{ steps.scan-tag.outputs.tag }}
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-          severity: 'CRITICAL,HIGH'
-          # Default 5m timed out on dev image post-Prisma-7.8 (run 25082617155)
-          timeout: '20m'
-
-      - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+            ref: "${{ needs.preflight.outputs.source }}"
+            persist-credentials: "false"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+            node-version: "24"
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        with:
+            version: "10.33.0"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: "build-${{ matrix.arch }}"
+          path: "${{ runner.temp }}/build"
+      - id: digest
+        env:
+          ARCH: ${{ matrix.arch }}
+          PLATFORM: ${{ matrix.platform }}
+          TAG: ${{ needs.preflight.outputs.tag }}
+          SOURCE: ${{ needs.preflight.outputs.source }}
+          VERSION: ${{ needs.preflight.outputs.version }}
+          BUILD_DATE: ${{ needs.preflight.outputs.date }}
+        run: |
+          set -euo pipefail
+          digest="$(node -p 'require(process.env.RUNNER_TEMP + "/build/" + process.env.ARCH + ".json").digest')"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          image="$GHCR_IMAGE@$digest"
+          mkdir -p "$RUNNER_TEMP/release"
+          docker buildx imagetools inspect --raw "$image" > "$RUNNER_TEMP/release/native-index.json"
+          manifest="$(jq -er --arg arch "$ARCH" '[.manifests[] | select(.platform.os == "linux" and .platform.architecture == $arch) | .digest] | if length == 1 then .[0] else error("expected one runtime manifest") end' "$RUNNER_TEMP/release/native-index.json")"
+          child="$GHCR_IMAGE@$manifest"
+          docker buildx imagetools inspect --raw "$child" > "$RUNNER_TEMP/release/native-manifest.json"
+          config="$(jq -er '.config.digest' "$RUNNER_TEMP/release/native-manifest.json")"
+          docker pull --platform "$PLATFORM" "$child"
+          test "$(docker image inspect --format '{{.Architecture}}' "$child")" = "$ARCH"
+          test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$child")" = "$SOURCE"
+          test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$child")" = "$VERSION"
+          test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.created"}}' "$child")" = "$BUILD_DATE"
+          echo "index_digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "manifest_digest=$manifest" >> "$GITHUB_OUTPUT"
+          echo "config_digest=$config" >> "$GITHUB_OUTPUT"
+          echo "image=$child" >> "$GITHUB_OUTPUT"
+      - env:
+          CANDIDATE_IMAGE: "${{ steps.digest.outputs.image }}"
+          CANDIDATE_DIGEST: "${{ steps.digest.outputs.index_digest }}"
+          CANDIDATE_MANIFEST_DIGEST: "${{ steps.digest.outputs.manifest_digest }}"
+          CONFIG_DIGEST: "${{ steps.digest.outputs.config_digest }}"
+          SOURCE_SHA: "${{ needs.preflight.outputs.source }}"
+          SOURCE_TREE: "${{ needs.preflight.outputs.tree }}"
+          VERSION: "${{ needs.preflight.outputs.version }}"
+          BUILD_DATE: "${{ needs.preflight.outputs.date }}"
+          ARCH: "${{ matrix.arch }}"
+          RUN_ID: "${{ github.run_id }}"
+        run: bash scripts/release-native-verify.sh
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_IMAGE_SRC: docker
+        with:
+            image-ref: ${{ steps.digest.outputs.image }}
+            format: json
+            output: ${{ runner.temp }}/trivy.json
+            severity: HIGH,CRITICAL
+            exit-code: '1'
+            scanners: vuln
+      - name: Require OS and Node scan coverage and finalize receipt
+        env:
+          REPORT: ${{ runner.temp }}/trivy.json
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          jq -e --arg config "$CONFIG_DIGEST" '.Metadata.ImageID == $config and any(.Results[]; .Class == "os-pkgs") and any(.Results[]; .Class == "lang-pkgs" and .Type == "node-pkg") and (.Metadata.OS.EOSL // false | not) and ([.Results[] | .Vulnerabilities[]? | select(.Severity == "HIGH" or .Severity == "CRITICAL")] | length == 0)' "$REPORT"
+          sha256sum "$REPORT" | awk '{print $1}' > "$RUNNER_TEMP/scan.sha256"
+          jq --arg scan "$(cat "$RUNNER_TEMP/scan.sha256")" '.scan = {highCritical: 0, osPackages: true, nodePackages: true, reportSha256: $scan}' "$RUNNER_TEMP/release-receipt.json" > "$RUNNER_TEMP/qualified.tmp"
+          mkdir -p "$RUNNER_TEMP/qualified"
+          mv "$RUNNER_TEMP/qualified.tmp" "$RUNNER_TEMP/qualified/$ARCH.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+            name: "qualified-${{ matrix.arch }}"
+            path: "${{ runner.temp }}/qualified/${{ matrix.arch }}.json"
+            if-no-files-found: "error"
+            retention-days: "2"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          sarif_file: 'trivy-results.sarif'
+          name: "release-candidate-evidence-${{ matrix.arch }}-${{ github.run_attempt }}"
+          path: |
+            ${{ runner.temp }}/trivy.json
+            ${{ runner.temp }}/release/playwright.json
+          if-no-files-found: error
+          retention-days: 90
+  assemble:
+    needs: [preflight, build, verify]
+    runs-on: ubuntu-latest
+    permissions: {contents: read, packages: write}
+    outputs:
+      index: ${{ steps.index.outputs.digest }}
+      source: ${{ needs.preflight.outputs.source }}
+      tree: ${{ needs.preflight.outputs.tree }}
+      version: ${{ needs.preflight.outputs.version }}
+      date: ${{ needs.preflight.outputs.date }}
+      run_id: ${{ github.run_id }}
+      run_attempt: ${{ github.run_attempt }}
+    steps:
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+            username: "${{ secrets.DOCKERHUB_USERNAME }}"
+            password: "${{ secrets.DOCKERHUB_TOKEN }}"
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+            registry: "ghcr.io"
+            username: "${{ github.actor }}"
+            password: "${{ secrets.GITHUB_TOKEN }}"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+            path: "${{ runner.temp }}/digests"
+      - env:
+          TAG: "${{ needs.preflight.outputs.tag }}"
+          ROOT: "${{ runner.temp }}/digests"
+        run: |
+          set -euo pipefail
+          amd="$(node -p 'require(process.env.ROOT + "/build-amd64/amd64.json").digest')"
+          arm="$(node -p 'require(process.env.ROOT + "/build-arm64/arm64.json").digest')"
+          docker buildx imagetools create --prefer-index=false --tag "$DOCKERHUB_IMAGE:$TAG" "$DOCKERHUB_IMAGE@$amd" "$DOCKERHUB_IMAGE@$arm"
+          docker buildx imagetools create --prefer-index=false --tag "$GHCR_IMAGE:$TAG" "$GHCR_IMAGE@$amd" "$GHCR_IMAGE@$arm"
+          mkdir -p "$RUNNER_TEMP"
+          docker buildx imagetools inspect "$GHCR_IMAGE:$TAG" --raw > "$RUNNER_TEMP/index.json"
+      - id: index
+        env:
+          TAG: "${{ needs.preflight.outputs.tag }}"
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect "$GHCR_IMAGE:$TAG" --format '{{json .Manifest}}' | jq -er '.digest' > "$RUNNER_TEMP/final-index-digest.txt"
+          echo "digest=$(cat "$RUNNER_TEMP/final-index-digest.txt")" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: "candidate-index"
+          path: "${{ runner.temp }}/index.json"
+          if-no-files-found: "error"
+  qualify:
+    needs: [assemble, verify]
+    if: ${{ needs.assemble.result == 'success' && needs.verify.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions: {contents: read}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+            ref: "${{ needs.assemble.outputs.source }}"
+            persist-credentials: "false"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+            path: "${{ runner.temp }}/inputs"
+      - env:
+          VERSION: "${{ needs.assemble.outputs.version }}"
+          SOURCE: "${{ needs.assemble.outputs.source }}"
+          TREE: "${{ needs.assemble.outputs.tree }}"
+          BUILD_DATE: "${{ needs.assemble.outputs.date }}"
+          RUN_ID: "${{ github.run_id }}"
+          RUN_ATTEMPT: "${{ github.run_attempt }}"
+          INDEX: "${{ needs.assemble.outputs.index }}"
+        run: |
+          set -euo pipefail
+          python3 scripts/release_registry.py qualify --version "$VERSION" --source "$SOURCE" --tree "$TREE" --build-date "$BUILD_DATE" --run-id "$RUN_ID" --run-attempt "$RUN_ATTEMPT" --index "$INDEX" --amd64 "$RUNNER_TEMP/inputs/qualified-amd64/amd64.json" --arm64 "$RUNNER_TEMP/inputs/qualified-arm64/arm64.json" --output release-qualification.json
+          sha256sum release-qualification.json | tee -a "$GITHUB_STEP_SUMMARY"
+          jq -r ".source, .tree, .indexDigest, .platforms.amd64.manifestDigest, .platforms.arm64.manifestDigest" release-qualification.json >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.registries | to_entries[] | .key + " " + .value.indexDigest + " " + .value.amd64 + " " + .value.arm64' release-qualification.json >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: "release-qualification-attempt-${{ github.run_attempt }}"
+          path: "release-qualification.json"
+          if-no-files-found: "error"
+          retention-days: "90"
