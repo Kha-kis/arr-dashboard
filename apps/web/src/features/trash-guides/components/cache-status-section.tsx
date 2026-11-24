@@ -69,10 +69,10 @@ const CacheStatusCard = ({
 				}}
 			/>
 			<div className="relative p-5">
-				<div className="flex items-start justify-between mb-4">
-					<div className="flex items-center gap-3">
+				<div className="mb-4 flex flex-wrap items-start justify-between gap-2">
+					<div className="flex min-w-0 items-center gap-3">
 						<div
-							className="flex h-10 w-10 items-center justify-center rounded-xl"
+							className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
 							style={{
 								background: warn
 									? `${SEMANTIC_COLORS.warning.from}20`
@@ -87,8 +87,8 @@ const CacheStatusCard = ({
 								style={{ color: warn ? SEMANTIC_COLORS.warning.from : themeGradient.from }}
 							/>
 						</div>
-						<div>
-							<h3 className="font-semibold text-foreground">{configTypeLabel}</h3>
+						<div className="min-w-0">
+							<h3 className="wrap-anywhere font-semibold text-foreground">{configTypeLabel}</h3>
 							<p className="text-xs text-muted-foreground">Version {version}</p>
 						</div>
 					</div>
@@ -227,7 +227,7 @@ export const CacheStatusSection = ({
 					</button>
 				</div>
 			) : (
-				<div className="grid gap-4 md:grid-cols-2">
+				<div className="grid grid-cols-1 gap-4 md:grid-cols-2">
 					{statuses.map((status, index) => (
 						<div
 							key={`${status.serviceType}-${status.configType}`}
@@ -249,7 +249,7 @@ export const CacheStatusSection = ({
 							{status.unavailable && onRefreshEntry && (
 								<button
 									type="button"
-									className="mt-2 rounded-md border border-border px-3 py-1.5 text-sm disabled:opacity-50"
+									className="mt-2 max-w-full wrap-anywhere rounded-md border border-border px-3 py-1.5 text-sm disabled:opacity-50"
 									disabled={isRefreshPending || Boolean(refreshingEntry)}
 									onClick={() => onRefreshEntry(serviceType, status.configType)}
 								>
