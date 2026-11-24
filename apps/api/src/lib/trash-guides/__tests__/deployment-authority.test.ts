@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { DeploymentExecutorService } from "../deployment-executor.js";
+import { DeploymentPreviewService } from "../deployment-preview.js";
 import {
 	createAutomationCatchUpTemplateStateToken,
 	createDeploymentConnectionStateToken,
@@ -78,7 +79,9 @@ function reviewedExecutionToken(mappingState: ReturnType<typeof currentMapping>)
 function createFixture(
 	mappings: Array<ReturnType<typeof currentMapping>>,
 	customFormats: Array<Record<string, unknown>> = [],
+	config = { customFormats: [] } as Record<string, unknown>,
 ) {
+	const fixtureTemplate = { ...template, configData: JSON.stringify(config) };
 	const transaction = vi.fn();
 	const prisma = {
 		libraryCleanupConfig: {
@@ -89,7 +92,7 @@ function createFixture(
 			findFirst: vi.fn().mockResolvedValue(instance),
 			findMany: vi.fn().mockResolvedValue([instance]),
 		},
-		trashTemplate: { findUnique: vi.fn().mockResolvedValue(template) },
+		trashTemplate: { findUnique: vi.fn().mockResolvedValue(fixtureTemplate) },
 		templateQualityProfileMapping: {
 			findMany: vi
 				.fn()
@@ -107,6 +110,7 @@ function createFixture(
 		instanceQualityProfileOverride: { findMany: vi.fn().mockResolvedValue([]) },
 		trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
 		templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
+		trashCache: { findFirst: vi.fn().mockResolvedValue(null) },
 		$transaction: transaction,
 	};
 	const client = {
@@ -115,6 +119,8 @@ function createFixture(
 		qualityProfile: {
 			getAll: vi.fn().mockResolvedValue([profile]),
 			getById: vi.fn().mockResolvedValue(profile),
+			getSchema: vi.fn().mockResolvedValue({ items: [] }),
+			update: vi.fn(),
 		},
 	};
 	const executor = new DeploymentExecutorService(
@@ -126,12 +132,12 @@ function createFixture(
 		createBackupAndHistory: (...args: unknown[]) => Promise<unknown>;
 	};
 	vi.spyOn(privateExecutor, "validateAndPrepareDeployment").mockResolvedValue({
-		template,
+		template: fixtureTemplate,
 		instance,
-		templateConfig: { customFormats: [] },
+		templateConfig: config,
 		templateCFs: [],
 		overridesForInstance: {},
-		effectiveQualityConfig: undefined,
+		effectiveQualityConfig: config.customQualityConfig,
 		usingQualityOverride: false,
 	} as never);
 	const createBackup = vi
@@ -141,6 +147,45 @@ function createFixture(
 }
 
 describe("deployment execution authority", () => {
+	it("refuses a changed destination quality identity before any deployment write", async () => {
+		const { executor, client, prisma, createBackup, transaction } = createFixture(
+			[currentMapping()],
+			[],
+			{
+				customFormats: [],
+				customQualityConfig: {
+					useCustomQualities: true,
+					items: [{ type: "quality", item: { id: "cfg", name: "HD", allowed: true } }],
+					cutoffId: "cfg",
+				},
+			},
+		);
+		const schema = (id: number) => ({
+			items: [{ quality: { id, name: "HD" }, allowed: false, items: [] }],
+		});
+		client.qualityProfile.getSchema.mockResolvedValue(schema(1));
+		const preview = await new DeploymentPreviewService(
+			prisma as never,
+			{ create: () => client } as never,
+			{ warn: vi.fn() } as never,
+		).generatePreview(template.id, instance.id, instance.userId);
+		expect(preview.qualityOrder?.after).toMatchObject([{ name: "HD" }]);
+		client.qualityProfile.getSchema.mockResolvedValue(schema(2));
+		await expect(
+			executor.deploySingleInstance(
+				template.id,
+				instance.id,
+				instance.userId,
+				undefined,
+				undefined,
+				preview.executionToken,
+			),
+		).rejects.toThrow("changed after this preview");
+		expect(createBackup).not.toHaveBeenCalled();
+		expect(transaction).not.toHaveBeenCalled();
+		expect(client.qualityProfile.update).not.toHaveBeenCalled();
+	});
+
 	it("rejects tokenless user execution before reading deployment state", async () => {
 		const { executor, prisma, client } = createFixture([]);
 

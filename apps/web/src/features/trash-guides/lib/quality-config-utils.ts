@@ -2,12 +2,13 @@
  * Utility functions for converting quality profile data to CustomQualityConfig format
  */
 
-import type {
-	CustomQualityConfig,
-	TemplateConfig,
-	TemplateQualityEntry,
-	TemplateQualityGroup,
-	TemplateQualityItem,
+import {
+	type CustomQualityConfig,
+	importedQualityItemsInProviderOrder,
+	type TemplateConfig,
+	type TemplateQualityEntry,
+	type TemplateQualityGroup,
+	type TemplateQualityItem,
 } from "@arr/shared";
 
 /**
@@ -34,7 +35,10 @@ export function convertQualityProfileToConfig(qualityProfile?: {
 	const entries: TemplateQualityEntry[] = [];
 	let cutoffId: string | undefined;
 
-	for (const item of qualityProfile.items) {
+	const cutoffName = qualityProfile.cutoff?.replace(/[\s-]+/g, "").toLowerCase();
+	const matchesCutoff = (name: string) => name.replace(/[\s-]+/g, "").toLowerCase() === cutoffName;
+
+	for (const item of importedQualityItemsInProviderOrder(qualityProfile.items)) {
 		if (item.items && item.items.length > 0) {
 			// This is a quality group
 			const groupId = generateId();
@@ -47,7 +51,7 @@ export function convertQualityProfileToConfig(qualityProfile?: {
 			entries.push({ type: "group", group });
 
 			// Check if this is the cutoff
-			if (qualityProfile.cutoff === item.name) {
+			if (matchesCutoff(item.name) || item.items.some(matchesCutoff)) {
 				cutoffId = groupId;
 			}
 		} else {
@@ -61,7 +65,7 @@ export function convertQualityProfileToConfig(qualityProfile?: {
 			entries.push({ type: "quality", item: quality });
 
 			// Check if this is the cutoff
-			if (qualityProfile.cutoff === item.name) {
+			if (matchesCutoff(item.name)) {
 				cutoffId = qualityId;
 			}
 		}

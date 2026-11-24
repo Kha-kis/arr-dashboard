@@ -37,6 +37,7 @@ import type { ConflictResolution, DeploymentAction } from "../../../lib/api-clie
 import { getErrorMessage } from "../../../lib/error-utils";
 import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { DeploymentQualityOrder } from "./deployment-quality-order";
 import { InstanceOverrideEditor } from "./instance-override-editor";
 
 interface DeploymentPreviewModalProps {
@@ -252,6 +253,7 @@ export const DeploymentPreviewModal = ({
 			(data.data.summary.totalItems > 0 ||
 				data.data.customFormats.some((customFormat) => customFormat.action !== "skip") ||
 				data.data.orphanedCustomFormats.length > 0 ||
+				Boolean(data.data.qualityOrder) ||
 				(data.data.namingChanges?.length ?? 0) > 0),
 	);
 
@@ -721,6 +723,8 @@ export const DeploymentPreviewModal = ({
 								</div>
 							</div>
 						)}
+
+						<DeploymentQualityOrder change={data.data.qualityOrder} />
 
 						{/* Naming changes */}
 						{data.data.namingChanges && data.data.namingChanges.length > 0 && (

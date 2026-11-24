@@ -12,6 +12,7 @@ import type {
 	DeploymentAction,
 	DeploymentPreview,
 	NamingSelectedPresets,
+	TemplateConfig,
 	TemplateCustomFormat,
 	TrashConflictGroup,
 	UnmatchedCustomFormat,
@@ -31,6 +32,10 @@ import {
 	resolveOrphanedManagedCustomFormats,
 } from "./deployment-managed-format-state.js";
 import { prepareNamingDeployment } from "./deployment-naming-state.js";
+import {
+	describeQualityOrderChange,
+	resolveDeploymentQualityPlan,
+} from "./deployment-quality-plan.js";
 import {
 	assertDeploymentTargetOwnership,
 	assertEquivalentDeploymentMappingAuthority,
@@ -80,7 +85,7 @@ interface InstanceOverridesMap {
 	[instanceId: string]: {
 		cfScoreOverrides?: Record<string, number>;
 		cfSelectionOverrides?: Record<string, { enabled?: boolean }>;
-		qualityConfigOverride?: Record<string, unknown>;
+		qualityConfigOverride?: TemplateConfig["customQualityConfig"];
 	};
 }
 
@@ -94,9 +99,8 @@ interface ParsedTemplateConfig {
 		sourceConnectionStateToken?: string;
 		sourceProfileId?: number;
 	};
-	qualityProfile?: {
-		trash_score_set?: string;
-	};
+	qualityProfile?: TemplateConfig["qualityProfile"];
+	customQualityConfig?: TemplateConfig["customQualityConfig"];
 	namingSelection?: NamingSelectedPresets;
 }
 
@@ -581,6 +585,14 @@ export class DeploymentPreviewService {
 			resolvedTarget.profile = fullProfile;
 		}
 		targetProfile = resolvedTarget.profile;
+		const qualityPlan = instanceReachable
+			? await resolveDeploymentQualityPlan(client, {
+					exists: Boolean(targetProfile),
+					cloned: Boolean(templateConfig.completeQualityProfile),
+					imported: templateConfig.qualityProfile,
+					custom: overridesForInstance.qualityConfigOverride ?? templateConfig.customQualityConfig,
+				})
+			: undefined;
 		const savedScoreOverrides = new Map<number, number>();
 		if (targetProfile?.id !== undefined) {
 			const savedOverrides = await this.prisma.instanceQualityProfileOverride.findMany({
@@ -881,8 +893,14 @@ export class DeploymentPreviewService {
 					([left], [right]) => left - right,
 				),
 				orphanedFormatScoreChanges: orphanedCustomFormats,
+				qualityPlan,
 			}),
 			namingChanges: namingState?.changedFields,
+			qualityOrder: describeQualityOrderChange(
+				targetProfile?.items,
+				qualityPlan,
+				targetProfile?.cutoff,
+			),
 			existingSyncStrategy: qualityProfileMapping?.syncStrategy as
 				| "auto"
 				| "manual"

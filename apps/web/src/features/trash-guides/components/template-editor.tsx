@@ -60,6 +60,7 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 	// Sync settings
 	const [deleteRemovedCFs, setDeleteRemovedCFs] = useState(false);
 	// Quality configuration
+	const [qualityEdited, setQualityEdited] = useState(false);
 	const [customQualityConfig, setCustomQualityConfig] = useState<CustomQualityConfig>({
 		useCustomQualities: false,
 		items: [],
@@ -72,6 +73,8 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 
 	// Initialize form when template changes
 	useEffect(() => {
+		if (!open) return;
+		setQualityEdited(false);
 		if (template) {
 			setName(template.name);
 			setDescription(template.description || "");
@@ -119,7 +122,7 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 				items: [],
 			});
 		}
-	}, [template]);
+	}, [open, template]);
 
 	if (!open) return null;
 
@@ -155,9 +158,11 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 			syncSettings: {
 				deleteRemovedCFs,
 			},
-			// Explicitly set: when disabled, override the base spread's value
-			// with undefined so it doesn't resurrect a stale customQualityConfig
-			customQualityConfig: customQualityConfig.useCustomQualities ? customQualityConfig : undefined,
+			customQualityConfig: qualityEdited
+				? customQualityConfig.useCustomQualities
+					? customQualityConfig
+					: undefined
+				: template?.config.customQualityConfig,
 		};
 
 		// Track items that couldn't be resolved (new items not in cache)
@@ -470,7 +475,15 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 						</div>
 						<QualityGroupEditor
 							config={customQualityConfig}
-							onChange={setCustomQualityConfig}
+							onChange={(config) => {
+								if (
+									config.items === customQualityConfig.items &&
+									config.cutoffId === customQualityConfig.cutoffId
+								)
+									return;
+								setCustomQualityConfig({ ...config, useCustomQualities: true });
+								setQualityEdited(true);
+							}}
 							showToggle={true}
 						/>
 					</div>

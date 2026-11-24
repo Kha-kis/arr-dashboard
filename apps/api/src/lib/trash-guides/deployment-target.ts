@@ -532,6 +532,7 @@ export function createDeploymentStateToken(args: {
 	mappingAuthority?: unknown;
 	savedScoreOverrides?: unknown;
 	orphanedFormatScoreChanges?: unknown;
+	qualityPlan?: unknown;
 }): string {
 	const state = stableValue({
 		template: args.template,
@@ -551,6 +552,7 @@ export function createDeploymentStateToken(args: {
 		mappingAuthority: args.mappingAuthority ?? null,
 		savedScoreOverrides: args.savedScoreOverrides ?? null,
 		orphanedFormatScoreChanges: args.orphanedFormatScoreChanges ?? null,
+		...(args.qualityPlan ? { qualityPlan: args.qualityPlan } : {}),
 	});
 
 	return createHash("sha256").update(JSON.stringify(state)).digest("hex");

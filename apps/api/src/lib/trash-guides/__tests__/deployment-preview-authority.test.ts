@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { describeQualityOrderChange } from "../deployment-quality-plan.js";
 import { DeploymentPreviewService } from "../deployment-preview.js";
 import { createDeploymentConnectionStateToken } from "../deployment-target.js";
 
@@ -46,6 +47,10 @@ function createService(
 		instance?: typeof instance;
 		instances?: (typeof instance)[];
 		savedOverrides?: Array<Record<string, unknown>>;
+		templateConfig?: Record<string, unknown>;
+		qualityItems?: Array<{ quality: { id: number; name: string }; allowed: boolean; items: [] }>;
+		cutoff?: number;
+		schemaItems?: Array<{ quality: { id: number; name: string }; allowed: boolean; items: [] }>;
 	} = {},
 ) {
 	const selectedInstance = options.instance ?? instance;
@@ -54,9 +59,26 @@ function createService(
 		name: `Different ARR name [${trashId.toUpperCase()}]`,
 		specifications: [],
 	};
-	const profile = { id: 4, name: "Any", formatItems: [{ format: 42, score: 100 }] };
+	const profile = {
+		id: 4,
+		name: "Any",
+		formatItems: [{ format: 42, score: 100 }],
+		cutoff: options.cutoff ?? 1,
+		...(options.qualityItems ? { items: options.qualityItems } : {}),
+	};
 	const prisma = {
-		trashTemplate: { findUnique: vi.fn().mockResolvedValue(template) },
+		trashTemplate: {
+			findUnique: vi.fn().mockResolvedValue(
+				options.templateConfig
+					? {
+							...template,
+							serviceType: selectedInstance.service,
+							name: "Any",
+							configData: JSON.stringify(options.templateConfig),
+						}
+					: template,
+			),
+		},
 		serviceInstance: {
 			findFirst: vi.fn().mockResolvedValue(selectedInstance),
 			findMany: vi.fn().mockResolvedValue(options.instances ?? [selectedInstance]),
@@ -81,6 +103,9 @@ function createService(
 		qualityProfile: {
 			getAll: vi.fn().mockResolvedValue([profile]),
 			getById: vi.fn().mockResolvedValue(profile),
+			getSchema: vi
+				.fn()
+				.mockResolvedValue({ items: options.schemaItems ?? options.qualityItems ?? [] }),
 		},
 	};
 	const logger = { warn: vi.fn(), error: vi.fn() };
@@ -92,6 +117,72 @@ function createService(
 }
 
 describe("deployment preview authority", () => {
+	it.each(["RADARR", "SONARR"])(
+		"previews actual quality order for %s and binds destination schema",
+		async (service) => {
+			const low = { quality: { id: 1, name: "SD" }, allowed: true, items: [] as [] };
+			const high = { quality: { id: 2, name: "HD" }, allowed: true, items: [] as [] };
+			const customQualityConfig = {
+				useCustomQualities: true,
+				items: [high, low].map(({ quality, allowed }) => ({
+					type: "quality",
+					item: { id: String(quality.id), name: quality.name, allowed },
+				})),
+				cutoffId: "1",
+			};
+			const options = {
+				instance: { ...instance, service },
+				templateConfig: { customQualityConfig },
+				qualityItems: [low, high],
+			};
+			const preview = await createService(options).generatePreview(
+				"template-1",
+				"instance-1",
+				"user-1",
+			);
+			expect(preview.qualityOrder).toMatchObject({
+				before: [{ name: "HD" }, { name: "SD" }],
+				after: [{ name: "SD" }, { name: "HD" }],
+			});
+			const unchanged = await createService({
+				...options,
+				qualityItems: [high, low],
+			}).generatePreview("template-1", "instance-1", "user-1");
+			expect(unchanged.qualityOrder).toBeUndefined();
+			const cutoffOnly = await createService({
+				...options,
+				qualityItems: [high, low],
+				cutoff: 2,
+			}).generatePreview("template-1", "instance-1", "user-1");
+			expect(cutoffOnly.qualityOrder).toMatchObject({ cutoffBefore: "HD", cutoffAfter: "SD" });
+			const schemaDrift = await createService({
+				...options,
+				schemaItems: [low, { ...high, quality: { ...high.quality, id: 8 } }],
+			}).generatePreview("template-1", "instance-1", "user-1");
+			expect(schemaDrift.executionToken).not.toBe(preview.executionToken);
+		},
+	);
+
+	it("distinguishes a grouped member cutoff from the group cutoff", () => {
+		const items = [
+			{
+				id: 1000,
+				name: "HD",
+				allowed: true,
+				items: [
+					{ quality: { id: 1, name: "Web" }, allowed: false },
+					{ quality: { id: 2, name: "BluRay" }, allowed: false },
+				],
+			},
+		];
+		const change = describeQualityOrderChange(items, { items, cutoff: 1000 }, 1);
+		expect(change).toMatchObject({
+			cutoffBefore: "HD / Web",
+			cutoffAfter: "HD",
+			after: [{ children: [{ name: "Web" }, { name: "BluRay" }] }],
+		});
+	});
+
 	it("targets the cloned source profile when the template was renamed", async () => {
 		const preview = await createService().generatePreview("template-1", "instance-1", "user-1");
 

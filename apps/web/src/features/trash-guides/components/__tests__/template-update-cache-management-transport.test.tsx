@@ -198,7 +198,202 @@ function CacheControl() {
 		/>
 	);
 }
+function QualityTemplate(config: TrashTemplate["config"]): TrashTemplate {
+	return { ...structuredClone(original), config } as TrashTemplate;
+}
+function QualityEditorHarness({ template }: { template: TrashTemplate }) {
+	return <TemplateEditor open template={template} onClose={() => {}} />;
+}
+
 describe("ordinary templates and maintained update/cache controls", () => {
+	it("does not save an untouched imported quality profile as a generated custom override", async () => {
+		const imported = QualityTemplate({
+			...original.config,
+			qualityProfile: {
+				items: [
+					{ name: "WEB 2160p", allowed: true },
+					{ name: "WEB 1080p", allowed: true },
+					{ name: "SD", allowed: false },
+				],
+				cutoff: "WEB 1080p",
+			},
+		});
+		transport((event) => {
+			if (event.url === "/api/services") return response({ services: [] });
+			if (event.url.startsWith("/api/trash-guides/cache/entries?")) return response([]);
+			if (event.url === "/api/trash-guides/templates/template-a" && event.method === "PUT")
+				return response({ template: { ...imported, ...event.body } });
+		});
+		mount(<QualityEditorHarness template={imported} />);
+		fireEvent.click(await screen.findByRole("button", { name: "Update Template" }));
+		await waitFor(() => expect(events.some((event) => event.method === "PUT")).toBe(true));
+		const saved = events.find((event) => event.method === "PUT")!.body!;
+		expect((saved.config as Record<string, unknown>).customQualityConfig).toBeUndefined();
+	});
+
+	it("changes a custom format score without overriding imported quality order", async () => {
+		const format = {
+			trash_id: "cf-1",
+			name: "Synthetic format",
+			includeCustomFormatWhenRenaming: false,
+			specifications: [],
+		};
+		const qualityProfile = {
+			items: [
+				{ name: "HD", allowed: true },
+				{ name: "SD", allowed: false },
+			],
+			cutoff: "HD",
+		};
+		const template = QualityTemplate({
+			...original.config,
+			qualityProfile,
+			customFormats: [
+				{
+					trashId: format.trash_id,
+					name: format.name,
+					originalConfig: format,
+					scoreOverride: 8,
+					conditionsEnabled: {},
+				},
+			],
+		});
+		transport((event) => {
+			if (event.url === "/api/services") return response({ services: [] });
+			if (event.url.startsWith("/api/trash-guides/cache/entries?"))
+				return response([{ configType: "CUSTOM_FORMATS", data: [format] }]);
+			if (event.url === "/api/trash-guides/templates/template-a" && event.method === "PUT")
+				return response({ template: { ...template, ...event.body } });
+		});
+		mount(<QualityEditorHarness template={template} />);
+		fireEvent.change(await screen.findByRole("spinbutton"), { target: { value: "25" } });
+		fireEvent.click(screen.getByRole("button", { name: "Update Template" }));
+		await waitFor(() => expect(events.some((event) => event.method === "PUT")).toBe(true));
+		const saved = events.find((event) => event.method === "PUT")!.body!.config;
+		expect(saved).toMatchObject({ qualityProfile, customFormats: [{ scoreOverride: 25 }] });
+		expect(saved).not.toHaveProperty("customQualityConfig");
+	});
+
+	it("shows imported quality priority, group, and cutoff in provider order", async () => {
+		const imported = QualityTemplate({
+			...original.config,
+			qualityProfile: {
+				items: [
+					{ name: "WEB 2160p", allowed: true },
+					{ name: "WEB 1080p", allowed: true, items: ["WEB 1080p", "WEBDL 1080p"] },
+					{ name: "SD", allowed: false },
+				],
+				cutoff: "WEB 1080p",
+			},
+		});
+		transport((event) => {
+			if (event.url === "/api/services") return response({ services: [] });
+			if (event.url.startsWith("/api/trash-guides/cache/entries?")) return response([]);
+		});
+		mount(<QualityEditorHarness template={imported} />);
+		const top = await screen.findByText("WEB 2160p");
+		const group = screen.getByText("WEB 1080p", { selector: "span.text-sm.font-medium" });
+		const bottom = screen.getByText("SD", { selector: "span.text-sm.font-medium" });
+		expect(top.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+		expect(group.compareDocumentPosition(bottom) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+		expect(screen.getByText("Cutoff")).toBeInTheDocument();
+		expect(screen.getByText("(2 qualities)")).toBeInTheDocument();
+	});
+
+	it.each([false, true])(
+		"persists an explicit quality priority reorder (stored inactive override: %s)",
+		async (inactive) => {
+			const imported = QualityTemplate({
+				...original.config,
+				qualityProfile: {
+					items: [
+						{ name: "WEB 2160p", allowed: true },
+						{ name: "WEB 1080p", allowed: true },
+						{ name: "SD", allowed: true },
+					],
+					cutoff: "WEB 1080p",
+				},
+				...(inactive && {
+					customQualityConfig: {
+						useCustomQualities: false,
+						cutoffId: "1080",
+						items: [
+							{ type: "quality" as const, item: { id: "sd", name: "SD", allowed: true } },
+							{ type: "quality" as const, item: { id: "1080", name: "WEB 1080p", allowed: true } },
+							{ type: "quality" as const, item: { id: "2160", name: "WEB 2160p", allowed: true } },
+						],
+					},
+				}),
+			});
+			transport((event) => {
+				if (event.url === "/api/services") return response({ services: [] });
+				if (event.url.startsWith("/api/trash-guides/cache/entries?")) return response([]);
+				if (event.url === "/api/trash-guides/templates/template-a" && event.method === "PUT")
+					return response({ template: { ...imported, ...event.body } });
+			});
+			mount(<QualityEditorHarness template={imported} />);
+			const row = (
+				await screen.findByText("WEB 1080p", { selector: "span.text-sm.font-medium" })
+			).closest("[draggable=true]")!;
+			fireEvent.click(within(row as HTMLElement).getByTitle("Increase priority"));
+			fireEvent.click(screen.getByRole("button", { name: "Update Template" }));
+			await waitFor(() => expect(events.some((event) => event.method === "PUT")).toBe(true));
+			const config = events.find((event) => event.method === "PUT")!.body!.config as Record<
+				string,
+				unknown
+			>;
+			const qualityConfig = config.customQualityConfig as {
+				useCustomQualities: boolean;
+				items: Array<{ item?: { name: string } }>;
+			};
+			expect(qualityConfig.useCustomQualities).toBe(true);
+			expect(qualityConfig.items.map((entry) => entry.item?.name)).toEqual([
+				"SD",
+				"WEB 2160p",
+				"WEB 1080p",
+			]);
+		},
+	);
+
+	it("round-trips an existing custom quality configuration without losing its order or cutoff", async () => {
+		const customQualityConfig = {
+			useCustomQualities: true,
+			items: [
+				{ type: "quality", item: { id: "q-sd", name: "SD", allowed: true } },
+				{
+					type: "group",
+					group: {
+						id: "g-web",
+						name: "WEB 1080p",
+						allowed: true,
+						qualities: [{ name: "WEB 1080p" }, { name: "WEBDL 1080p" }],
+					},
+				},
+				{ type: "quality", item: { id: "q-uhd", name: "WEB 2160p", allowed: true } },
+			],
+			cutoffId: "g-web",
+			origin: "trash_profile" as const,
+		};
+		const imported = QualityTemplate({
+			...original.config,
+			customQualityConfig,
+		} as TrashTemplate["config"]);
+		transport((event) => {
+			if (event.url === "/api/services") return response({ services: [] });
+			if (event.url.startsWith("/api/trash-guides/cache/entries?")) return response([]);
+			if (event.url === "/api/trash-guides/templates/template-a" && event.method === "PUT")
+				return response({ template: { ...imported, ...event.body } });
+		});
+		mount(<QualityEditorHarness template={imported} />);
+		fireEvent.click(await screen.findByRole("button", { name: "Update Template" }));
+		await waitFor(() => expect(events.some((event) => event.method === "PUT")).toBe(true));
+		const config = events.find((event) => event.method === "PUT")!.body!.config as Record<
+			string,
+			unknown
+		>;
+		expect(config.customQualityConfig).toEqual(customQualityConfig);
+	});
+
 	it("offers a targeted refresh for unreadable lazy cache entries", async () => {
 		let repaired = false;
 		transport((event) => {

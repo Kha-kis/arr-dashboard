@@ -142,6 +142,58 @@ function runCustomFormatVerification(
 	);
 }
 
+it("refuses destination schema drift immediately before an existing profile PUT", async () => {
+	const config = {
+		useCustomQualities: true,
+		items: [{ type: "quality" as const, item: { name: "HD", id: "cfg-hd", allowed: true } }],
+		cutoffId: "cfg-hd",
+	};
+	const quality = (id: number) => ({ quality: { id, name: "HD" }, allowed: true, items: [] });
+	const planned = { items: [quality(1)], cutoff: 1 };
+	const profile = { id: 4, name: "Any", items: [quality(1)], cutoff: 1, formatItems: [] };
+	const update = vi.fn();
+	const persist = vi.fn();
+	const client = {
+		qualityProfile: {
+			getById: vi.fn().mockResolvedValue(profile),
+			getSchema: vi.fn().mockResolvedValue({ items: [quality(2)] }),
+			update,
+		},
+	};
+	const prisma = { instanceQualityProfileOverride: { findMany: vi.fn().mockResolvedValue([]) } };
+	const executor = new DeploymentExecutorService(prisma as never, {} as never);
+	const operation = executor as unknown as {
+		syncQualityProfile: (...args: unknown[]) => Promise<unknown>;
+	};
+	await expect(
+		operation.syncQualityProfile(
+			client,
+			{},
+			[],
+			"template-1",
+			"instance-1",
+			"user-1",
+			undefined,
+			undefined,
+			"Any",
+			profile,
+			undefined,
+			[],
+			new Map(),
+			["instance-1"],
+			config,
+			persist,
+			[],
+			[],
+			[],
+			new Map(),
+			planned,
+		),
+	).rejects.toThrow("destination quality schema changed during deployment");
+	expect(update).not.toHaveBeenCalled();
+	expect(persist).not.toHaveBeenCalled();
+});
+
 describe("extractTrashId", () => {
 	it("should extract trash_id from array format fields", () => {
 		const cf: SdkCustomFormat = {
