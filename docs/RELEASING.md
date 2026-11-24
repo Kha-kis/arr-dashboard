@@ -81,23 +81,75 @@ Before bumping any version numbers, decide *what* this release contains.
 
 ## Release
 
-### 7. Tag & Publish
+### 7. Qualify, approve and promote Docker artifacts
 
-```bash
-# Create annotated tag
-git tag -a vX.Y.Z -m "vX.Y.Z — <tagline>"
+#### Stage the actual release images
 
-# Push tag (triggers docker-combined.yml workflow)
-git push origin vX.Y.Z
-```
+- [ ] Confirm the final reviewed commit is the current `main`, its CI passed, and root
+  `package.json` contains the intended stable version.
+- [ ] Dispatch **Qualify Immutable Release Candidate** (`docker-combined.yml`) on
+  `main` with the full source SHA and the stable version, such as `2.25.0`.
+  This dispatch builds native Linux AMD64 and ARM64 with stable version metadata
+  and stages them under nonstable candidate references in Docker Hub and GHCR.
+- [ ] Require the workflow to succeed. Each architecture runs packaged asset,
+  native runtime, mobile browser and digest-pinned HIGH/CRITICAL image checks.
+  Both registry graphs must contain the exact child manifests, configs, layers
+  and BuildKit SBOM/provenance for the qualified multiarchitecture index.
+- [ ] Retain `release-qualification.json`, its file SHA-256, the stage run ID and
+  attempt, the release source commit/tree, and the exact child and index digests.
+  A failed, interrupted, expired or mismatched stage cannot qualify a release.
+  Use a fresh stage dispatch rather than reusing partial artifacts.
 
-- [ ] Tag pushed to GitHub
-- [ ] `docker-combined.yml` workflow completes successfully
-  - Builds linux/amd64 and linux/arm64
-  - Pushes to Docker Hub (`khak1s/arr-dashboard:X.Y.Z`, `:X.Y`, `:X`, `:latest`)
-  - Pushes to GHCR (`ghcr.io/kha-kis/arr-dashboard:X.Y.Z`, etc.)
-  - Trivy security scan passes
-- [ ] Verify Docker Hub image is pullable: `docker pull khak1s/arr-dashboard:X.Y.Z`
+#### Approve the exact promotion
+
+- [ ] Configure the `stable-release` GitHub Environment before the first promotion.
+  Allow deployments from `main`, select named required maintainer reviewers, disable
+  administrator bypass, and supply `STABLE_DOCKERHUB_USERNAME` and
+  `STABLE_DOCKERHUB_TOKEN` as environment secrets. Staging uses the existing
+  repository credentials. Keep direct stable alias writes out of concurrent jobs
+  and operator sessions.
+- [ ] Obtain explicit publication authorization for the qualified source and index.
+  Create and push an annotated `vX.Y.Z` tag pointing at the exact qualified main
+  commit. Tag creation alone does not dispatch either Docker release workflow.
+- [ ] Record the existing `X.Y`, `X` and `latest` digest in **each** registry.
+  Set a missing alias to JSON `null` only after verifying its absence. Pass those
+  values as the `expected_aliases` map, using keys `khak1s/arr-dashboard` and
+  `ghcr.io/kha-kis/arr-dashboard`, each with its own three alias keys.
+- [ ] Dispatch **Promote Qualified Release Docker Image** (`docker-promote.yml`)
+  on `main` with the version, stage run ID and attempt, qualification file SHA-256,
+  immutable index digest and expected aliases. The preflight prints the exact
+  `requiredApprovalComment` for this attempt. A configured maintainer reviewer
+  approves the protected deployment and pastes that comment. Promotion verifies
+  that approval record, the source and annotated tag, and the archived qualification
+  against both registries again before writing any stable alias.
+
+#### Verify promotion or reconcile a partial result
+
+The workflow copies the already-qualified immutable index within each registry.
+It applies the immutable version tag to both registries first, then the minor,
+major and `latest` aliases. It verifies each write and reads back both registries.
+A different existing version digest is a conflict. An alias can move only from
+the explicitly expected digest or verified absence. An alias already on the
+qualified digest is read back and skipped.
+
+The workflow stops on the first failure or unexpected state. No stable write
+occurs after a build or security gate failure, absent evidence, or preflight
+mismatch. Registry updates are sequential. A timeout, cancellation or failure
+after a write can leave a partial result. Use the step summary and check all
+aliases directly in both registries, including any write without a verified
+readback. Do not assume a failed command left its target unchanged. There is no
+automatic rollback or overwrite of a conflicting version tag.
+
+To resume, confirm the same qualification and reconcile the observed aliases
+against the original expected digests and authorized target. Resolve any
+third digest or unknown observation before proceeding. Start a new authorized
+dispatch and obtain a fresh protected approval. Actions job reruns cannot reuse
+the previous promotion approval. An expired qualification, advanced main, or
+changed source requires qualification of the applicable release candidate.
+
+- [ ] Verify `X.Y.Z`, `X.Y`, `X` and `latest` in both registries resolve to the
+  qualified index. Pull both platform digests and verify installed source and
+  version. Continue to the GitHub release only after this verification.
 
 ### 8. GitHub Release
 
@@ -121,7 +173,7 @@ root package.json ("X.Y.Z")
     │   └── version.json { version: "X.Y.Z", commitSha: "abc1234" }
     │
     ├── Docker CI (docker-combined.yml)
-    │   ├── Git tag "vX.Y.Z" → VERSION build arg → OCI label
+    │   ├── Qualified stable version → VERSION build arg → OCI label
     │   └── COMMIT_SHA build arg → version.json + OCI label
     │
     └── Runtime
@@ -160,4 +212,4 @@ For urgent fixes after a release:
 2. Fix, test, PR to main
 3. Bump patch version: `X.Y.Z` → `X.Y.Z+1`
 4. Follow the same checklist above (abbreviated — skip unchanged sections)
-5. Tag as `vX.Y.Z+1`
+5. Qualify, tag, and promote the approved patch using Step 7.
