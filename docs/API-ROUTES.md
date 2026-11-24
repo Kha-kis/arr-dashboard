@@ -516,6 +516,15 @@ creation and download retain their existing contracts outside maintenance.
 
 ## TRaSH Guides (`/api/trash-guides`)
 
+Quality Size preview reads the owned provider and a current cache snapshot or a
+temporary complete fetch without publishing cache data. Submit the returned
+`executionToken` with a non-default `POST /quality-size/apply`. A 409 requires a
+fresh preview and review. The token is scoped to this process, owner, configured
+connection, repository, preset and reviewed provider definitions. The separate
+factory-default action acknowledges a reset request; completion requires
+checking the provider.
+
+
 | Route | Purpose |
 |-------|---------|
 | `/trash-guides/cache` | GitHub JSON cache |

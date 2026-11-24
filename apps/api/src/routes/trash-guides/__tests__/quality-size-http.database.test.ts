@@ -8,12 +8,14 @@ import { join } from "node:path";
 import { TRASH_CONFIG_TYPES } from "@arr/shared";
 import Database from "better-sqlite3";
 import Fastify from "fastify";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestPrismaClient } from "../../../lib/__tests__/test-prisma.js";
 import { ArrClientFactory } from "../../../lib/arr/client-factory.js";
 import { Encryptor } from "../../../lib/auth/encryption.js";
 import { synchronizeRuntimeSchema } from "../../../lib/backup/runtime-schema-startup.js";
 import { createCacheManager } from "../../../lib/trash-guides/cache-manager.js";
+import { DeploymentExecutorService } from "../../../lib/trash-guides/deployment-executor.js";
+import { TrashGitHubFetcher } from "../../../lib/trash-guides/github-fetcher.js";
 import { qualitySizeRoutes } from "../quality-size-routes.js";
 
 type Event = { instance: string; method: string; path: string; body: unknown };
@@ -168,7 +170,9 @@ describe("quality size installed-client HTTP and native mapping", () => {
 		}
 		app.decorate("prisma", prisma);
 		app.decorate("encryptor", encryptor);
-		app.decorate("arrClientFactory", new ArrClientFactory(encryptor, 1000));
+		const clientFactory = new ArrClientFactory(encryptor, 1000);
+		app.decorate("arrClientFactory", clientFactory);
+		app.decorate("deploymentExecutor", new DeploymentExecutorService(prisma, clientFactory));
 		app.decorateRequest("currentUser", null);
 		app.addHook("preHandler", async (request) => {
 			request.currentUser = { id: owner, username: "synthetic-auth" } as typeof request.currentUser;
@@ -249,11 +253,230 @@ describe("quality size installed-client HTTP and native mapping", () => {
 		expect(fixtureErrors).toEqual([]);
 	});
 
+	it.each([true, false])(
+		"keeps a stale cache and provider unchanged when temporary preview fetch succeeds: %s",
+		async (complete) => {
+			await prisma.trashCache.updateMany({ data: { lastCheckedAt: new Date(0) } });
+			const before = await prisma.trashCache.findMany();
+			const fetch = vi.spyOn(TrashGitHubFetcher.prototype, "fetchConfigs");
+			if (complete) {
+				fetch.mockResolvedValue([
+					{ trash_id: "synthetic-size", type: "Synthetic size", qualities },
+				]);
+			} else {
+				fetch.mockRejectedValue(new Error("synthetic incomplete source"));
+			}
+			try {
+				const response = await post("/preview", {
+					instanceId: "north",
+					presetTrashId: "synthetic-size",
+				});
+				expect(response.statusCode).toBe(complete ? 200 : 500);
+				expect(fetch).toHaveBeenCalledTimes(1);
+				expect(await prisma.trashCache.findMany()).toEqual(before);
+				expect(await prisma.qualitySizeMapping.count()).toBe(0);
+				expect(current).toEqual(definitions);
+				expect(events.map(({ method }) => method)).toEqual(complete ? ["GET"] : []);
+			} finally {
+				fetch.mockRestore();
+			}
+		},
+	);
+
+	it("refuses a stale token from another server process or request", async () => {
+		const response = await post("/apply", {
+			instanceId: "north",
+			presetTrashId: "synthetic-size",
+			executionToken: "f".repeat(64),
+		});
+		expect(response.statusCode).toBe(409);
+		expect(events.map(({ method }) => method)).toEqual(["GET"]);
+		expect(await prisma.qualitySizeMapping.count()).toBe(0);
+	});
+
+	it("refuses a non-default apply without reviewed preview evidence", async () => {
+		const response = await post("/apply", {
+			instanceId: "north",
+			presetTrashId: "synthetic-size",
+		});
+		expect(response.statusCode).toBe(409);
+		expect(events).toEqual([]);
+		expect(await prisma.qualitySizeMapping.count()).toBe(0);
+	});
+
+	it("refuses apply after a reviewed live quality definition changes", async () => {
+		const requested = { instanceId: "north", presetTrashId: "synthetic-size" };
+		const preview = await post("/preview", requested);
+		expect(preview.statusCode).toBe(200);
+		current[0]!.maxSize += 1;
+		const response = await post("/apply", {
+			...requested,
+			executionToken: preview.json().executionToken,
+		});
+		expect(response.statusCode).toBe(409);
+		expect(events.every((event) => event.method === "GET")).toBe(true);
+		expect(await prisma.qualitySizeMapping.count()).toBe(0);
+	});
+
+	async function getExecutionToken(instanceId = "north") {
+		const preview = await post("/preview", { instanceId, presetTrashId: "synthetic-size" });
+		expect(preview.statusCode, preview.payload).toBe(200);
+		const token = preview.json().executionToken;
+		expect(token).toMatch(/^[0-9a-f]{64}$/);
+		events.length = 0;
+		return token;
+	}
+
+	it("refuses a different preset version without provider writes", async () => {
+		const executionToken = await getExecutionToken();
+		await createCacheManager(prisma).set("RADARR", TRASH_CONFIG_TYPES.QUALITY_SIZE, [
+			{
+				trash_id: "synthetic-size",
+				type: "Synthetic size",
+				qualities: [{ ...qualities[0], max: 57 }],
+			},
+		]);
+		const response = await post("/apply", {
+			instanceId: "north",
+			presetTrashId: "synthetic-size",
+			executionToken,
+		});
+		expect(response.statusCode).toBe(409);
+		expect(events.every((event) => event.method === "GET")).toBe(true);
+		expect(await prisma.qualitySizeMapping.count()).toBe(0);
+	});
+
+	it("refuses a preset published while the provider definition read is pending", async () => {
+		const executionToken = await getExecutionToken();
+		let requestStarted!: () => void;
+		const started = new Promise<void>((resolve) => {
+			requestStarted = resolve;
+		});
+		const regularRespond = respond;
+		let retainedResponse: ServerResponse | undefined;
+		respond = (event, response) => {
+			if (event.method === "GET" && !retainedResponse) {
+				retainedResponse = response;
+				requestStarted();
+				return;
+			}
+			regularRespond(event, response);
+		};
+		const apply = post("/apply", {
+			instanceId: "north",
+			presetTrashId: "synthetic-size",
+			executionToken,
+		});
+		await started;
+		try {
+			await createCacheManager(prisma).set("RADARR", TRASH_CONFIG_TYPES.QUALITY_SIZE, [
+				{
+					trash_id: "synthetic-size",
+					type: "Synthetic size",
+					qualities: [{ ...qualities[0], max: 57 }],
+				},
+			]);
+		} finally {
+			send(retainedResponse!, current);
+		}
+		const response = await apply;
+		expect(response.statusCode).toBe(409);
+		expect(events.map(({ method }) => method)).toEqual(["GET"]);
+		expect(await prisma.qualitySizeMapping.count()).toBe(0);
+	});
+
+	it("cannot use the owner preview from another account", async () => {
+		const executionToken = await getExecutionToken();
+		owner = "other";
+		const response = await post("/apply", {
+			instanceId: "north",
+			presetTrashId: "synthetic-size",
+			executionToken,
+		});
+		expect(response.statusCode).toBe(404);
+		expect(events).toEqual([]);
+		expect(await prisma.qualitySizeMapping.count()).toBe(0);
+	});
+
+	it.each([true, false])(
+		"refuses a changed connection generation or disabled instance: %s",
+		async (enabled) => {
+			const executionToken = await getExecutionToken();
+			const original = await prisma.serviceInstance.findUniqueOrThrow({ where: { id: "north" } });
+			await prisma.serviceInstance.update({
+				where: { id: "north" },
+				data: { connectionGeneration: original.connectionGeneration + 1, enabled },
+			});
+			try {
+				const response = await post("/apply", {
+					instanceId: "north",
+					presetTrashId: "synthetic-size",
+					executionToken,
+				});
+				expect(response.statusCode).toBe(enabled ? 409 : 404);
+				expect(events.every(({ method }) => method === "GET")).toBe(true);
+				expect(await prisma.qualitySizeMapping.count()).toBe(0);
+			} finally {
+				await prisma.serviceInstance.update({
+					where: { id: "north" },
+					data: {
+						connectionGeneration: original.connectionGeneration,
+						enabled: original.enabled,
+						updatedAt: original.updatedAt,
+					},
+				});
+			}
+		},
+	);
+
+	it("refuses apply while an equivalent alias has unresolved deployment state", async () => {
+		const executionToken = await getExecutionToken();
+		const north = await prisma.serviceInstance.findUniqueOrThrow({ where: { id: "north" } });
+		await prisma.serviceInstance.create({ data: { ...north, id: "north-alias" } });
+		try {
+			await prisma.trashSyncHistory.create({
+				data: {
+					instanceId: "north-alias",
+					userId: "owner",
+					syncType: "MANUAL",
+					status: "UNCERTAIN",
+					appliedConfigs: "[]",
+				},
+			});
+			const response = await post("/apply", {
+				instanceId: "north",
+				presetTrashId: "synthetic-size",
+				executionToken,
+			});
+			expect(response.statusCode).toBe(400);
+			expect(events).toEqual([]);
+			expect(await prisma.qualitySizeMapping.count()).toBe(0);
+		} finally {
+			await prisma.serviceInstance.delete({ where: { id: "north-alias" } });
+		}
+	});
+
+	it("refuses apply while the shared endpoint mutation lock is held", async () => {
+		const executionToken = await getExecutionToken();
+		const target = await prisma.serviceInstance.findUniqueOrThrow({ where: { id: "north" } });
+		await app.deploymentExecutor.runWithEndpointMutation("owner", target, "Fixture", async () => {
+			const response = await post("/apply", {
+				instanceId: "north",
+				presetTrashId: "synthetic-size",
+				executionToken,
+			});
+			expect(response.statusCode).toBe(400);
+			expect(events).toEqual([]);
+			expect(await prisma.qualitySizeMapping.count()).toBe(0);
+		});
+	});
+
 	it("S1 maps by live quality name, preserves unselected definitions, persists strategy/hash", async () => {
 		const response = await post("/apply", {
 			instanceId: "north",
 			presetTrashId: "synthetic-size",
 			syncStrategy: "notify",
+			executionToken: await getExecutionToken(),
 		});
 		expect(response.statusCode).toBe(200);
 		expect(response.json()).toMatchObject({ success: true, appliedCount: 1, totalQualities: 1 });
@@ -321,6 +544,7 @@ describe("quality size installed-client HTTP and native mapping", () => {
 			instanceId: "north",
 			presetTrashId: "synthetic-size",
 			syncStrategy: "auto",
+			executionToken: await getExecutionToken(),
 		});
 		expect(response.statusCode).toBeGreaterThanOrEqual(400);
 		expect(response.json().success).not.toBe(true);
@@ -333,6 +557,7 @@ describe("quality size installed-client HTTP and native mapping", () => {
 			instanceId: "north",
 			presetTrashId: "synthetic-size",
 			syncStrategy: "manual",
+			executionToken: await getExecutionToken(),
 		});
 		expect(applied.statusCode).toBe(200);
 		expect(await prisma.qualitySizeMapping.count()).toBe(1);
