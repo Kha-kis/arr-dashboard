@@ -122,6 +122,7 @@ export type JellyfinEpisodeRefreshResult = {
 	complete: boolean;
 	progressed: boolean;
 	errorMessages?: string[];
+	failureCategory?: JellyfinEpisodeReportedFailure;
 	completedAt?: Date;
 	superseded?: boolean;
 	/** The owned run was settled but complete coverage needs fresh discovery. */
@@ -185,6 +186,7 @@ type JellyfinEpisodeWorkProgress = ObservationRunProgress & {
 	/** Durable page advancement or a replay transition ready for continuation. */
 	progressed: boolean;
 	publishedItemCount?: number;
+	failureCategory?: JellyfinEpisodeReportedFailure;
 	retryableDependencyFailure?: true;
 	retryableClaimContention?: true;
 	retryableOuterAttemptContention?: true;
@@ -251,12 +253,30 @@ export type JellyfinEpisodePrePageFailureCategory =
 	| "scope-plan-failed"
 	| "run-admission-failed";
 
+type JellyfinEpisodeParentRefusal =
+	| "parent-status-missing"
+	| "parent-publication-unavailable"
+	| "parent-status-invalid-or-stale"
+	| "parent-generation-incompatible"
+	| "parent-coverage-incompatible"
+	| "parent-rows-incompatible"
+	| "parent-read-failed";
+
+type JellyfinEpisodeReportedFailure =
+	| JellyfinEpisodeParentRefusal
+	| JellyfinEpisodePrePageFailureCategory
+	| "episode-work-failed";
+
 export function logJellyfinEpisodePrePageFailure(
 	log: Pick<FastifyBaseLogger, "warn">,
 	category: JellyfinEpisodePrePageFailureCategory,
+	reasonCode?: JellyfinEpisodeParentRefusal,
 ): void {
 	if (typeof log.warn !== "function") return;
-	log.warn({ category }, "Jellyfin episode refresh pre-page dependency unavailable");
+	log.warn(
+		{ category, ...(reasonCode ? { reasonCode } : {}) },
+		"Jellyfin episode refresh pre-page dependency unavailable",
+	);
 }
 
 /** Closed operational categories; never expose upstream errors or values. */
@@ -375,20 +395,26 @@ export async function refreshOwnedJellyfinEpisodeCache(
 ): Promise<JellyfinEpisodeRefreshResult> {
 	const progress = await runNextJellyfinEpisodeWorkItem(context);
 	const complete = progress.state === "complete" && !progress.replanRequired;
+	const errors =
+		progress.retryableDependencyFailure ||
+		progress.retryableClaimContention ||
+		progress.retryableOuterAttemptContention ||
+		progress.replanRequired ||
+		progress.state === "failed" ||
+		progress.state === "invalidated"
+			? 1
+			: 0;
+	const failureCategory =
+		errors && !progress.superseded
+			? (progress.failureCategory ?? "episode-work-failed")
+			: undefined;
 	return {
 		upserted: progress.publishedItemCount ?? 0,
-		errors:
-			progress.retryableDependencyFailure ||
-			progress.retryableClaimContention ||
-			progress.retryableOuterAttemptContention ||
-			progress.replanRequired ||
-			progress.state === "failed" ||
-			progress.state === "invalidated"
-				? 1
-				: 0,
+		errors,
 		complete,
 		progressed: progress.progressed,
-		errorMessages: [],
+		errorMessages: failureCategory ? [failureCategory] : [],
+		...(failureCategory ? { failureCategory } : {}),
 		...(progress.replanRequired ? { replanRequired: true as const } : {}),
 		...(progress.superseded ? { superseded: true } : {}),
 		...(progress.renewalDeferred ? { renewalDeferred: true as const } : {}),
@@ -915,7 +941,10 @@ export function createJellyfinEpisodeWorkItemRunner(
 			!sameProviderPublicationAuthority(createProviderPublicationAuthority(current), authority)
 		) {
 			logJellyfinEpisodePrePageFailure(context.log, "current-authority-failed");
-			return await failAttempt("coverage-incomplete");
+			return {
+				...(await failAttempt("coverage-incomplete")),
+				failureCategory: "current-authority-failed",
+			};
 		}
 		const candidateV2State = await hasActiveJellyfinEpisodeV2Candidate(
 			context.prisma,
@@ -926,17 +955,24 @@ export function createJellyfinEpisodeWorkItemRunner(
 			logJellyfinEpisodePrePageFailure(context.log, "run-admission-failed");
 			return await retryPreRenewal();
 		}
+		let parentRefusal: JellyfinEpisodeParentRefusal | undefined;
 		const parent = await readAuthoritativeLibraryParent(
 			context.prisma,
 			current as unknown as OwnedProviderPublicationSnapshot,
 			now,
 			candidateV2State !== false,
 			context.automaticRenewal !== undefined,
+			(reason) => {
+				parentRefusal = reason;
+			},
 		);
 		if (isParentRefreshPending(parent)) return await deferForParentRefresh();
 		if (!parent) {
-			logJellyfinEpisodePrePageFailure(context.log, "parent-admission-failed");
-			return await failAttempt("coverage-incomplete");
+			logJellyfinEpisodePrePageFailure(context.log, "parent-admission-failed", parentRefusal);
+			return {
+				...(await failAttempt("coverage-incomplete")),
+				failureCategory: parentRefusal ?? "parent-admission-failed",
+			};
 		}
 		const catalogGenerationKey =
 			candidateV2State === "v2"
@@ -961,7 +997,10 @@ export function createJellyfinEpisodeWorkItemRunner(
 			});
 		} catch {
 			logJellyfinEpisodePrePageFailure(context.log, "client-preparation-failed");
-			return await failAttempt("provider-unavailable");
+			return {
+				...(await failAttempt("provider-unavailable")),
+				failureCategory: "client-preparation-failed",
+			};
 		}
 		const activeRunBeforeDiscovery = await findActiveJellyfinEpisodeRun(
 			context.prisma,
@@ -2532,7 +2571,12 @@ async function readAuthoritativeLibraryParent(
 	now = new Date(),
 	allowCompatibleLastGoodForV2 = false,
 	throwTransientAdmissionFailure = false,
+	onRefusal?: (reason: JellyfinEpisodeParentRefusal) => void,
 ): Promise<LibraryParentRead | null> {
+	const refuse = (reason: JellyfinEpisodeParentRefusal): null => {
+		onRefusal?.(reason);
+		return null;
+	};
 	try {
 		const [status, rawRows] = await Promise.all([
 			prisma.cacheRefreshStatus.findUnique({
@@ -2574,7 +2618,7 @@ async function readAuthoritativeLibraryParent(
 				},
 			}),
 		]);
-		if (!status) return null;
+		if (!status) return refuse("parent-status-missing");
 		if (isCurrentJellyfinLibraryRefreshStatus(status, authority, now)) {
 			return { parentRefreshPending: true };
 		}
@@ -2589,7 +2633,11 @@ async function readAuthoritativeLibraryParent(
 			status.lastAttemptAt <= now;
 		if (
 			status.lastResult !== "success" ||
-			(status.lastAttemptResult !== "success" && !compatibleTemporaryFailure) ||
+			(status.lastAttemptResult !== "success" && !compatibleTemporaryFailure)
+		) {
+			return refuse("parent-publication-unavailable");
+		}
+		if (
 			!(status.lastRefreshedAt instanceof Date) ||
 			!(status.lastAttemptAt instanceof Date) ||
 			!Number.isFinite(status.lastRefreshedAt.getTime()) ||
@@ -2598,7 +2646,11 @@ async function readAuthoritativeLibraryParent(
 			status.lastRefreshedAt > now ||
 			status.lastAttemptAt > now ||
 			now.getTime() - status.lastRefreshedAt.getTime() >
-				JELLYFIN_EPISODE_PARENT_MUTATION_AUTHORITY_MAX_AGE_MS ||
+				JELLYFIN_EPISODE_PARENT_MUTATION_AUTHORITY_MAX_AGE_MS
+		) {
+			return refuse("parent-status-invalid-or-stale");
+		}
+		if (
 			typeof status.generationId !== "string" ||
 			status.generationId.trim() === "" ||
 			typeof status.generationMetadata !== "string" ||
@@ -2607,7 +2659,7 @@ async function readAuthoritativeLibraryParent(
 			!Number.isSafeInteger(status.itemCount) ||
 			status.itemCount < 0
 		) {
-			return null;
+			return refuse("parent-generation-incompatible");
 		}
 		const decoded = decodeJellyfinLibraryGenerationMetadata(status.generationMetadata);
 		const coverage = decoded.ok
@@ -2625,7 +2677,7 @@ async function readAuthoritativeLibraryParent(
 			decoded.metadata.itemCount !== rawRows.length ||
 			status.itemCount !== rawRows.length
 		) {
-			return null;
+			return refuse("parent-coverage-incompatible");
 		}
 		const rows = rawRows.map((row): JellyfinLibraryRowFingerprintInput | null => {
 			const mediaType =
@@ -2672,7 +2724,7 @@ async function readAuthoritativeLibraryParent(
 				thumb: row.thumb,
 			};
 		});
-		if (rows.some((row) => row === null)) return null;
+		if (rows.some((row) => row === null)) return refuse("parent-rows-incompatible");
 		const semanticRows = rows.filter(
 			(row): row is JellyfinLibraryRowFingerprintInput => row !== null,
 		);
@@ -2681,7 +2733,7 @@ async function readAuthoritativeLibraryParent(
 			decoded.metadata,
 			semanticRows,
 		);
-		if (!dependencyFingerprint) return null;
+		if (!dependencyFingerprint) return refuse("parent-rows-incompatible");
 		const catalogScopes = jellyfinEpisodeCatalogScopesFromReceipt(decoded.metadata.coverageReceipt);
 		const catalogProvenance = catalogScopes
 			? buildJellyfinEpisodeCatalogProvenance(semanticRows, catalogScopes)
@@ -2696,6 +2748,6 @@ async function readAuthoritativeLibraryParent(
 		};
 	} catch (error) {
 		if (throwTransientAdmissionFailure && isTransientEpisodeDatabaseFailure(error)) throw error;
-		return null;
+		return refuse("parent-read-failed");
 	}
 }
