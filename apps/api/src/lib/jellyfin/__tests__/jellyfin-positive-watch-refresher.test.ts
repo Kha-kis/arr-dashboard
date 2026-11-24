@@ -111,6 +111,7 @@ describe("Jellyfin positive watch refresh runner", () => {
 		const result = await refreshOwnedJellyfinPositiveWatch(app);
 		expect(result).toMatchObject({ kind: "published", itemCount: 1, scopeCount: 1 });
 		expect(mocks.claim).toHaveBeenCalledWith(app.prisma, "jellyfin_episode_positive", instance);
+		expect(mocks.getLibraries).toHaveBeenCalledWith("user-a", { watchLibrariesOnly: true });
 		expect(mocks.collect).toHaveBeenCalledWith(expect.anything(), [
 			{ userId: "user-a", libraryId: "library-a" },
 		]);

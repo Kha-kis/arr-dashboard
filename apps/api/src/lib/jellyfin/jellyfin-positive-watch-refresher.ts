@@ -64,7 +64,7 @@ export async function refreshOwnedJellyfinPositiveWatch(input: {
 			async () => {
 				const scopes: Array<{ userId: string; libraryId: string }> = [];
 				for (const user of await client.getUsers()) {
-					for (const library of await client.getLibraries(user.id)) {
+					for (const library of await client.getLibraries(user.id, { watchLibrariesOnly: true })) {
 						scopes.push({ userId: user.id, libraryId: library.id });
 					}
 				}
