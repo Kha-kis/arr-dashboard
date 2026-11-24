@@ -5,7 +5,7 @@
 
 "use client";
 
-import type { CustomQualityConfig } from "@arr/shared";
+import { type CustomQualityConfig, importedQualityItemsInProviderOrder } from "@arr/shared";
 import { useQuery } from "@tanstack/react-query";
 import { AlertCircle, ChevronLeft, ChevronRight, Gauge } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -64,6 +64,7 @@ interface QualityConfigurationProps {
 	qualityProfile: WizardSelectedProfile;
 	initialQualityConfig?: CustomQualityConfig;
 	onNext: (qualityConfig: CustomQualityConfig) => void;
+	onChange: (qualityConfig: CustomQualityConfig) => void;
 	onBack?: () => void;
 	isEditMode?: boolean;
 }
@@ -154,8 +155,9 @@ export const QualityConfiguration = ({
 	qualityProfile,
 	initialQualityConfig,
 	onNext,
+	onChange,
 	onBack,
-	isEditMode: _isEditMode = false,
+	isEditMode = false,
 }: QualityConfigurationProps) => {
 	const hasInitializedQualityConfig = useRef(!!initialQualityConfig);
 	const [customQualityConfig, setCustomQualityConfig] = useState<CustomQualityConfig>(
@@ -225,7 +227,10 @@ export const QualityConfiguration = ({
 		}
 
 		// Convert qualityItems to CustomQualityConfig format
-		const items = data.qualityItems.map(
+		const sourceItems = isCloned
+			? data.qualityItems
+			: importedQualityItemsInProviderOrder(data.qualityItems);
+		const items = sourceItems.map(
 			(item: { name: string; allowed?: boolean; items?: string[] }, index: number) => {
 				const id = `q-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`;
 
@@ -267,7 +272,11 @@ export const QualityConfiguration = ({
 					cutoffId = entry.item.id;
 					break;
 				}
-				if (entry.type === "group" && entry.group.name === profileCutoffName) {
+				if (
+					entry.type === "group" &&
+					(entry.group.name === profileCutoffName ||
+						entry.group.qualities.some((quality) => quality.name === profileCutoffName))
+				) {
 					cutoffId = entry.group.id;
 					break;
 				}
@@ -280,7 +289,7 @@ export const QualityConfiguration = ({
 			items,
 			cutoffId,
 		});
-	}, [data]);
+	}, [data, isCloned]);
 
 	const handleNext = () => {
 		onNext(customQualityConfig);
@@ -350,7 +359,16 @@ export const QualityConfiguration = ({
 				<CardContent>
 					<QualityGroupEditor
 						config={customQualityConfig}
-						onChange={setCustomQualityConfig}
+						onChange={(config) => {
+							if (
+								config.items === customQualityConfig.items &&
+								config.cutoffId === customQualityConfig.cutoffId
+							)
+								return;
+							const edited = isEditMode ? { ...config, useCustomQualities: true } : config;
+							setCustomQualityConfig(edited);
+							onChange(edited);
+						}}
 						showToggle={true}
 						serviceType={serviceType}
 					/>

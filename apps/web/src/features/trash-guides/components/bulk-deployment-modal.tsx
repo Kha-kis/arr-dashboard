@@ -49,7 +49,8 @@ import {
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { InstanceQualityOverrideModal } from "./instance-quality-override-modal";
-import type { CustomQualityConfig, TemplateInstanceOverride } from "@arr/shared";
+import type { CustomQualityConfig, DeploymentPreview, TemplateInstanceOverride } from "@arr/shared";
+import { DeploymentQualityOrder } from "./deployment-quality-order";
 
 type SyncStrategy = "auto" | "manual" | "notify";
 
@@ -66,6 +67,7 @@ interface InstancePreview {
 		conflicts: number;
 		canDeploy: boolean;
 		executionToken: string;
+		qualityOrder?: DeploymentPreview["qualityOrder"];
 	};
 	loading: boolean;
 	error?: Error;
@@ -215,6 +217,7 @@ export const BulkDeploymentModal = ({
 							conflicts: preview.summary.totalConflicts,
 							canDeploy: preview.canDeploy,
 							executionToken: preview.executionToken,
+							qualityOrder: preview.qualityOrder,
 						}
 					: undefined,
 			};
@@ -333,7 +336,11 @@ export const BulkDeploymentModal = ({
 
 	const totalChanges = instancePreviews
 		.filter((inst) => inst.selected && inst.preview)
-		.reduce((sum, inst) => sum + (inst.preview?.totalItems || 0), 0);
+		.reduce(
+			(sum, inst) =>
+				sum + (inst.preview?.totalItems || 0) + Number(Boolean(inst.preview?.qualityOrder)),
+			0,
+		);
 
 	// Can deploy if at least one selected instance can be deployed
 	const canDeploy = deployableCount > 0 && !previewsLoading;
@@ -406,7 +413,7 @@ export const BulkDeploymentModal = ({
 						{instancePreviews.map((inst) => (
 							<div
 								key={inst.instanceId}
-								className="flex items-center gap-3 p-3 rounded-xl border transition-all duration-200"
+								className="flex flex-wrap items-center gap-3 p-3 rounded-xl border transition-all duration-200"
 								style={{
 									borderColor: inst.selected
 										? `${themeGradient.from}40`
@@ -470,7 +477,8 @@ export const BulkDeploymentModal = ({
 										{inst.preview.reachable ? (
 											<>
 												<span style={{ color: SEMANTIC_COLORS.success.text }}>
-													{inst.preview.totalItems} changes
+													{inst.preview.totalItems + Number(Boolean(inst.preview.qualityOrder))}{" "}
+													changes
 												</span>
 												{inst.preview.conflicts > 0 && (
 													<span style={{ color: SEMANTIC_COLORS.warning.text }}>
@@ -497,6 +505,11 @@ export const BulkDeploymentModal = ({
 										onChange={(strategy) => updateInstanceStrategy(inst.instanceId, strategy)}
 										disabled={!inst.preview?.canDeploy}
 									/>
+								)}
+								{inst.selected && inst.preview?.qualityOrder && (
+									<div className="basis-full">
+										<DeploymentQualityOrder change={inst.preview.qualityOrder} />
+									</div>
 								)}
 							</div>
 						))}

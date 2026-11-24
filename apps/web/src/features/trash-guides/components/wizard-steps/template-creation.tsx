@@ -170,6 +170,7 @@ interface TemplateCreationProps {
 		templateName: string;
 		templateDescription: string;
 		customQualityConfig?: CustomQualityConfig;
+		qualityEdited?: boolean;
 		namingSelection?: NamingSelectedPresets;
 		clonedSourceReview?: WizardClonedSourceReview;
 	};
@@ -308,7 +309,9 @@ export const TemplateCreation = ({
 					templateDescription: templateDescription.trim() || undefined,
 					selectedCFGroups: relevantGroupIds,
 					customFormatSelections: wizardState.customFormatSelections,
-					customQualityConfig: wizardState.customQualityConfig,
+					customQualityConfig: wizardState.qualityEdited
+						? wizardState.customQualityConfig
+						: undefined,
 					namingSelection: wizardState.namingSelection,
 				});
 			} else if (isCloned && clonedProfileInfo) {

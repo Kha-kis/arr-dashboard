@@ -53,6 +53,8 @@ const formatConflictType = (conflictType: string) => {
 const formatConflictValue = (value: unknown) =>
 	typeof value === "object" && value !== null ? JSON.stringify(value) : String(value);
 
+import { DeploymentQualityOrder } from "./deployment-quality-order";
+
 interface SyncValidationModalProps {
 	templateId: string;
 	templateName: string;
@@ -593,6 +595,8 @@ export const SyncValidationModal = ({
 									</div>
 								</section>
 							)}
+
+							<DeploymentQualityOrder change={preview?.qualityOrder} />
 
 							{namingChanges.length > 0 && (
 								<section className="space-y-3" aria-labelledby="sync-naming-changes">

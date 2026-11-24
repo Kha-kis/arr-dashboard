@@ -129,6 +129,7 @@ interface WizardState {
 	cfResolutions?: ResolvedCF[];
 	/** Custom quality configuration for power users */
 	customQualityConfig?: CustomQualityConfig;
+	qualityEdited?: boolean;
 	/** Optional naming presets to deploy with this template */
 	namingSelection?: NamingSelectedPresets;
 	/** Exact cloned ARR snapshot reviewed during Custom Format configuration. */
@@ -308,6 +309,14 @@ export const QualityProfileWizard = ({
 			...prev,
 			currentStep: "customize",
 			customQualityConfig: qualityConfig,
+		}));
+	};
+
+	const handleQualityEdit = (qualityConfig: CustomQualityConfig) => {
+		setWizardState((prev) => ({
+			...prev,
+			customQualityConfig: qualityConfig,
+			qualityEdited: true,
 		}));
 	};
 
@@ -498,6 +507,7 @@ export const QualityProfileWizard = ({
 							qualityProfile={wizardState.selectedProfile}
 							initialQualityConfig={wizardState.customQualityConfig}
 							onNext={handleQualityConfigComplete}
+							onChange={handleQualityEdit}
 							onBack={isEditMode ? undefined : handleBack}
 							isEditMode={isEditMode}
 						/>
@@ -540,6 +550,7 @@ export const QualityProfileWizard = ({
 								templateName: wizardState.templateName,
 								templateDescription: wizardState.templateDescription,
 								customQualityConfig: wizardState.customQualityConfig,
+								qualityEdited: wizardState.qualityEdited,
 								namingSelection: wizardState.namingSelection,
 								clonedSourceReview: wizardState.clonedSourceReview,
 							}}

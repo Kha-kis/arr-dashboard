@@ -534,6 +534,20 @@ checking the provider.
 | `/trash-guides/quality-profiles` | Profile management |
 | `/trash-guides/custom-formats` | Custom format management |
 
+Deployment preview includes `qualityOrder.before` and `qualityOrder.after` when
+the planned quality items or cutoff differ. The outer lists show highest
+priority first and group members retain their stored order. Stored overrides
+and Sonarr/Radarr request arrays put the lowest priority first. Execution rechecks the reviewed profile and the destination quality
+plan before applying changes.
+
+For a template saved with a prior version, compare its editor priority with
+the intended source profile and the current Sonarr or Radarr profile. Check
+group members, enabled qualities and the cutoff as well as the order. If a
+saved override is wrong, correct it explicitly in the editor and review the
+current and proposed priorities in a fresh deployment preview before deploying.
+Existing overrides and deployed profiles require review because an intentional
+order can look the same as the historical editor error.
+
 ## Manual Import
 
 All Manual Import routes use the existing authenticated route scope. Sonarr,
