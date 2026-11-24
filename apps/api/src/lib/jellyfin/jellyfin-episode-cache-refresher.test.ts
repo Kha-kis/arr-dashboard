@@ -208,7 +208,11 @@ const log = {
 
 function ownedFixture(
 	service: "JELLYFIN" | "EMBY",
-	options: { parentMediaType?: "movie" | "series"; v3?: boolean } = {},
+	options: {
+		parentMediaType?: "movie" | "series";
+		v3?: boolean;
+		scopeUserIds?: readonly string[];
+	} = {},
 ) {
 	const parentRow = {
 		id: "library-row-1",
@@ -265,15 +269,13 @@ function ownedFixture(
 						| "on-deck",
 					evidence: "complete" as const,
 					valueSemantics: "exact" as const,
-					units: [
-						{
-							...receiptUnit,
-							scopeKey:
-								domain === "library-inventory"
-									? "user:user-1/library:library-1/inventory"
-									: `${domain}:library-1`,
-						},
-					],
+					units:
+						domain === "library-inventory"
+							? (options.scopeUserIds ?? ["user-1"]).map((id) => ({
+									...receiptUnit,
+									scopeKey: `user:${id}/library:library-1/inventory`,
+								}))
+							: [{ ...receiptUnit, scopeKey: `${domain}:library-1` }],
 					publishedCanonicalEntities: 1,
 				})),
 			}
@@ -1156,6 +1158,9 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 				progressed: true,
 				complete: false,
 			});
+			expect(client.getLibraries.mock.calls).toEqual(
+				service === "JELLYFIN" ? [["user-1", { watchLibrariesOnly: true }]] : [["user-1"]],
+			);
 			expect(client.getEpisodeItemsPageWithCoverage).not.toHaveBeenCalled();
 			expect(pageWorker.run).toHaveBeenLastCalledWith(
 				{
@@ -2492,7 +2497,7 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 	])(
 		"retries proven unentered page staging without refetching ($width, $refusals)",
 		async ({ width, refusals }) => {
-			const state = ownedFixture("JELLYFIN", { v3: true });
+			const state = ownedFixture("JELLYFIN", { v3: true, scopeUserIds: ["user-1", "user-2"] });
 			const client = configureDurableRun(state, 2_001);
 			durable.claimBatchWidth = width;
 			client.getUsers.mockResolvedValue([
@@ -2734,7 +2739,7 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 	});
 
 	it("continues paired pages when a separate retry metadata read is unavailable", async () => {
-		const state = ownedFixture("JELLYFIN", { v3: true });
+		const state = ownedFixture("JELLYFIN", { v3: true, scopeUserIds: ["user-1", "user-2"] });
 		const client = configureDurableRun(state, 4_001);
 		durable.claimBatchWidth = 2;
 		client.getUsers.mockResolvedValue([
@@ -2861,7 +2866,7 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 		{ width: 1, outcome: "cancel after read", borrows: 1, reads: 1 },
 	])("reads acknowledged progress on an isolated lane ($width, $outcome)", async (test) => {
 		const { width, outcome } = test;
-		const state = ownedFixture("JELLYFIN", { v3: true });
+		const state = ownedFixture("JELLYFIN", { v3: true, scopeUserIds: ["user-1", "user-2"] });
 		const client = configureDurableRun(state, 2_001);
 		durable.claimBatchWidth = width;
 		client.getUsers.mockResolvedValue([
@@ -2942,7 +2947,7 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 		{ code: "runtime-admission", failures: 1, cancel: true, recovers: false, expectedReads: 1 },
 		{ code: "untyped-admission", failures: 1, recovers: false, expectedReads: 1 },
 	])("rechecks progress after two acknowledged page writes (%j)", async (test) => {
-		const state = ownedFixture("JELLYFIN", { v3: true });
+		const state = ownedFixture("JELLYFIN", { v3: true, scopeUserIds: ["user-1", "user-2"] });
 		const client = configureDurableRun(state, 2_001);
 		durable.claimBatchWidth = 2;
 		client.getUsers.mockResolvedValue([

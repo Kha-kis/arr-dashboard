@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { EventEmitter } from "node:events";
+import { EventEmitter, once } from "node:events";
+import { createServer } from "node:http";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -46,7 +47,7 @@ import {
 } from "../../services/provider-cache-status.js";
 import { createProviderPublicationAuthority } from "../../services/provider-identity-guard.js";
 import { readOwnedJellyfinCacheHealthSources } from "../jellyfin-cache-health.js";
-import type { JellyfinEpisodeItemsPage } from "../jellyfin-client.js";
+import { JellyfinClient, type JellyfinEpisodeItemsPage } from "../jellyfin-client.js";
 import {
 	readOwnedJellyfinEpisodeDisplaySources,
 	readOwnedJellyfinLibraryAndEpisodeDisplaySources,
@@ -11143,4 +11144,264 @@ describe("Jellyfin durable episode refresh repository", { timeout: 30_000 }, () 
 			observedRawCount: 0,
 		});
 	});
+});
+
+describe("episode view scope and unexpected provider rows", { timeout: 30_000 }, () => {
+	it.each([
+		"external-view",
+		"saved-external-view",
+		"saved-v2-external-view",
+		"regular-library",
+		"regular-mixed",
+		"missing-confirmed-view",
+	] as const)(
+		"keeps correct page and publication boundaries with an unexpected row in %s",
+		async (where) => {
+			const prisma = await database();
+			const seed = await completeFinalizerFixture(prisma);
+			await prisma.user.create({ data: { id: "user-2", username: "scope-fixture-user" } });
+			const scopes = [
+				{ userId: "user-1", userName: "Synthetic A", libraryId: "library-1" },
+				{ userId: "user-2", userName: "Synthetic B", libraryId: "library-1" },
+			];
+			const { run, plan } = await replaceRunWithV3Scopes(
+				prisma,
+				scopes,
+				{},
+				seed.attempt.attemptedAt,
+			);
+			await prisma.providerObservationRun.delete({ where: { id: run.id } });
+			const legacyRun = where === "saved-v2-external-view";
+			const externalView =
+				where === "external-view" || where === "saved-external-view" || legacyRun;
+			let savedRunId: string | null = null;
+			if (where === "saved-external-view" || legacyRun) {
+				const {
+					parentLibraryGenerationId,
+					parentLibraryMetadataFingerprint,
+					parentLibraryDependencyFingerprint,
+					catalogProvenance,
+				} = JSON.parse(plan.units[0]!.scopePayload!);
+				const previous = buildJellyfinEpisodeScopePlan(
+					[...scopes, { userId: "user-2", userName: "", libraryId: "live-view" }],
+					{
+						parentLibraryGenerationId,
+						parentLibraryMetadataFingerprint,
+						...(legacyRun ? {} : { parentLibraryDependencyFingerprint, catalogProvenance }),
+					},
+				);
+				const saved = await createOrLoadObservationRun(prisma, {
+					authority: {
+						instanceId: run.instanceId,
+						provider: "jellyfin_episode",
+						cacheType: "jellyfin_episode",
+						parentGenerationId: legacyRun
+							? jellyfinEpisodeParentGenerationKey(parentLibraryDependencyFingerprint)
+							: run.parentGenerationId,
+						targetDigest: previous.targetDigest,
+						connectionGeneration: run.connectionGeneration,
+						identityGeneration: run.identityGeneration,
+					},
+					units: previous.units,
+				});
+				savedRunId = saved.id;
+			}
+
+			await prisma.cacheRefreshStatus.update({
+				where: {
+					instanceId_cacheType: { instanceId: "jellyfin-1", cacheType: "jellyfin_episode" },
+				},
+				data: { lastAttemptResult: "success", lastAttemptErrorMessage: null },
+			});
+			const pages: Array<{ user: string; parent: string | null; start: string | null }> = [];
+			const watchEpisode = {
+				Id: "episode-1",
+				Name: "Synthetic episode",
+				Type: "Episode",
+				SeriesId: "series-1",
+				IndexNumber: 1,
+				ParentIndexNumber: 1,
+				UserData: { Played: true, PlayCount: 1 },
+			};
+			const unexpected = {
+				Id: "different-object",
+				Name: "Synthetic non-episode",
+				Type: "TvProgram",
+				ChannelId: "fixture-channel",
+				MediaType: "Video",
+				IsFolder: false,
+				LocationType: "Virtual",
+				RunTimeTicks: 1,
+				UserData: { Played: false, PlayCount: 0 },
+			};
+			const server = createServer((req, res) => {
+				const url = new URL(req.url!, "http://fixture.invalid");
+				const [, , user, method] = url.pathname.split("/");
+				const list = (Items: unknown[]) => ({
+					Items,
+					TotalRecordCount: Items.length,
+					StartIndex: 0,
+				});
+				res.setHeader("Content-Type", "application/json; charset=utf-8");
+				if (url.pathname === "/Users") {
+					res.end(
+						JSON.stringify(scopes.map((scope) => ({ Id: scope.userId, Name: scope.userName }))),
+					);
+				} else if (method === "Views") {
+					if (where === "missing-confirmed-view" && user === "user-2") {
+						res.end(JSON.stringify(list([])));
+						return;
+					}
+
+					res.end(
+						JSON.stringify(
+							list([
+								{
+									Id: "library-1",
+									Name: "Synthetic TV",
+									Type: "CollectionFolder",
+									CollectionType: "tvshows",
+								},
+								...(externalView && user === "user-2"
+									? [
+											{
+												Id: "live-view",
+												Name: "Synthetic Live TV",
+												Type: "UserView",
+												CollectionType: "livetv",
+											},
+										]
+									: []),
+							]),
+						),
+					);
+				} else if (method === "Items") {
+					const parent = url.searchParams.get("ParentId");
+					pages.push({ user: user!, parent, start: url.searchParams.get("StartIndex") });
+					res.end(
+						JSON.stringify(
+							list(
+								user === "user-1"
+									? []
+									: parent === "live-view" || where === "regular-library"
+										? [unexpected]
+										: where === "regular-mixed"
+											? [watchEpisode, unexpected]
+											: [watchEpisode],
+							),
+						),
+					);
+				} else {
+					res.writeHead(404).end();
+				}
+			});
+			server.listen(0, "127.0.0.1");
+			await once(server, "listening");
+			try {
+				const address = server.address();
+				if (!address || typeof address === "string") throw new Error("Missing fixture server");
+				const instance = await prisma.serviceInstance.update({
+					where: { id: "jellyfin-1" },
+					data: {
+						baseUrl: "http://127.0.0.1:" + address.port,
+						expectedIdentity: "verified-provider",
+						identityStatus: "VERIFIED",
+					},
+				});
+				identityModuleMocks.readProviderIdentity.mockResolvedValue({
+					service: "JELLYFIN",
+					identityKind: "jellyfin-server-id",
+					rawIdentity: "verified-provider",
+					confirmationDigest: "a".repeat(64),
+					fingerprint: "a".repeat(12),
+				});
+				const info = vi.fn();
+				const log = { info, warn: vi.fn(), error: vi.fn() } as never;
+				const runner = createProductionJellyfinEpisodeWorkItemRunner({
+					createClient: ({ baseUrl, apiKey, log, httpAuthHeaders }) =>
+						new JellyfinClient(baseUrl, apiKey, log, undefined, httpAuthHeaders),
+					readPage: (input, _client, signal) => runJellyfinEpisodePageWorker(input, { signal }),
+				});
+				const context = {
+					prisma,
+					instance,
+					encryptor: { decrypt: () => "fixture-key" },
+					log,
+					now: seed.attempt.attemptedAt,
+				};
+				if (savedRunId) {
+					const before = await prisma.jellyfinEpisodeCache.findMany();
+					expect(await runner(context)).toMatchObject({ replanRequired: true });
+					expect(pages).toEqual([]);
+					expect(await prisma.jellyfinEpisodeCache.findMany()).toEqual(before);
+					expect(
+						await prisma.providerObservationRun.findUniqueOrThrow({ where: { id: savedRunId } }),
+					).toMatchObject({ activeSlotKey: null, state: "invalidated" });
+				}
+				let result = await runner(context);
+				if (where === "missing-confirmed-view") {
+					expect(result).toMatchObject({ state: "failed", progressed: false });
+					expect(pages).toEqual([]);
+					expect(await prisma.jellyfinEpisodeCache.findMany()).toEqual([
+						expect.objectContaining({ jellyfinId: "old" }),
+					]);
+					return;
+				}
+
+				for (let i = 0; i < 6 && result.state === "running"; i++) {
+					result = await runner(context);
+				}
+				if (!externalView) {
+					expect(info).toHaveBeenCalledWith(
+						expect.objectContaining({
+							stage: "provider-read",
+							state: "failed",
+							errorCategory: "provider-response",
+							providerFailureKind: "episode-row-invariant",
+							httpStatus: 200,
+						}),
+						"Jellyfin episode work stage",
+					);
+					const unit = await prisma.providerObservationUnit.findFirstOrThrow({
+						where: { scopeKey: "collect:user-2:library-1" },
+					});
+					expect(unit).toMatchObject({ cursor: 0, observedRawCount: 0 });
+					expect(
+						await prisma.jellyfinEpisodeObservationStage.findMany({ where: { unitId: unit.id } }),
+					).toEqual([]);
+					expect(await prisma.jellyfinEpisodeCache.findMany()).toEqual([
+						expect.objectContaining({ jellyfinId: "old" }),
+					]);
+					expect(
+						await readOwnedJellyfinObservation({
+							prisma,
+							userId: "user-1",
+							instanceId: instance.id,
+							cacheType: "jellyfin_episode",
+							mode: "mutation",
+							now: context.now,
+						}),
+					).toMatchObject({ available: false, mutationAvailable: false });
+					return;
+				}
+				expect(pages).toHaveLength(4);
+				expect(pages.every(({ parent, start }) => parent === "library-1" && start === "0")).toBe(
+					true,
+				);
+				for (const user of ["user-1", "user-2"]) {
+					expect(pages.filter((page) => page.user === user)).toHaveLength(2);
+				}
+				expect(result).toMatchObject({ state: "complete", publishedItemCount: 1 });
+				expect(await prisma.jellyfinEpisodeCache.findMany()).toEqual([
+					expect.objectContaining({
+						jellyfinId: "episode-1",
+						watched: true,
+						watchedByUsers: '["Synthetic B"]',
+					}),
+				]);
+			} finally {
+				await new Promise<void>((resolve) => server.close(() => resolve()));
+			}
+		},
+	);
 });

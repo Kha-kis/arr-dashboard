@@ -40,7 +40,12 @@ import {
 	type ProviderPublicationStage,
 	withGuardedProviderPublication,
 } from "../services/provider-identity-guard.js";
-import { JellyfinClient, type JellyfinLibrary, type JellyfinUser } from "./jellyfin-client.js";
+import {
+	isJellyfinWatchLibrary,
+	JellyfinClient,
+	type JellyfinLibrary,
+	type JellyfinUser,
+} from "./jellyfin-client.js";
 import {
 	encodeJellyfinLibraryGenerationMetadata,
 	fingerprintJellyfinLibraryRows,
@@ -720,12 +725,7 @@ export async function collectJellyfinCacheLiveEvidence(
 				}
 				librariesByUser.push({
 					user,
-					libraries: libraries.filter(
-						(lib) =>
-							lib.collectionType === "movies" ||
-							lib.collectionType === "tvshows" ||
-							lib.collectionType === "CollectionFolder",
-					),
+					libraries: libraries.filter(isJellyfinWatchLibrary),
 				});
 			} catch {
 				complete = false;

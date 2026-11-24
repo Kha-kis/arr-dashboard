@@ -5,6 +5,51 @@ import { JellyfinClient } from "../jellyfin-client.js";
 const logMock = { warn: vi.fn() };
 const log = logMock as unknown as FastifyBaseLogger;
 
+describe("JellyfinClient watch library scopes", () => {
+	afterEach(() => vi.unstubAllGlobals());
+
+	it("keeps movie, TV, and mixed libraries while excluding external and special views", async () => {
+		const items = [
+			{ Id: "movie", Name: "Movies", Type: "CollectionFolder", CollectionType: "movies" },
+			{ Id: "tv", Name: "Series", Type: "CollectionFolder", CollectionType: "tvshows" },
+			{ Id: "mixed", Name: "Mixed", Type: "CollectionFolder" },
+			{ Id: "live", Name: "Live", Type: "UserView", CollectionType: "livetv" },
+			{ Id: "channel", Name: "Channel", Type: "Channel" },
+			{ Id: "folders", Name: "Folders", Type: "UserView", CollectionType: "folders" },
+		];
+		const fetchMock = vi
+			.fn()
+			.mockImplementation(async () => response({ Items: items, TotalRecordCount: items.length }));
+		vi.stubGlobal("fetch", fetchMock);
+		const client = new JellyfinClient("http://jellyfin.test", "api-key", log);
+		expect(
+			(await client.getLibraries("user-1", { watchLibrariesOnly: true })).map(({ id }) => id),
+		).toEqual(["movie", "tv", "mixed"]);
+		expect((await client.getLibraries("user-1")).map(({ id }) => id)).toEqual(
+			items.map(({ Id }) => Id),
+		);
+	});
+
+	it("refuses a duplicate identity across supported and excluded views", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn().mockResolvedValueOnce(
+				response({
+					Items: [
+						{ Id: "same", Name: "TV", Type: "CollectionFolder", CollectionType: "tvshows" },
+						{ Id: "same", Name: "External", Type: "UserView", CollectionType: "livetv" },
+					],
+					TotalRecordCount: 2,
+				}),
+			),
+		);
+		const client = new JellyfinClient("http://jellyfin.test", "api-key", log);
+		await expect(client.getLibraries("user-1", { watchLibrariesOnly: true })).rejects.toThrow(
+			"Jellyfin library view identity is invalid",
+		);
+	});
+});
+
 describe("JellyfinClient bounded on-deck transient recovery", () => {
 	afterEach(() => {
 		vi.unstubAllGlobals();

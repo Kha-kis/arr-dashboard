@@ -1027,7 +1027,11 @@ export function createJellyfinEpisodeWorkItemRunner(
 				async () => {
 					const discovered: Array<{ userId: string; userName: string; libraryId: string }> = [];
 					for (const user of await client.getUsers()) {
-						for (const library of await client.getLibraries(user.id)) {
+						const libraries =
+							current.service === "JELLYFIN"
+								? await client.getLibraries(user.id, { watchLibrariesOnly: true })
+								: await client.getLibraries(user.id);
+						for (const library of libraries) {
 							discovered.push({
 								userId: user.id,
 								userName: user.name,
@@ -1213,6 +1217,14 @@ export function createJellyfinEpisodeWorkItemRunner(
 						? (activeRunBeforeDiscovery?.id ?? undefined)
 						: undefined,
 				);
+			}
+			if (
+				current.service === "JELLYFIN" &&
+				parent.catalogProvenance &&
+				!catalogMatchesPlannedScopes(parent.catalogProvenance, scopes)
+			) {
+				logJellyfinEpisodePrePageFailure(context.log, "scope-plan-failed");
+				return await failAttempt("coverage-incomplete");
 			}
 			try {
 				plan = buildJellyfinEpisodeScopePlan(
@@ -2481,7 +2493,14 @@ async function findSavedJellyfinEpisodeV2Plan(
 			connectionGeneration: authority.connectionGeneration,
 			identityGeneration: authority.identityGeneration,
 		});
-		if (!validated) return { kind: "invalid", run: { id: candidate.id } };
+		if (
+			!validated ||
+			(authority.service === "JELLYFIN" &&
+				currentCatalog &&
+				!catalogMatchesPlannedScopes(currentCatalog, validated.scopes))
+		) {
+			return { kind: "invalid", run: { id: candidate.id } };
+		}
 		let catalogProvenance: JellyfinEpisodeCatalogProvenance | undefined;
 		if (candidate.parentGenerationId?.startsWith(JELLYFIN_EPISODE_PARENT_V3_KEY_PREFIX)) {
 			catalogProvenance =
@@ -2501,6 +2520,20 @@ async function findSavedJellyfinEpisodeV2Plan(
 	} catch {
 		return { kind: "unavailable" };
 	}
+}
+
+/** Every planned Jellyfin scope needs its own parent inventory proof. */
+function catalogMatchesPlannedScopes(
+	catalog: JellyfinEpisodeCatalogProvenance,
+	scopes: ReadonlyArray<{ userId: string; libraryId: string }>,
+): boolean {
+	const supported = new Set(
+		catalog.scopes.map(({ userId, libraryId }) => JSON.stringify([userId, libraryId])),
+	);
+	return (
+		scopes.length === supported.size &&
+		scopes.every(({ userId, libraryId }) => supported.has(JSON.stringify([userId, libraryId])))
+	);
 }
 
 /** Both catalogs have passed strict decoding and current-parent integrity checks. */

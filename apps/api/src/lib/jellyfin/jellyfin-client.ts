@@ -63,6 +63,15 @@ export interface JellyfinLibrary {
 	collectionType: string; // "movies" | "tvshows" | "music" | "books"
 }
 
+/** The collection types covered by the Jellyfin library parent receipt. */
+export function isJellyfinWatchLibrary(library: JellyfinLibrary): boolean {
+	return (
+		library.collectionType === "movies" ||
+		library.collectionType === "tvshows" ||
+		library.collectionType === "CollectionFolder"
+	);
+}
+
 export interface JellyfinItem {
 	id: string;
 	name: string;
@@ -560,18 +569,30 @@ export class JellyfinClient {
 	/**
 	 * Get library views for a user.
 	 */
-	async getLibraries(userId: string): Promise<JellyfinLibrary[]> {
+	async getLibraries(
+		userId: string,
+		options?: { watchLibrariesOnly?: true },
+	): Promise<JellyfinLibrary[]> {
 		const data = await this.request(`/Users/${encodeURIComponent(userId)}/Views`, {
 			schema: jellyfinLibrariesResponseSchema,
 		});
 		if (data.Items.length !== data.TotalRecordCount) {
 			throw new Error("Jellyfin library inventory was not returned completely");
 		}
-		return data.Items.map((lib) => ({
+		const libraries = data.Items.map((lib) => ({
 			id: lib.Id,
 			name: lib.Name,
 			collectionType: lib.CollectionType ?? lib.Type,
 		}));
+		if (!options?.watchLibrariesOnly) return libraries;
+		// Validate the full view list before filtering, including duplicate IDs
+		// across a supported library and an external or special view.
+		const ids = new Set<string>();
+		for (const { id } of libraries) {
+			if (!id.trim() || ids.has(id)) throw new Error("Jellyfin library view identity is invalid");
+			ids.add(id);
+		}
+		return libraries.filter(isJellyfinWatchLibrary);
 	}
 
 	/** Get the server's complete native media-folder inventory. */
