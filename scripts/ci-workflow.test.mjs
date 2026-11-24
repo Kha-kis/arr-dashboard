@@ -277,7 +277,7 @@ test("actions stay immutable under expected owners and registry writes require t
 });
 
 test("release staging has only a manual trigger and no stable alias operation", () => {
-	const stage = parse(readFileSync(new URL(".github/workflows/docker-combined.yml", root), "utf8"));
+	const stage = parse(readFileSync(new URL(".github/workflows/docker-stage.yml", root), "utf8"));
 	assert.deepEqual(Object.keys(stage.on), ["workflow_dispatch"]);
 	assert.ok(stage.jobs.qualify, "a terminal qualification job must exist");
 	assert.deepEqual(stage.jobs.qualify.needs, ["assemble", "verify"]);
@@ -309,22 +309,31 @@ test("release staging has only a manual trigger and no stable alias operation", 
 	assert.ok(!JSON.stringify(stage).includes("type=raw,value=latest"));
 });
 
-test("stable promotion is an approved, serialized dispatch with no build", () => {
+test("historical release workflow is an inert manual-only tombstone", () => {
+	const legacy = parse(readFileSync(new URL(".github/workflows/docker-combined.yml", root), "utf8"));
+	assert.equal(legacy.on, "workflow_dispatch");
+	assert.deepEqual(legacy.permissions, {});
+	assert.deepEqual(legacy.jobs.retired.steps, [{ run: "exit 1" }]);
+});
+
+test("stable promotion is a serialized canonical tag workflow with no build", () => {
 	const promote = parse(
 		readFileSync(new URL(".github/workflows/docker-promote.yml", root), "utf8"),
 	);
-	assert.deepEqual(Object.keys(promote.on), ["workflow_dispatch"]);
+	assert.deepEqual(Object.keys(promote.on), ["push"]);
+	assert.deepEqual(promote.on.push.tags, ["v[0-9]+.[0-9]+.[0-9]+"]);
 	assert.equal(promote.concurrency["cancel-in-progress"], false);
-	assert.equal(promote.jobs.promote.environment.name, "stable-release");
-	assert.ok(promote.jobs.promote.needs.includes("preflight"));
+	assert.equal(promote.jobs.promote.environment, undefined);
+	assert.deepEqual(promote.jobs.promote.needs, ["preflight"]);
+	assert.match(promote.jobs.preflight.if, /github[.]event[.]created/);
+	assert.match(promote.jobs.preflight.if, /github[.]actor == 'Kha-kis'/);
 	assert.equal(promote.jobs.preflight.permissions.packages, undefined);
 	const commands = promote.jobs.promote.steps.map((step) => step.run).filter(Boolean);
-	assert.deepEqual(commands, [
-		"python3 -B scripts/release_promotion.py authorize",
-		"python3 -B scripts/release_promotion.py promote",
-	]);
-	assert.match(JSON.stringify(promote.jobs.promote.steps), /STABLE_DOCKERHUB_TOKEN/);
-	assert.ok(!JSON.stringify(promote).includes("docker/build-push-action"));
+	assert.deepEqual(commands, ["python3 -B scripts/release_promotion.py promote"]);
+	const steps = JSON.stringify(promote.jobs.promote.steps);
+	assert.match(steps, /secrets[.]DOCKERHUB_TOKEN/);
+	assert.match(steps, /needs[.]preflight[.]outputs[.]selection/);
+	assert.doesNotMatch(steps, /STABLE_DOCKERHUB|docker\/build-push-action/);
 });
 
 test("release promotion and registry guards fail closed in offline fixtures", () => {

@@ -1,6 +1,9 @@
 """Offline structural and graph regression tests for release_registry."""
 import hashlib
 import json
+from argparse import Namespace
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
 
@@ -377,6 +380,23 @@ class RegistryTests(unittest.TestCase):
         bad["runtime"]["browserCases"] = 14
         with self.assertRaises(rr.QualificationError):
             rr._validate_receipt(bad, "amd64", expected)
+
+    def test_staging_records_live_alias_baseline_and_refuses_existing_version(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            for arch in ("amd64", "arm64"):
+                (root / arch).write_bytes(raw_json(receipt(arch)))
+            args = Namespace(run_id="1", run_attempt="1", version=VERSION, source=SOURCE, tree=TREE,
+                             build_date=BUILD_DATE, index=INDEX_PLACEHOLDER, output=str(root / "record"),
+                             amd64=str(root / "amd64"), arm64=str(root / "arm64"))
+            current = {"2.25": None, "2": INDEX_PLACEHOLDER, "latest": INDEX_PLACEHOLDER}
+            with (patch.object(rr.Registry, "qualify_graph", return_value={"verified": True}),
+                  patch.object(rr.Registry, "tag_digest", side_effect=current.get)):
+                self.assertEqual(rr.qualify(args)["expectedAliases"],
+                                 {repo: current for repo in rr.REGISTRIES})
+                current[VERSION] = INDEX_PLACEHOLDER
+                with self.assertRaisesRegex(rr.QualificationError, "stable version tag already exists"):
+                    rr.qualify(args)
 
     def test_qualification_compares_run_identity_numerically_and_checks_both_repos(self):
         manifest = {
