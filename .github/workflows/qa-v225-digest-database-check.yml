@@ -1,0 +1,71 @@
+{
+  "name": "v2.25.0 exact release database qualification",
+  "on": {
+    "push": {
+      "branches": [
+        "qa/225-r16-exact-db-428dd699"
+      ]
+    }
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "jobs": {
+    "verify": {
+      "if": "github.repository == 'Kha-kis/arr-dashboard' && github.ref == 'refs/heads/qa/225-r16-exact-db-428dd699' && github.run_attempt == 1",
+      "runs-on": "${{ matrix.runner }}",
+      "timeout-minutes": 25,
+      "strategy": {
+        "fail-fast": false,
+        "matrix": {
+          "include": [
+            {
+              "arch": "amd64",
+              "runner": "ubuntu-latest",
+              "manifest": "sha256:3d93aff9275793992927a2df7190a631a84483af7aba606840e11c753b2d502d",
+              "config": "sha256:60047f490cead2e3cf08483c77fda9d960e136c9da46b09ee2a6e8a7f1b9783a"
+            },
+            {
+              "arch": "arm64",
+              "runner": "ubuntu-24.04-arm",
+              "manifest": "sha256:899ba266baa5919528d7dd5fcf2b02ba20bbfd4d6970cc4d8e7d6ef0784f71b6",
+              "config": "sha256:1cd152a2b536c1d8f86fabcc18da0b00d6b03fc8dee3a10ba42551b926feb8dd"
+            }
+          ]
+        }
+      },
+      "env": {
+        "SOURCE_SHA": "428dd699a00916310fd52d69c96de2caa660d4ce",
+        "SOURCE_TREE": "63161f88759a9f11950e3f980cfb6ceabb58a927",
+        "ARTIFACT_ARCH": "${{ matrix.arch }}",
+        "ARTIFACT_MANIFEST": "${{ matrix.manifest }}",
+        "ARTIFACT_CONFIG": "${{ matrix.config }}"
+      },
+      "steps": [
+        {
+          "name": "Check out exact integrated source",
+          "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "with": {
+            "ref": "428dd699a00916310fd52d69c96de2caa660d4ce",
+            "persist-credentials": false
+          }
+        },
+        {
+          "name": "Verify native release digest with fresh SQLite and PostgreSQL",
+          "shell": "bash",
+          "run": "#!/usr/bin/env bash\n# Supplemental packaged database check. Containers and the network are disposable.\nset -euo pipefail\n: \"${SOURCE_SHA:?}\" \"${SOURCE_TREE:?}\" \"${ARTIFACT_ARCH:?}\" \"${ARTIFACT_MANIFEST:?}\" \"${ARTIFACT_CONFIG:?}\"\ncase \"$ARTIFACT_ARCH\" in amd64) native=x86_64 ;; arm64) native=aarch64 ;; *) exit 2 ;; esac\ntest \"$(uname -m)\" = \"$native\"\ntest \"$(git rev-parse HEAD)\" = \"$SOURCE_SHA\"\ntest \"$(git rev-parse HEAD^{tree})\" = \"$SOURCE_TREE\"\n[[ \"$ARTIFACT_MANIFEST\" =~ ^sha256:[0-9a-f]{64}$ && \"$ARTIFACT_CONFIG\" =~ ^sha256:[0-9a-f]{64}$ ]]\nimage=\"ghcr.io/kha-kis/arr-dashboard@$ARTIFACT_MANIFEST\"\nfixture=postgres@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685\ndocker pull --platform \"linux/$ARTIFACT_ARCH\" \"$image\"\ndocker pull --platform \"linux/$ARTIFACT_ARCH\" \"$fixture\"\ntest \"$(docker image inspect --format '{{.Id}} {{.Architecture}}' \"$image\")\" = \"$ARTIFACT_CONFIG $ARTIFACT_ARCH\"\ntest \"$(docker image inspect --format '{{index .Config.Labels \"org.opencontainers.image.revision\"}} {{index .Config.Labels \"org.opencontainers.image.version\"}}' \"$image\")\" = \"$SOURCE_SHA 2.25.0\"\nnet=\"arr-release-pg-$GITHUB_RUN_ID-$ARTIFACT_ARCH\"\npg=\"\"; app=\"\"\ncleanup() {\n  if [[ -n \"$app\" ]]; then docker rm -fv \"$app\" >/dev/null 2>&1 || true; fi\n  if [[ -n \"$pg\" ]]; then docker rm -fv \"$pg\" >/dev/null 2>&1 || true; fi\n  docker network rm \"$net\" >/dev/null 2>&1 || true\n}\ndocker network create --internal \"$net\" >/dev/null\ntrap cleanup EXIT\npg=$(docker run -d --network \"$net\" --network-alias postgres \\\n  -e POSTGRES_USER=arr -e POSTGRES_PASSWORD=qualification-only -e POSTGRES_DB=arr_dashboard \"$fixture\")\nfor _ in {1..80}; do\n  if docker exec \"$pg\" pg_isready -h 127.0.0.1 -U arr -d arr_dashboard >/dev/null 2>&1; then break; fi\n  sleep 1\ndone\ndocker exec \"$pg\" pg_isready -h 127.0.0.1 -U arr -d arr_dashboard\nready() {\n  for _ in {1..180}; do\n    if docker exec \"$app\" node -e 'Promise.all([fetch(\"http://127.0.0.1:3001/health\",{signal:AbortSignal.timeout(2000)}).then(async r=>{const h=await r.json();return r.ok&&h.status===\"ok\"&&h.version===\"2.25.0\"&&h.commit===process.argv[1]}),fetch(\"http://127.0.0.1:3000/login\",{signal:AbortSignal.timeout(2000)}).then(r=>r.ok)]).then(v=>process.exit(v.every(Boolean)?0:1)).catch(()=>process.exit(1))' \"$SOURCE_SHA\" >/dev/null 2>&1; then\n      test \"$(docker inspect --format '{{.RestartCount}} {{.State.OOMKilled}}' \"$app\")\" = '0 false'\n      return 0\n    fi\n    test \"$(docker inspect --format '{{.State.Running}}' \"$app\")\" = true || break\n    sleep 1\n  done\n  docker logs --tail 70 \"$app\" >&2\n  return 1\n}\nauth() {\n  docker exec -i \"$app\" node - \"$1\" <<'NODE'\nconst fs = require(\"node:fs\");\nconst mode = process.argv[2];\nconst body = {username:\"native_pg_fixture\",password:\"FixtureOnlyPassw0rd!\",rememberMe:false};\nconst base = \"http://127.0.0.1:3001\";\nconst post = (path) => fetch(base+path,{\n  method:\"POST\", headers:{\"Content-Type\":\"application/json\"},\n  body:JSON.stringify(body), signal:AbortSignal.timeout(10000),\n});\n(async()=>{\n  if (mode === \"register\") {\n    const register = await post(\"/auth/register\");\n    if(register.status !== 201) throw Error(\"Register: \" + register.status);\n  }\n  const login = await post(\"/auth/login\");\n  if(login.status !== 200) throw Error(\"Login: \" + login.status);\n  const {user} = await login.json();\n  if(user?.username !== body.username || !user?.id) throw Error(\"Login identity\");\n  const cookie = login.headers.get(\"set-cookie\")?.split(\";\")[0];\n  if (!cookie) throw Error(\"Session cookie absent\");\n  const me = await fetch(base+\"/auth/me\",{headers:{Cookie:cookie},signal:AbortSignal.timeout(10000)});\n  if (me.status !== 200 || (await me.json()).user?.id !== user.id) throw Error(\"Session identity\");\n  const receipt = \"/config/native-qualification-user-id\";\n  if (mode === \"register\") fs.writeFileSync(receipt,user.id,{mode:0o600});\n  else if (fs.readFileSync(receipt,\"utf8\") !== user.id) throw Error(\"Restart changed user identity\");\n})().catch(error=>{console.error(error.message);process.exit(1);});\nNODE\n}\naccount_persisted() {\n  test \"$(docker exec \"$pg\" psql -qAtv ON_ERROR_STOP=1 -U arr -d arr_dashboard -c 'SELECT count(*) FROM \"User\" WHERE username = $q$native_pg_fixture$q$')\" = 1\n}\nstop_clean() {\n  docker stop --time 120 \"$app\" >/dev/null\n  test \"$(docker inspect --format '{{.State.Status}} {{.State.ExitCode}} {{.State.OOMKilled}}' \"$app\")\" = 'exited 0 false'\n}\nfor provider in sqlite postgresql; do\n  database=()\n  if [[ \"$provider\" = postgresql ]]; then\n    database=(-e DATABASE_URL=postgresql://arr:qualification-only@postgres:5432/arr_dashboard)\n  fi\n  app=$(docker run -d --network \"$net\" -e PUID=1000 -e PGID=1000 \"${database[@]}\" \"$image\")\n  ready\n  auth register\n  if [[ \"$provider\" = postgresql ]]; then account_persisted; fi\n  stop_clean\n  docker start \"$app\" >/dev/null\n  ready\n  auth login\n  if [[ \"$provider\" = postgresql ]]; then account_persisted; fi\n  stop_clean\n  docker rm -v \"$app\" >/dev/null\n  app=\"\"\n  printf '%s fresh initialization, clean stop/start, authenticated same user PASS\\n' \"$provider\"\ndone\njq -n --arg arch \"$ARTIFACT_ARCH\" --arg manifest \"$ARTIFACT_MANIFEST\" --arg config \"$ARTIFACT_CONFIG\" \\\n  --arg source \"$SOURCE_SHA\" --arg tree \"$SOURCE_TREE\" --arg fixture \"$fixture\" \\\n  '{status:\"PASS\",architecture:$arch,manifestDigest:$manifest,configDigest:$config,source:$source,tree:$tree,postgresFixture:$fixture,providers:[\"sqlite\",\"postgresql\"],freshInitialization:true,authenticatedBeforeAndAfterRestart:true,cleanStop:true}' > database-receipt.json\ncat database-receipt.json\n"
+        },
+        {
+          "name": "Attach disposable database receipt",
+          "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+          "with": {
+            "name": "release-db-${{ matrix.arch }}",
+            "path": "database-receipt.json",
+            "if-no-files-found": "error",
+            "retention-days": 90
+          }
+        }
+      ]
+    }
+  }
+}
