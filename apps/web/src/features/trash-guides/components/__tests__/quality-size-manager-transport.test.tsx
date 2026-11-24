@@ -145,7 +145,10 @@ import { useApplyQualitySize } from "../../../../hooks/api/useQualitySize";
 import { QualitySizeManager } from "../quality-size-manager";
 
 describe("Quality size maintained transport/recovery", () => {
-	function fixture(apply: (event: Event) => Response | Promise<Response>) {
+	function fixture(
+		apply: (event: Event) => Response | Promise<Response>,
+		previewToken = () => "a".repeat(64),
+	) {
 		transport((event) => {
 			if (event.url === "/api/services") return response({ services: [service] });
 			if (event.url.includes("/quality-size/presets?"))
@@ -186,6 +189,7 @@ describe("Quality size maintained transport/recovery", () => {
 					],
 					summary: { matched: 1, changed: 1, unmatched: 0, total: 1 },
 					currentPresetHash: "synthetic",
+					executionToken: previewToken(),
 					existingMapping: null,
 				});
 			if (event.url.endsWith("/quality-size/apply")) return apply(event);
@@ -230,12 +234,55 @@ describe("Quality size maintained transport/recovery", () => {
 				.filter((event) => event.url.endsWith("/quality-size/apply"))
 				.map((event) => event.body),
 		).toEqual([
-			{ instanceId: "radarr-a", presetTrashId: "size-a", syncStrategy: "notify" },
-			{ instanceId: "radarr-a", presetTrashId: "size-a", syncStrategy: "notify" },
+			{
+				instanceId: "radarr-a",
+				presetTrashId: "size-a",
+				syncStrategy: "notify",
+				executionToken: "a".repeat(64),
+			},
+			{
+				instanceId: "radarr-a",
+				presetTrashId: "size-a",
+				syncStrategy: "notify",
+				executionToken: "a".repeat(64),
+			},
 		]);
 		expect(events.filter((event) => event.method === "PATCH").map((event) => event.body)).toEqual([
 			{ instanceId: "radarr-a", syncStrategy: "notify" },
 		]);
+	});
+	it("requires the operator to refresh and review preview after a conflict", async () => {
+		let refreshed = false;
+		fixture(
+			(event) =>
+				event.body?.executionToken === "a".repeat(64)
+					? response({ message: "Quality Size preview changed" }, 409)
+					: response({
+							success: true,
+							appliedCount: 1,
+							totalQualities: 1,
+							message: "Selected size applied",
+						}),
+			() => (refreshed ? "b" : "a").repeat(64),
+		);
+		mount(<QualitySizeManager />);
+		fireEvent.click(await screen.findByRole("button", { name: /Synthetic Radarr/ }));
+		fireEvent.click(await screen.findByRole("button", { name: /Movie/ }));
+		const apply = await screen.findByRole("button", { name: "Apply to Synthetic Radarr" });
+		fireEvent.click(apply);
+		const refresh = await screen.findByRole("button", { name: "Refresh preview" });
+		expect(apply).toBeDisabled();
+		refreshed = true;
+		fireEvent.click(refresh);
+		await waitFor(() => expect(apply).toBeEnabled());
+		expect(events.filter((event) => event.url.endsWith("/quality-size/apply"))).toHaveLength(1);
+		fireEvent.click(apply);
+		await screen.findByText("Selected size applied");
+		expect(
+			events
+				.filter((event) => event.url.endsWith("/quality-size/apply"))
+				.map((event) => event.body?.executionToken),
+		).toEqual(["a".repeat(64), "b".repeat(64)]);
 	});
 	it("W4 queued default reset ACK must not be rendered as completed provider reset", async () => {
 		const held = gate();

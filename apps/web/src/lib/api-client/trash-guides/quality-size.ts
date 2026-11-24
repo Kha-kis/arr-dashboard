@@ -38,6 +38,7 @@ export type QualitySizePreviewResponse = {
 		total: number;
 	};
 	currentPresetHash: string;
+	executionToken: string;
 	existingMapping: {
 		presetTrashId: string;
 		presetType: string;
@@ -51,6 +52,7 @@ export type ApplyQualitySizePayload = {
 	instanceId: string;
 	presetTrashId: string;
 	syncStrategy?: "auto" | "manual" | "notify";
+	executionToken?: string;
 };
 
 export type ApplyQualitySizeResponse = {

@@ -22,6 +22,7 @@ import {
 } from "../../../hooks/api/useQualitySize";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { ApiError } from "../../../lib/api-client/base";
 import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { SyncStrategyControl } from "./sync-strategy-control";
 
@@ -93,8 +94,12 @@ export function QualitySizeManager() {
 		data: previewData,
 		isLoading: previewLoading,
 		error: previewError,
+		isFetching: previewFetching,
+		refetch: refetchPreview,
 	} = useQualitySizePreview(selectedInstanceId, previewPresetId);
 	const applyMutation = useApplyQualitySize();
+	const previewConflict =
+		applyMutation.error instanceof ApiError && applyMutation.error.status === 409;
 	const syncStrategyMutation = useUpdateQualitySizeSyncStrategy();
 
 	// Filtered instances: only Radarr and Sonarr
@@ -124,10 +129,14 @@ export function QualitySizeManager() {
 
 	function handleApply() {
 		if (!selectedInstanceId || !selectedPresetId) return;
+		const executionToken =
+			selectedPresetId === DEFAULT_PRESET_ID ? undefined : previewData?.executionToken;
+		if (selectedPresetId !== DEFAULT_PRESET_ID && !executionToken) return;
 		applyMutation.mutate({
 			instanceId: selectedInstanceId,
 			presetTrashId: selectedPresetId,
 			syncStrategy,
+			executionToken,
 		});
 	}
 
@@ -546,6 +555,9 @@ export function QualitySizeManager() {
 									onClick={handleApply}
 									disabled={
 										applyMutation.isPending ||
+										!previewData.executionToken ||
+										previewFetching ||
+										previewConflict ||
 										previewData.summary.matched === 0 ||
 										(previewData.summary.changed === 0 &&
 											existingMapping?.presetTrashId === selectedPresetId)
@@ -575,7 +587,22 @@ export function QualitySizeManager() {
 								)}
 							</div>
 							{applyMutation.isError && (
-								<ErrorBanner message={`Apply failed: ${applyMutation.error.message}`} />
+								<div className="space-y-2">
+									<ErrorBanner message={`Apply failed: ${applyMutation.error.message}`} />
+									{previewConflict && (
+										<button
+											type="button"
+											className="rounded border px-3 py-1.5 text-sm"
+											disabled={previewFetching}
+											onClick={async () => {
+												const refreshed = await refetchPreview();
+												if (refreshed.isSuccess) applyMutation.reset();
+											}}
+										>
+											Refresh preview
+										</button>
+									)}
+								</div>
 							)}
 						</div>
 					)}
