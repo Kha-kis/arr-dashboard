@@ -176,10 +176,10 @@ def read_qualification(stage_id, source, cutoff, workflow_id):
     require(run["workflow_id"] == workflow_id and run["id"] == stage_id
             and run["run_attempt"] == 1 and run["event"] == "workflow_dispatch"
             and run["head_branch"] == "main" and run["head_sha"] == source
-            and run["head_repository"]["full_name"] == REPOSITORY
-            and run["status"] == "completed" and run["conclusion"] == "success"
-            and timestamp(run["updated_at"]) < cutoff,
-            "qualification is not a successful canonical stage before the tag")
+            and run["head_repository"]["full_name"] == REPOSITORY,
+            "qualification is not from the canonical stage and source")
+    if run["status"] != "completed" or run["conclusion"] != "success" or timestamp(run["updated_at"]) >= cutoff:
+        return None
     name = "release-qualification-attempt-1"
     response = get_api(f"actions/runs/{stage_id}/artifacts?name={name}&per_page=2")
     require(response["total_count"] == len(response["artifacts"]) == 1,
@@ -210,16 +210,19 @@ def discover_qualification(version, source, tree, cutoff):
             and type(workflow["id"]) is int and workflow["id"] != LEGACY_WORKFLOW_ID,
             "invalid staging workflow identity")
     found = get_api(f"actions/workflows/{workflow['id']}/runs?"
-                    f"head_sha={source}&branch=main&event=workflow_dispatch&status=success&per_page=100")
+                    f"head_sha={source}&branch=main&event=workflow_dispatch&per_page=100")
     require(found["total_count"] == len(found["workflow_runs"]) <= 100,
             "qualification discovery was incomplete")
     candidates = []
     for run in found["workflow_runs"]:
-        if run["run_attempt"] != 1 or timestamp(run["updated_at"]) >= cutoff:
+        if timestamp(run["created_at"]) >= cutoff:
             continue
         stage_id = run["id"]
         require(type(stage_id) is int and stage_id > 0, "invalid stage run ID")
-        record, digest = read_qualification(stage_id, source, cutoff, workflow["id"])
+        result = read_qualification(stage_id, source, cutoff, workflow["id"])
+        if result is None:
+            continue
+        record, digest = result
         require(record.get("version") == version and record.get("source") == source
                 and record.get("tree") == tree and record.get("runId") == stage_id
                 and record.get("runAttempt") == 1 and DIGEST.fullmatch(record["indexDigest"]),

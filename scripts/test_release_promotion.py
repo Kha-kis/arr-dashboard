@@ -225,10 +225,13 @@ class ReceiptTests(unittest.TestCase):
         self.assertTrue(self.downloaded)
 
     def test_failed_wrong_source_or_post_tag_stage_never_downloads(self):
-        for key, value in (("conclusion", "failure"), ("head_sha", TAG), ("workflow_id", 91),
-                           ("updated_at", TAGGED), ("run_attempt", 2)):
+        for key, value in (("head_sha", TAG), ("workflow_id", 91), ("run_attempt", 2)):
             with self.subTest(key=key), patch.dict(self.run, {key: value}), self.assertRaises(ValueError):
                 self.read()
+            self.assertFalse(self.downloaded)
+        for key, value in (("conclusion", "failure"), ("updated_at", TAGGED)):
+            with self.subTest(key=key), patch.dict(self.run, {key: value}):
+                self.assertIsNone(self.read())
             self.assertFalse(self.downloaded)
 
     def test_expired_late_and_tampered_archive_refused(self):
@@ -259,13 +262,21 @@ class DiscoveryTests(unittest.TestCase):
                 self.api = api
 
     def run_before(self, stage_id, when=BEFORE):
-        return {"id": stage_id, "run_attempt": 1, "updated_at": when}
+        return {"id": stage_id, "run_attempt": 1, "created_at": when, "updated_at": when}
 
     def test_deterministic_equivalent_stage_and_no_post_tag_selection(self):
         records = {i: qualified_record(i) for i in (39, 40)}
         stage, *_ = self.discover([self.run_before(40), self.run_before(70, TAGGED), self.run_before(39)], records)
         self.assertEqual(stage, 39)
-        self.assertIn(f"head_sha={SOURCE}&branch=main&event=workflow_dispatch&status=success", self.api.call_args.args[0])
+        self.assertIn(f"head_sha={SOURCE}&branch=main&event=workflow_dispatch&per_page=100", self.api.call_args.args[0])
+
+    def test_later_rerun_cannot_hide_an_original_qualification(self):
+        # The list endpoint exposes the latest attempt. The original successful
+        # attempt and its incompatible immutable receipt still exist.
+        original = {"id": 40, "run_attempt": 2, "created_at": BEFORE, "updated_at": TAGGED}
+        with self.assertRaisesRegex(ValueError, "incompatible"):
+            self.discover([self.run_before(39), original],
+                          {39: qualified_record(), 40: qualified_record(40, indexDigest=OTHER)})
 
     def test_missing_stale_or_incomplete_discovery_fails_closed(self):
         for runs, total in (([], 0), ([self.run_before(40, TAGGED)], 1), ([], 101)):
