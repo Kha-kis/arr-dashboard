@@ -312,7 +312,18 @@ function classifyJellyfinEpisodeStageFailure(error: unknown): JellyfinEpisodePag
 
 function stageFailureDiagnostics(error: unknown) {
 	if (error instanceof JellyfinEpisodePageWorkerError)
-		return { errorCategory: error.category, databaseCode: null, sqliteCode: null } as const;
+		return {
+			errorCategory: error.category,
+			databaseCode: null,
+			sqliteCode: null,
+			...(error.operation ? { operation: error.operation } : {}),
+			...(error.providerRead
+				? {
+						providerFailureKind: error.providerRead.kind,
+						httpStatus: error.providerRead.httpStatus,
+					}
+				: {}),
+		} as const;
 	if (error instanceof RestoreRuntimeAdmissionError)
 		return { errorCategory: "runtime-admission", databaseCode: null, sqliteCode: null } as const;
 	if (!(error instanceof Prisma.PrismaClientKnownRequestError))

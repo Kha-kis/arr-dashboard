@@ -143,6 +143,55 @@ describe("one-page worker protocol", () => {
 		expect(parseJellyfinEpisodePageWorkerResult(value, coordinates)).toBeNull();
 	});
 
+	it("round trips only closed provider-read diagnostics and actual HTTP status", () => {
+		const value = {
+			status: "failed",
+			category: "provider-response",
+			providerRead: { kind: "http-authorization", httpStatus: 403 },
+		};
+		expect(parseJellyfinEpisodePageWorkerResult(value, coordinates)).toEqual(value);
+		for (const providerRead of [
+			{ kind: "anything-private", httpStatus: 403 },
+			{ kind: "http-authorization", httpStatus: 600 },
+			{ kind: "http-authorization", httpStatus: "403" },
+			{ kind: "http-authorization", httpStatus: 403, url: "private" },
+		]) {
+			expect(
+				parseJellyfinEpisodePageWorkerResult({ ...value, providerRead }, coordinates),
+			).toBeNull();
+		}
+		const getter = vi.fn(() => 403);
+		const providerRead = {
+			kind: "http-authorization",
+			get httpStatus() {
+				return getter();
+			},
+		};
+		expect(
+			parseJellyfinEpisodePageWorkerResult({ ...value, providerRead }, coordinates),
+		).toBeNull();
+		expect(getter).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		["provider-timeout", "http-authorization", 403],
+		["provider-response", "http-authorization", 401],
+		["provider-response", "http-error", 200],
+		["provider-response", "episode-row-schema", null],
+		["provider-unavailable", "transport", 503],
+	])("rejects an inconsistent %s / %s / %s diagnostic", (category, kind, httpStatus) => {
+		expect(
+			parseJellyfinEpisodePageWorkerResult(
+				{
+					status: "failed",
+					category,
+					providerRead: { kind, httpStatus },
+				},
+				coordinates,
+			),
+		).toBeNull();
+	});
+
 	it("never invokes getters or stringify hooks in unexpected messages", () => {
 		const hook = vi.fn(() => {
 			throw new Error("private");

@@ -1212,6 +1212,41 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 		},
 	);
 
+	it("reports only safe provider detail at the failing page read", async () => {
+		const state = ownedFixture("JELLYFIN");
+		configureDurableRun(state);
+		pageWorker.run.mockRejectedValueOnce(
+			new JellyfinEpisodePageWorkerError(
+				"provider-response",
+				{
+					kind: "http-authorization",
+					httpStatus: 403,
+				},
+				"episode-page-counted",
+			),
+		);
+		const info = vi.fn();
+		await refreshOwnedJellyfinEpisodeCache({
+			prisma: state.prisma,
+			encryptor: { decrypt: vi.fn() },
+			instance: state.instance,
+			log: { ...log, info },
+		});
+		expect(info).toHaveBeenCalledWith(
+			expect.objectContaining({
+				category: "jellyfin-episode-work-stage",
+				stage: "provider-read",
+				state: "failed",
+				errorCategory: "provider-response",
+				operation: "episode-page-counted",
+				providerFailureKind: "http-authorization",
+				httpStatus: 403,
+			}),
+			"Jellyfin episode work stage",
+		);
+		expect(durable.stage).not.toHaveBeenCalled();
+	});
+
 	it("stages the episode page through collection admission without a no-op write publication", async () => {
 		const state = ownedFixture("JELLYFIN");
 		const client = configureDurableRun(state);

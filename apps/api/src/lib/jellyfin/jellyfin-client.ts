@@ -477,7 +477,15 @@ export class JellyfinImageNotFoundError extends Error {
 }
 
 /** The provider replied, but its episode page cannot be used. */
-export class JellyfinEpisodePageResponseError extends Error {}
+export class JellyfinEpisodePageResponseError extends Error {
+	constructor(
+		message: string,
+		readonly kind: "episode-row-invariant" | "episode-page-coverage" | "episode-page-limit",
+		readonly httpStatus: number | null,
+	) {
+		super(message);
+	}
+}
 
 export class JellyfinClient {
 	private readonly baseUrl: string;
@@ -1085,9 +1093,15 @@ export class JellyfinClient {
 		});
 		if (playedOnly) params.set("IsPlayed", "true");
 		if (uncounted) params.set("EnableTotalRecordCount", "false");
+		let httpStatus: number | null = null;
 		const response = await this.request(
 			`/Users/${encodeURIComponent(userId)}/Items?${params.toString()}`,
-			{ schema: jellyfinEpisodeItemsPageSchema },
+			{
+				schema: jellyfinEpisodeItemsPageSchema,
+				onResponseStatus: (status) => {
+					httpStatus = status;
+				},
+			},
 		);
 		if (
 			!Number.isSafeInteger(response.StartIndex) ||
@@ -1096,11 +1110,17 @@ export class JellyfinClient {
 			response.TotalRecordCount < 0 ||
 			response.StartIndex !== startIndex
 		) {
-			throw new JellyfinEpisodePageResponseError("Jellyfin episode page coverage is inconsistent");
+			throw new JellyfinEpisodePageResponseError(
+				"Jellyfin episode page coverage is inconsistent",
+				"episode-page-coverage",
+				httpStatus,
+			);
 		}
 		if (response.TotalRecordCount > COMPLETE_ITEMS_MAX) {
 			throw new JellyfinEpisodePageResponseError(
 				"Jellyfin episode page exceeds the safe 100000-row limit",
+				"episode-page-limit",
+				httpStatus,
 			);
 		}
 		const ids = new Set<string>();
@@ -1108,6 +1128,8 @@ export class JellyfinClient {
 			if (playedOnly && item.UserData?.Played !== true) {
 				throw new JellyfinEpisodePageResponseError(
 					"Jellyfin watched filter returned an unplayed episode",
+					"episode-row-invariant",
+					httpStatus,
 				);
 			}
 			if (
@@ -1127,7 +1149,11 @@ export class JellyfinClient {
 					!Number.isFinite(Date.parse(item.UserData.LastPlayedDate))) ||
 				ids.has(item.Id)
 			) {
-				throw new JellyfinEpisodePageResponseError("Jellyfin episode page rows are inconsistent");
+				throw new JellyfinEpisodePageResponseError(
+					"Jellyfin episode page rows are inconsistent",
+					"episode-row-invariant",
+					httpStatus,
+				);
 			}
 			ids.add(item.Id);
 		}
@@ -1136,7 +1162,11 @@ export class JellyfinClient {
 			startIndex + response.Items.length > COMPLETE_ITEMS_MAX ||
 			(!uncounted && startIndex + response.Items.length > response.TotalRecordCount)
 		) {
-			throw new JellyfinEpisodePageResponseError("Jellyfin episode page coverage is inconsistent");
+			throw new JellyfinEpisodePageResponseError(
+				"Jellyfin episode page coverage is inconsistent",
+				"episode-page-coverage",
+				httpStatus,
+			);
 		}
 		return {
 			items: response.Items.map((item) => {
@@ -1807,6 +1837,7 @@ export class JellyfinClient {
 			timeoutMs?: number;
 			retryTransientRead?: boolean;
 			onReadStage?: (stage: JellyfinLibraryReadStage) => void;
+			onResponseStatus?: (status: number) => void;
 		},
 	): Promise<T> {
 		const url = `${this.baseUrl}${path}`;
@@ -1905,6 +1936,7 @@ export class JellyfinClient {
 			response = await fetchOnce();
 		}
 
+		options?.onResponseStatus?.(response.status);
 		if (!response.ok) {
 			reportReadFailure("response", undefined, response.status, "http-error");
 			this.log.warn({ status: response.status }, "Jellyfin API request failed");

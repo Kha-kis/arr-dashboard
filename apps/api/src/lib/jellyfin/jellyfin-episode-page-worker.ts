@@ -1,9 +1,11 @@
 import { isMainThread, parentPort, workerData } from "node:worker_threads";
 import type { FastifyBaseLogger } from "fastify";
+import { UpstreamValidationError } from "../validation/parse-upstream.js";
 import { JellyfinClient, JellyfinEpisodePageResponseError } from "./jellyfin-client.js";
 import {
 	type JellyfinEpisodePageWorkerFailureCategory,
 	type JellyfinEpisodePageWorkerResult,
+	type JellyfinEpisodeProviderReadDiagnostic,
 	parseJellyfinEpisodePageWorkerRequest,
 	parseJellyfinEpisodePageWorkerResult,
 } from "./jellyfin-episode-page-worker-protocol.js";
@@ -15,6 +17,7 @@ export async function executeJellyfinEpisodePage(
 	const input = parseJellyfinEpisodePageWorkerRequest(value);
 	if (!input) return { status: "failed", category: "invalid-request" };
 	let failure: JellyfinEpisodePageWorkerFailureCategory = "provider-unavailable";
+	let providerRead: JellyfinEpisodeProviderReadDiagnostic | undefined;
 	const log = {
 		trace() {},
 		debug() {},
@@ -26,18 +29,46 @@ export async function executeJellyfinEpisodePage(
 		},
 		warn(details: unknown) {
 			if (typeof details !== "object" || details === null) return;
-			const { category, kind } = details as { category?: unknown; kind?: unknown };
+			const { category, kind, status } = details as {
+				category?: unknown;
+				kind?: unknown;
+				status?: unknown;
+			};
 			if (category !== "jellyfin-provider-read-failure") return;
-			// Read the client's closed diagnostic only. Never forward logger fields or errors.
+			// Project the client's bounded diagnostic only. Never propagate provider data or errors.
+			const httpStatus =
+				typeof status === "number" && Number.isInteger(status) && status >= 100 && status <= 599
+					? status
+					: null;
 			switch (kind) {
 				case "timeout":
 					failure = "provider-timeout";
+					providerRead = { kind, httpStatus };
 					break;
 				case "http-error":
+					failure = "provider-response";
+					providerRead = {
+						kind:
+							httpStatus === 401
+								? "http-authentication"
+								: httpStatus === 403
+									? "http-authorization"
+									: kind,
+						httpStatus,
+					};
+					break;
 				case "unexpected-content-type":
 				case "invalid-json":
+					failure = "provider-response";
+					providerRead = { kind, httpStatus };
+					break;
 				case "schema":
 					failure = "provider-response";
+					providerRead = { kind: "episode-page-envelope-schema", httpStatus };
+					break;
+				case "aborted":
+				case "transport":
+					providerRead = { kind, httpStatus };
 					break;
 			}
 		},
@@ -58,14 +89,27 @@ export async function executeJellyfinEpisodePage(
 			parseJellyfinEpisodePageWorkerResult({ status: "page", page }, input) ?? {
 				status: "failed",
 				category: "provider-response",
+				providerRead: { kind: "worker-page-invalid", httpStatus: null },
 			}
 		);
 	} catch (error) {
-		// Never inspect, format, or return provider error text/cause/stack.
-		return {
-			status: "failed",
-			category: error instanceof JellyfinEpisodePageResponseError ? "provider-response" : failure,
-		};
+		if (error instanceof JellyfinEpisodePageResponseError) {
+			return {
+				status: "failed",
+				category: "provider-response",
+				providerRead: { kind: error.kind, httpStatus: error.httpStatus },
+			};
+		}
+		// Inspect only the schema's fixed path prefix. Never return issue text.
+		if (
+			error instanceof UpstreamValidationError &&
+			providerRead?.kind === "episode-page-envelope-schema"
+		) {
+			if (error.issues.some((issue) => issue.startsWith("Items."))) {
+				providerRead = { kind: "episode-row-schema", httpStatus: providerRead.httpStatus };
+			}
+		}
+		return { status: "failed", category: failure, ...(providerRead ? { providerRead } : {}) };
 	}
 }
 

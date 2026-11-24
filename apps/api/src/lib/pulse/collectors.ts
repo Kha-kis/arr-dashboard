@@ -1091,12 +1091,15 @@ const collectCacheStaleness: Collector = async (app, userId) => {
 			plex_episode: "Plex episodes",
 			jellyfin: "Jellyfin",
 			jellyfin_episode: "Jellyfin episodes",
+			jellyfin_episode_positive: "Jellyfin episode watch",
+		};
+		const embyCacheLabels: Record<string, string> = {
+			jellyfin_episode: "Emby episodes",
+			jellyfin_episode_positive: "Emby episode watch",
 		};
 		const cacheLabel =
 			status.instance.service === "EMBY" && status.cacheType.startsWith("jellyfin")
-				? status.cacheType === "jellyfin_episode"
-					? "Emby episodes"
-					: "Emby"
+				? (embyCacheLabels[status.cacheType] ?? "Emby")
 				: (cacheLabels[status.cacheType] ?? status.cacheType);
 		const newerFailedAttempt =
 			status.lastAttemptResult === "error" &&

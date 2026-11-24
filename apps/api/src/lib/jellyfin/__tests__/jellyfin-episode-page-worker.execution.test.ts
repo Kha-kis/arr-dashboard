@@ -471,28 +471,43 @@ describe("real one-page GET worker", () => {
 	});
 
 	it.each([
-		{ scenario: "HTTP error", status: 503, startIndex: 0, played: "SECRET_SENTINEL" },
-		{ scenario: "invalid schema", status: 200, startIndex: 0, played: "SECRET_SENTINEL" },
-		{ scenario: "wrong page offset", status: 200, startIndex: 1, played: true },
+		{ kind: "http-error", status: 503 },
+		{ kind: "http-authentication", status: 401 },
+		{ kind: "http-authorization", status: 403 },
+		{ kind: "unexpected-content-type", status: 200, contentType: "text/html" },
+		{ kind: "invalid-json", status: 200, body: "BODY_SENTINEL" },
+		{ kind: "episode-page-envelope-schema", status: 200, body: '{"Page":"BODY_SENTINEL"}' },
+		{ kind: "episode-row-schema", status: 200, played: "SECRET_SENTINEL" },
+		{ kind: "episode-row-invariant", status: 200, type: "Movie" },
+		{ kind: "episode-page-coverage", status: 201, startIndex: 1 },
 	])(
-		"preserves the provider-response category for $scenario without exposing provider data",
-		async ({ status, startIndex, played }) => {
+		"retains the $kind diagnosis without exposing provider data",
+		async ({
+			kind,
+			status,
+			startIndex = 0,
+			played = true,
+			type = "Episode",
+			contentType = "application/json",
+			body,
+		}) => {
 			const { fixture, joined, trackedWorker, closedConnections } = createPageFixture();
 			const input = await fixture((_req, res) => {
-				res.writeHead(status, { "Content-Type": "application/json" });
+				res.writeHead(status, { "Content-Type": contentType, "X-Sentinel": "HEADER_SENTINEL" });
 				res.end(
-					JSON.stringify({
-						StartIndex: startIndex,
-						TotalRecordCount: 1,
-						Items: [
-							{
-								Id: "TITLE_SENTINEL",
-								Name: "Synthetic",
-								Type: "Episode",
-								UserData: { Played: played },
-							},
-						],
-					}),
+					body ??
+						JSON.stringify({
+							StartIndex: startIndex,
+							TotalRecordCount: 1,
+							Items: [
+								{
+									Id: "TITLE_SENTINEL",
+									Name: "Synthetic",
+									Type: type,
+									UserData: { Played: played },
+								},
+							],
+						}),
 				);
 			});
 			const output: string[] = [];
@@ -512,9 +527,87 @@ describe("real one-page GET worker", () => {
 			expect(result).toMatchObject({
 				category: "provider-response",
 				message: "Jellyfin episode page unavailable",
+				providerRead: { kind, httpStatus: status },
 			});
 		},
 	);
+
+	it.each([
+		{ uncounted: false, count: 0 },
+		{ uncounted: false, count: 1 },
+		{ uncounted: true, count: 0 },
+		{ uncounted: true, count: 1 },
+	])(
+		"accepts $count valid episode items with uncounted=$uncounted",
+		async ({ uncounted, count }) => {
+			const { fixture, joined, trackedWorker, closedConnections } = createPageFixture();
+			const input = await fixture((req, res) => {
+				const url = new URL(req.url!, "http://synthetic.invalid");
+				expect(url.pathname).toBe("/SYNTHETIC_URL/Users/USER_SENTINEL/Items");
+				expect(Object.fromEntries(url.searchParams)).toEqual({
+					ParentId: "LIBRARY_SENTINEL",
+					IncludeItemTypes: "Episode",
+					Recursive: "true",
+					EnableUserData: "true",
+					EnableImages: "false",
+					StartIndex: "0",
+					Limit: "2000",
+					...(uncounted ? { EnableTotalRecordCount: "false" } : {}),
+				});
+				res.writeHead(200, { "Content-Type": "application/json" });
+				res.end(
+					JSON.stringify({
+						Items: count
+							? [
+									{
+										Id: "synthetic",
+										SeriesId: "series",
+										IndexNumber: 1,
+										ParentIndexNumber: 1,
+										Type: "Episode",
+										UserData: { Played: false },
+									},
+								]
+							: [],
+						TotalRecordCount: uncounted ? 0 : count,
+						StartIndex: 0,
+					}),
+				);
+			});
+			const page = await joined(
+				runJellyfinEpisodePageWorker(
+					{
+						...input,
+						...(uncounted ? { uncounted: true } : {}),
+					},
+					{ createWorker: (url, payload) => trackedWorker(url, payload) },
+				),
+			);
+			expect(page).toMatchObject({ startIndex: 0, totalRecordCount: uncounted ? null : count });
+			expect(page.items).toHaveLength(count);
+			if (count) expect(page.items[0]).toMatchObject({ played: false });
+			await closedConnections();
+		},
+	);
+
+	it("separates a transport failure from a response and identifies an uncounted read", async () => {
+		const { fixture, joined, trackedWorker, closedConnections } = createPageFixture();
+		const input = await fixture((req) => req.socket.destroy());
+		const result = await joined(
+			runJellyfinEpisodePageWorker(
+				{ ...input, uncounted: true },
+				{
+					createWorker: (url, payload) => trackedWorker(url, payload),
+				},
+			).catch((error: unknown) => error),
+		);
+		await closedConnections();
+		expect(result).toMatchObject({
+			category: "provider-unavailable",
+			operation: "episode-page-uncounted",
+			providerRead: { kind: "transport", httpStatus: null },
+		});
+	});
 
 	it("returns the normalized page when the provider delays a valid response body", async () => {
 		const { fixture, joined, trackedWorker, closedConnections } = createPageFixture();
@@ -705,7 +798,10 @@ describe("real one-page GET worker", () => {
 			).toEqual({ startIndex: 0, totalRecordCount: 0, items: [] });
 			expect(requests).toBe(2);
 			await closedConnections();
-			expect(failure).toMatchObject({ category: "provider-timeout" });
+			expect(failure).toMatchObject({
+				category: "provider-timeout",
+				providerRead: { kind: "timeout" },
+			});
 		},
 	);
 
