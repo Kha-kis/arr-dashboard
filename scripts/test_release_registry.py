@@ -71,6 +71,33 @@ class MemoryRegistry(rr.Registry):
             raise rr.QualificationError("fixture layer missing")
 
 
+def buildkit_v1_statement(source, child_hex):
+    # The fields used for verification come from BuildKit's SLSA v1 statement
+    # on the published 7f1d051d mobile-main development image.
+    return {
+        "_type": "https://in-toto.io/Statement/v1",
+        "subject": [{"name": "arr-dashboard", "digest": {"sha256": child_hex}}],
+        "predicateType": "https://slsa.dev/provenance/v1",
+        "predicate": {
+            "buildDefinition": {
+                "externalParameters": {
+                    "request": {"args": {"build-arg:COMMIT_SHA": source}}
+                }
+            },
+            "runDetails": {
+                "metadata": {
+                    "buildkit_metadata": {
+                        "vcs": {
+                            "source": "https://github.com/Kha-kis/arr-dashboard",
+                            "revision": source,
+                        }
+                    }
+                }
+            },
+        },
+    }
+
+
 def build_graph(bad_provenance=False, sbom_missing_source=True):
     manifests = {}
     blobs = {}
@@ -133,28 +160,7 @@ def build_graph(bad_provenance=False, sbom_missing_source=True):
             "predicate": {},
         }
         source = "b" * 40 if bad_provenance else SOURCE
-        provenance = {
-            "_type": "https://in-toto.io/Statement/v1",
-            "subject": [{"name": "arr-dashboard", "digest": {"sha256": child_hex}}],
-            "predicateType": "https://slsa.dev/provenance/v1",
-            "predicate": {
-                "buildDefinition": {
-                    "externalParameters": {
-                        "request": {
-                            "root": {
-                                "request": {
-                                    "args": {
-                                        "vcs:source": "https://github.com/Kha-kis/arr-dashboard",
-                                        "vcs:revision": source,
-                                        "build-arg:COMMIT_SHA": source,
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-        }
+        provenance = buildkit_v1_statement(source, child_hex)
         sbom_desc = add_blob(raw_json(sbom))
         provenance_desc = add_blob(raw_json(provenance))
         attestation_config = add_blob(b"{}")
@@ -297,25 +303,25 @@ class RegistryTests(unittest.TestCase):
             )
 
     def test_provenance_requires_exact_source_host_and_path(self):
-        statement = {
-            "predicate": {
-                "buildDefinition": {
-                    "externalParameters": {
-                        "request": {
-                            "root": {
-                                "request": {
-                                    "args": {
-                                        "vcs:source": "https://evilgithub.com/Kha-kis/arr-dashboard",
-                                        "vcs:revision": SOURCE,
-                                        "build-arg:COMMIT_SHA": SOURCE,
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        statement = buildkit_v1_statement(SOURCE, "1" * 64)
+        vcs = statement["predicate"]["runDetails"]["metadata"]["buildkit_metadata"]["vcs"]
+        for url in (
+            "https://evilgithub.com/Kha-kis/arr-dashboard",
+            "https://github.com/other/arr-dashboard",
+            "https://user@github.com/Kha-kis/arr-dashboard",
+        ):
+            vcs["source"] = url
+            with self.subTest(url=url):
+                self.assertFalse(rr.Registry._source_matches(statement, SOURCE))
+
+    def test_provenance_requires_buildkit_vcs_and_exact_build_argument(self):
+        statement = buildkit_v1_statement(SOURCE, "1" * 64)
+        self.assertTrue(rr.Registry._source_matches(statement, SOURCE))
+        params = statement["predicate"]["buildDefinition"]["externalParameters"]
+        params["request"]["args"]["build-arg:COMMIT_SHA"] = "b" * 40
+        self.assertFalse(rr.Registry._source_matches(statement, SOURCE))
+        params["request"]["args"]["build-arg:COMMIT_SHA"] = SOURCE
+        statement["predicate"]["runDetails"]["metadata"].clear()
         self.assertFalse(rr.Registry._source_matches(statement, SOURCE))
 
     def test_config_uses_created_label_and_linux_platform(self):

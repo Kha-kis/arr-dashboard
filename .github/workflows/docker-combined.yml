@@ -95,7 +95,7 @@ jobs:
         with:
           context: .
           platforms: ${{ matrix.platform }}
-          provenance: true
+          provenance: "mode=max,version=v1"
           sbom: true
           push: true
           tags: |
@@ -198,6 +198,7 @@ jobs:
             severity: HIGH,CRITICAL
             exit-code: '1'
             scanners: vuln
+            timeout: '20m'
       - name: Require OS and Node scan coverage and finalize receipt
         env:
           REPORT: ${{ runner.temp }}/trivy.json
@@ -249,6 +250,7 @@ jobs:
             password: "${{ secrets.GITHUB_TOKEN }}"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
+            pattern: "build-*"
             path: "${{ runner.temp }}/digests"
       - env:
           TAG: "${{ needs.preflight.outputs.tag }}"
@@ -285,6 +287,7 @@ jobs:
             persist-credentials: "false"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
+            pattern: "qualified-*"
             path: "${{ runner.temp }}/inputs"
       - env:
           VERSION: "${{ needs.assemble.outputs.version }}"

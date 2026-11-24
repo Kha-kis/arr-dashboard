@@ -286,6 +286,14 @@ test("release staging has only a manual trigger and no stable alias operation", 
 	assert.ok(stage.jobs.assemble.needs.includes("verify"));
 	assert.equal(stage.jobs.verify.permissions.packages, undefined);
 	assert.equal(stage.jobs.qualify.permissions.packages, undefined);
+	const builder = stage.jobs.build.steps.find((step) =>
+		step.uses?.startsWith("docker/build-push-action@"),
+	);
+	assert.equal(builder.with.provenance, "mode=max,version=v1");
+	const downloads = (job) =>
+		stage.jobs[job].steps.filter((step) => step.uses?.startsWith("actions/download-artifact@"));
+	assert.deepEqual(downloads("assemble").map((step) => step.with.pattern), ["build-*"]);
+	assert.deepEqual(downloads("qualify").map((step) => step.with.pattern), ["qualified-*"]);
 	const scanner = stage.jobs.verify.steps.find((step) =>
 		step.uses?.startsWith("aquasecurity/trivy-action@"),
 	);

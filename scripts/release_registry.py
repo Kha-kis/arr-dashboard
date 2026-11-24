@@ -502,19 +502,19 @@ class Registry:
         request = external.get("request")
         if not isinstance(request, dict):
             return False
-        root = request.get("root") or {}
-        root_request = root.get("request") or {}
-        args = root_request.get("args") or {}
-        source_uri = args.get("vcs:source", "")
-        source_revision = args.get("vcs:revision")
-        commit_arg = args.get("build-arg:COMMIT_SHA")
+        args = request.get("args") or {}
+        metadata = (predicate.get("runDetails") or {}).get("metadata") or {}
+        vcs = (metadata.get("buildkit_metadata") or {}).get("vcs") or {}
+        source_uri = vcs.get("source", "")
         parsed = urllib.parse.urlsplit(source_uri)
-        repository = (parsed.hostname or "").lower() + parsed.path.rstrip("/").lower()
+        path = parsed.path.rstrip("/").lower().removesuffix(".git")
+        repository = (parsed.hostname or "").lower() + path
         return (
             parsed.scheme == "https"
             and repository == SOURCE_REPOSITORY
-            and source_revision == source
-            and commit_arg == source
+            and not (parsed.username or parsed.password or parsed.port or parsed.query or parsed.fragment)
+            and vcs.get("revision") == source
+            and args.get("build-arg:COMMIT_SHA") == source
         )
 
     @classmethod
@@ -533,7 +533,7 @@ class Registry:
                 raise QualificationError("attestation subject differs from child digest")
             if "spdx" in predicate_type or "sbom" in predicate_type:
                 found.add("sbom")
-            if "slsa" in predicate_type or "provenance" in predicate_type:
+            if predicate_type == "https://slsa.dev/provenance/v1":
                 if not cls._source_matches(statement, expected["source"]):
                     raise QualificationError(
                         "provenance does not bind the expected GitHub source revision"
