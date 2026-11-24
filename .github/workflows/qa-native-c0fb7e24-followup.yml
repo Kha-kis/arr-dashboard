@@ -1,0 +1,48 @@
+{
+  "name": "Digest-only native ARM64 authentication and restart",
+  "on": {
+    "push": {
+      "branches": [
+        "qa/225-native-arm64-c0fb7e24"
+      ]
+    }
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "jobs": {
+    "qualify": {
+      "runs-on": "ubuntu-24.04-arm",
+      "timeout-minutes": 25,
+      "env": {
+        "CANDIDATE": "c0fb7e244be7c5cd1c116bc8b369c5258e88f28e"
+      },
+      "steps": [
+        {
+          "name": "Check out exact fixture source",
+          "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "with": {
+            "ref": "c0fb7e244be7c5cd1c116bc8b369c5258e88f28e",
+            "persist-credentials": false
+          }
+        },
+        {
+          "name": "Qualify pinned existing ARM64 image without rebuilding or publishing",
+          "shell": "bash",
+          "run": "set -euo pipefail\nmkdir -p receipts-followup\ntest \"$(uname -m)\" = aarch64\ntest \"$(git rev-parse HEAD)\" = \"$CANDIDATE\"\nimage=ghcr.io/kha-kis/arr-dashboard@sha256:7dbcd5e3e11a77fc841e79b61224b1464e521a39f1c3fd45d0fd8c50144417d2\nprevious=khak1s/arr-dashboard@sha256:bd24ff75a61708de22c31947ea8f7efbe1c44ea870c3af9eb0f021968c5d4bab\ndocker pull --platform linux/arm64 \"$image\"\ndocker pull --platform linux/arm64 \"$previous\"\ntest \"$(docker image inspect --format '{{.Architecture}}' \"$image\")\" = arm64\ntest \"$(docker image inspect --format '{{.Id}}' \"$image\")\" = sha256:109fb3d7c29afbb60ab5d3efb52a6fb8d143131826e6b27726c46bc877e6c28d\nhash_script='find /app -type f ! -path \"/app/web/apps/web/.next/cache/*\" -exec sha256sum {} + | LC_ALL=C sort'\ndocker run --rm --network none --entrypoint sh \"$image\" -c \"$hash_script\" > receipts-followup/assets-before.sha256\ncid=;network=\"qual-auth-$GITHUB_RUN_ID\"\ncleanup() {\n for id in $(docker ps -aq --filter \"label=arr-qualification=$GITHUB_RUN_ID\"); do docker rm -fv \"$id\" >/dev/null || :; done\n docker network rm \"$network\" >/dev/null 2>&1 || :\n}\ntrap cleanup EXIT\ndocker network create --internal \"$network\"\nwait_ready() {\n local expected=\"$1\" ok=0\n for attempt in {1..180}; do\n  if docker exec \"$cid\" node -e 'Promise.all([fetch(\"http://127.0.0.1:3001/health\",{signal:AbortSignal.timeout(2000)}).then(async r=>{const v=await r.json();return r.ok&&v.status===\"ok\"&&(!process.argv[1]||v.commit===process.argv[1]);}),fetch(\"http://127.0.0.1:3000/login\",{signal:AbortSignal.timeout(2000)}).then(r=>r.ok)]).then(v=>process.exit(v.every(Boolean)?0:1)).catch(()=>process.exit(1))' \"$expected\" >/dev/null 2>&1; then ok=1;break;fi\n  test \"$(docker inspect --format '{{.State.Running}}' \"$cid\")\" = true || break\n  sleep 1\n done\n if test \"$ok\" != 1; then docker logs \"$cid\";return 1;fi\n test \"$(docker inspect --format '{{.RestartCount}} {{.State.OOMKilled}}' \"$cid\")\" = '0 false'\n}\nauthenticate() {\n docker exec -i \"$cid\" node - \"$1\" <<'JS'\nconst fs=require('node:fs');\n(async()=>{\n const base='http://127.0.0.1:3001',body={username:'native_auth_fixture',password:'NativeFixturePassw0rd!',rememberMe:false};\n const post=(p)=>fetch(base+p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(10000)});\n if(process.argv[2]==='register'){const r=await post('/auth/register');if(r.status!==201)throw Error('Register HTTP '+r.status);}\n const login=await post('/auth/login');if(login.status!==200)throw Error('Login HTTP '+login.status);\n const value=await login.json();if(value.user?.username!==body.username)throw Error('Login user');\n const cookie=login.headers.get('set-cookie')?.split(';')[0];if(!cookie)throw Error('No session cookie');\n const me=await fetch(base+'/auth/me',{headers:{Cookie:cookie},signal:AbortSignal.timeout(10000)});if(me.status!==200)throw Error('Me HTTP '+me.status);\n const user=(await me.json()).user;if(user?.id!==value.user.id||user.username!==body.username)throw Error('Me user');\n const target='/config/native-qualification-user-id';if(fs.existsSync(target)){if(fs.readFileSync(target,'utf8')!==user.id)throw Error('User identity changed');}else fs.writeFileSync(target,user.id,{mode:0o600});\n console.log('password-login-cookie-me-same-user PASS');\n})().catch(e=>{console.error(e.message);process.exit(1)});\nJS\n}\nstop_clean() {\n docker stop --time 120 \"$cid\" >/dev/null\n test \"$(docker inspect --format '{{.State.Status}} {{.State.ExitCode}} {{.State.OOMKilled}}' \"$cid\")\" = 'exited 0 false'\n}\nassets_unchanged() {\n docker exec \"$cid\" node /app/api/validate-provider-runtime.cjs /app/api/providers/sqlite sqlite\n docker exec \"$cid\" node /app/api/validate-provider-runtime.cjs /app/api/providers/postgresql postgresql\n docker exec \"$cid\" sh -c \"$hash_script\" > \"receipts-followup/assets-$1.sha256\"\n cmp receipts-followup/assets-before.sha256 \"receipts-followup/assets-$1.sha256\"\n}\nqualify_candidate() {\n local name=\"$1\" mode=\"$2\"\n wait_ready \"$CANDIDATE\"\n authenticate \"$mode\" | tee -a receipts-followup/authentication.txt\n assets_unchanged \"$name-start\"\n local samecid=\"$cid\"\n stop_clean\n docker start \"$cid\" >/dev/null\n test \"$cid\" = \"$samecid\"\n wait_ready \"$CANDIDATE\"\n authenticate login | tee -a receipts-followup/authentication.txt\n assets_unchanged \"$name-restarted\"\n stop_clean\n docker logs \"$cid\" > \"receipts-followup/$name.log\" 2>&1\n docker rm -v \"$cid\" >/dev/null\n cid=\n printf '%s same-container-normal-stop-start same-user-login both-provider-manifests all-packaged-app-assets-unchanged PASS\\n' \"$name\" | tee -a receipts-followup/followup.txt\n}\npg=\"$(docker run -d --label \"arr-qualification=$GITHUB_RUN_ID\" --network \"$network\" --network-alias postgres -e POSTGRES_PASSWORD=qualification-only postgres:17-alpine)\"\nfor attempt in {1..90};do docker exec \"$pg\" pg_isready -U postgres >/dev/null 2>&1 && break;sleep 1;done\nfor provider in sqlite postgresql;do\n for variant in fresh upgrade;do\n  name=\"$provider-$variant\"\n  mkdir -p \"$RUNNER_TEMP/$name\"\n  database=()\n  if test \"$provider\" = postgresql;then\n   db=\"${provider}_${variant}\"\n   docker exec \"$pg\" createdb -U postgres \"$db\"\n   database=(-e \"DATABASE_URL=postgresql://postgres:qualification-only@postgres:5432/$db\")\n  fi\n  if test \"$variant\" = upgrade;then\n   cid=\"$(docker run -d --label \"arr-qualification=$GITHUB_RUN_ID\" --network \"$network\" -e PUID=1000 -e PGID=1000 \"${database[@]}\" -v \"$RUNNER_TEMP/$name:/config\" \"$previous\")\"\n   wait_ready ''\n   authenticate register | tee -a receipts-followup/authentication.txt\n   stop_clean\n   docker logs \"$cid\" > \"receipts-followup/$name-previous.log\" 2>&1\n   docker rm -v \"$cid\" >/dev/null\n   cid=\n  fi\n  cid=\"$(docker run -d --label \"arr-qualification=$GITHUB_RUN_ID\" --network \"$network\" -e PUID=1000 -e PGID=1000 \"${database[@]}\" -v \"$RUNNER_TEMP/$name:/config\" \"$image\")\"\n  if test \"$variant\" = fresh;then mode=register;else mode=login;fi\n  qualify_candidate \"$name\" \"$mode\"\n done\ndone\nsh docker/test-combined-restart.sh \"$image\" | tee receipts-followup/application-restart.txt\nsha256sum receipts-followup/assets-before.sha256 > receipts-followup/assets-receipt.sha256\ncat receipts-followup/followup.txt receipts-followup/assets-receipt.sha256 >> \"$GITHUB_STEP_SUMMARY\"\n"
+        },
+        {
+          "name": "Upload authentication and restart receipts",
+          "if": "always()",
+          "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+          "with": {
+            "name": "native-arm64-c0fb7e24-followup",
+            "path": "receipts-followup/",
+            "if-no-files-found": "error",
+            "retention-days": 14
+          }
+        }
+      ]
+    }
+  }
+}
