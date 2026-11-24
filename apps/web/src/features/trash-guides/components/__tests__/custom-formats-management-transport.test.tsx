@@ -237,6 +237,42 @@ describe("Custom formats maintained selection and recovery", () => {
 		expect(events.filter(({ url }) => url === formats || url === descriptions)).toHaveLength(4);
 	});
 
+	it("retains selection and displays unresolved outcome without automatic replay", async () => {
+		fixture((event) =>
+			event.url.endsWith("/custom-formats/deploy-multiple")
+				? response({
+						success: false,
+						outcome: "uncertain",
+						historyId: "synthetic-history",
+						message: "Inspect the instance and resolve operation history before retrying.",
+						created: [],
+						updated: [],
+						unchanged: [],
+						failed: [{ name: "Selected cached", error: "Readback unavailable" }],
+						targets: [
+							{ trashId: "cached-a", name: "Selected cached", status: "uncertain", tracked: false },
+						],
+					})
+				: undefined,
+		);
+		mount(<CustomFormatsBrowser />);
+		fireEvent.click(
+			await screen.findByRole("button", { name: "Select custom format: Selected cached" }),
+		);
+		fireEvent.click(screen.getByRole("button", { name: /Deploy Selected/ }));
+		const dialog = await screen.findByRole("dialog", { name: "Deploy Custom Formats" });
+		fireEvent.change(within(dialog).getByRole("combobox"), { target: { value: "radarr-a" } });
+		fireEvent.click(within(dialog).getByRole("button", { name: "Deploy" }));
+		await screen.findByText("Inspect the instance and resolve operation history before retrying.");
+		expect(
+			screen.getByRole("button", { name: "Deselect custom format: Selected cached" }),
+		).toHaveAttribute("aria-pressed", "true");
+		expect(screen.queryByText(/Successfully deployed/)).not.toBeInTheDocument();
+		expect(
+			events.filter((event) => event.url.endsWith("/custom-formats/deploy-multiple")),
+		).toHaveLength(1);
+	});
+
 	it("W5 cached selected deployment partial refusal retains selection and deliberate retry excludes unselected CF", async () => {
 		const held = gate();
 		let attempts = 0;
@@ -244,7 +280,19 @@ describe("Custom formats maintained selection and recovery", () => {
 			event.url.endsWith("/custom-formats/deploy-multiple")
 				? ++attempts === 1
 					? held.promise
-					: response({ success: true, created: ["Selected cached"], updated: [], failed: [] })
+					: response({
+							success: true,
+							outcome: "complete",
+							historyId: "synthetic-history",
+							message: "All selected Custom Formats were deployed.",
+							created: ["Selected cached"],
+							updated: [],
+							unchanged: [],
+							failed: [],
+							targets: [
+								{ trashId: "cached-a", name: "Selected cached", status: "created", tracked: true },
+							],
+						})
 				: undefined,
 		);
 		mount(<CustomFormatsBrowser />);

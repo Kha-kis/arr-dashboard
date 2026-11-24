@@ -403,14 +403,12 @@ export const CustomFormatsBrowser = () => {
 			});
 
 			if (result.success) {
-				toast.success(
-					`Successfully deployed ${result.created.length + result.updated.length} custom formats`,
-				);
+				toast.success(`Successfully deployed ${result.targets.length} custom formats`);
 				setSelectedFormats(new Set());
 				setDeployDialogOpen(false);
 				setSelectedInstance("");
 			} else {
-				toast.error(`Deployed with errors: ${result.failed.length} failed`);
+				toast.error(result.message);
 			}
 		} catch (error) {
 			toast.error(getErrorMessage(error, "Failed to deploy custom formats"));
