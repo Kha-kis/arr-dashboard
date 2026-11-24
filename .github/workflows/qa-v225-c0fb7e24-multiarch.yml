@@ -1,0 +1,62 @@
+{
+  "name": "Nonstable multiarchitecture candidate c0fb7e24",
+  "on": {
+    "push": {
+      "branches": [
+        "qa/225-multiarch-c0fb7e24"
+      ]
+    }
+  },
+  "permissions": {
+    "contents": "read",
+    "packages": "write"
+  },
+  "jobs": {
+    "assemble": {
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 12,
+      "env": {
+        "ARM_INDEX": "sha256:7dbcd5e3e11a77fc841e79b61224b1464e521a39f1c3fd45d0fd8c50144417d2",
+        "ARM_MANIFEST": "sha256:85a289bff37b78a309e728edc0442046fdeeceec2045c83627e03a3e54a9e02d"
+      },
+      "steps": [
+        {
+          "name": "Set up Buildx",
+          "uses": "docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069"
+        },
+        {
+          "name": "Log in to Docker Hub",
+          "uses": "docker/login-action@dbcb813823bdd20940b903addbd779551569679f",
+          "with": {
+            "username": "${{ secrets.DOCKERHUB_USERNAME }}",
+            "password": "${{ secrets.DOCKERHUB_TOKEN }}"
+          }
+        },
+        {
+          "name": "Log in to GHCR",
+          "uses": "docker/login-action@dbcb813823bdd20940b903addbd779551569679f",
+          "with": {
+            "registry": "ghcr.io",
+            "username": "${{ github.actor }}",
+            "password": "${{ secrets.GITHUB_TOKEN }}"
+          }
+        },
+        {
+          "name": "Assemble and verify task-only nonstable index",
+          "shell": "bash",
+          "run": "set -euo pipefail\nstage=qa-c0fb7e24-platforms\namd=sha256:17d0ee3be91fdb703f1c6349a76dae14b525894c6e84266f08b7e858325034ed\namd_manifest=sha256:3363608f303a5bf0ed725b20c1d8576fc1493222b3070559986b2d8b973872ef\ncandidate=c0fb7e244be7c5cd1c116bc8b369c5258e88f28e\n[[ \"$ARM_INDEX\" =~ ^sha256:[a-f0-9]{64}$ && \"$ARM_MANIFEST\" =~ ^sha256:[a-f0-9]{64}$ ]]\nmkdir -p receipts\nfor repo in khak1s/arr-dashboard ghcr.io/kha-kis/arr-dashboard; do\n  case \"$repo\" in\n    ghcr.io/*) label=ghcr ;;\n    *) label=dockerhub ;;\n  esac\n  docker buildx imagetools inspect --raw \"$repo@$amd\" > \"receipts/$label-amd.json\"\n  docker buildx imagetools inspect --raw \"$repo@$ARM_INDEX\" > \"receipts/$label-arm.json\"\n  jq -e --arg manifest \"$amd_manifest\" '.manifests | map(select(.platform.os==\"linux\")) | length == 1 and .[0].digest == $manifest and .[0].platform.architecture == \"amd64\"' \"receipts/$label-amd.json\"\n  jq -e --arg manifest \"$ARM_MANIFEST\" '.manifests | map(select(.platform.os==\"linux\")) | length == 1 and .[0].digest == $manifest and .[0].platform.architecture == \"arm64\"' \"receipts/$label-arm.json\"\n  for architecture in amd64 arm64; do\n    case \"$architecture\" in\n      amd64) manifest=$amd_manifest ;;\n      arm64) manifest=$ARM_MANIFEST ;;\n    esac\n    docker buildx imagetools inspect \"$repo@$manifest\" --format '{{json .Image}}' |\n      jq -e --arg revision \"$candidate\" --arg architecture \"$architecture\" '.architecture == $architecture and .os == \"linux\" and .config.Labels[\"org.opencontainers.image.revision\"] == $revision and .config.Labels[\"org.opencontainers.image.version\"] == \"2.25.0\"'\n  done\n  # A task staging alias may be reused only when its bytes are already exact.\n  if docker buildx imagetools inspect --raw \"$repo:$stage\" > \"receipts/$label-before.json\" 2>\"receipts/$label-before.error\"; then\n    jq -e --arg amd \"$amd_manifest\" --arg arm \"$ARM_MANIFEST\" '[.manifests[] | select(.platform.os==\"linux\") | .digest] | sort == ([$amd,$arm] | sort)' \"receipts/$label-before.json\"\n  else\n    grep -Eqi '(not found|manifest unknown|404)' \"receipts/$label-before.error\"\n    docker buildx imagetools create -t \"$repo:$stage\" \"$repo@$amd\" \"$repo@$ARM_INDEX\"\n  fi\n  docker buildx imagetools inspect --raw \"$repo:$stage\" > \"receipts/$label-assembled.json\"\n  jq -s -e '\n    def desc: [.digest,.size,.mediaType,.platform,(.annotations // {})];\n    ((.[0].manifests + .[1].manifests) | map(desc) | sort) ==\n      (.[2].manifests | map(desc) | sort)\n  ' \"receipts/$label-amd.json\" \"receipts/$label-arm.json\" \"receipts/$label-assembled.json\"\n  jq -e --arg amd \"$amd_manifest\" --arg arm \"$ARM_MANIFEST\" '\n    ([.manifests[]|select(.platform.os==\"linux\")|[.platform.architecture,.digest]]|sort) ==\n      [[\"amd64\",$amd],[\"arm64\",$arm]] and\n    ([$amd,$arm] - [.manifests[]|select(.annotations[\"vnd.docker.reference.type\"]==\"attestation-manifest\")|.annotations[\"vnd.docker.reference.digest\"]] | length) == 0\n  ' \"receipts/$label-assembled.json\"\n  docker buildx imagetools inspect \"$repo:$stage\" --format '{{json .Manifest}}' |\n    jq -e '{digest,mediaType} | select(.digest | test(\"^sha256:[0-9a-f]{64}$\"))' > \"receipts/$label-descriptor.json\"\ndone\ncmp receipts/dockerhub-assembled.json receipts/ghcr-assembled.json\ncmp receipts/dockerhub-descriptor.json receipts/ghcr-descriptor.json\njq -n --slurpfile index receipts/ghcr-descriptor.json --arg source \"$candidate\" --arg amd \"$amd_manifest\" --arg arm \"$ARM_MANIFEST\" --arg tag \"$stage\" \\\n  '{status:\"PASS\",source:$source,index:$index[0].digest,tag:$tag,amd64:$amd,arm64:$arm,registryBytesEqual:true,childDescriptorsPreserved:true,stableTagWritten:false}' | tee receipts/result.json\n"
+        },
+        {
+          "name": "Retain immutable descriptor evidence",
+          "if": "always()",
+          "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+          "with": {
+            "name": "multiarch-c0fb7e24",
+            "path": "receipts/",
+            "retention-days": 14
+          }
+        }
+      ]
+    }
+  }
+}
