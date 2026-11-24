@@ -29,9 +29,69 @@ const failureCategories = [
 
 export type JellyfinEpisodePageWorkerFailureCategory = (typeof failureCategories)[number];
 
+const providerFailureKinds = [
+	"http-error",
+	"http-authentication",
+	"http-authorization",
+	"timeout",
+	"aborted",
+	"transport",
+	"unexpected-content-type",
+	"invalid-json",
+	"episode-page-envelope-schema",
+	"episode-row-schema",
+	"episode-row-invariant",
+	"episode-page-coverage",
+	"episode-page-limit",
+	"worker-page-invalid",
+] as const;
+
+export type JellyfinEpisodeProviderReadDiagnostic = {
+	kind: (typeof providerFailureKinds)[number];
+	httpStatus: number | null;
+};
+
+// A well-shaped but contradictory worker result must not be logged as fact.
+function isConsistentProviderReadFailure(
+	category: JellyfinEpisodePageWorkerFailureCategory,
+	kind: JellyfinEpisodeProviderReadDiagnostic["kind"],
+	httpStatus: number | null,
+): boolean {
+	const successStatus = httpStatus !== null && httpStatus >= 200 && httpStatus < 300;
+	switch (kind) {
+		case "timeout":
+			return category === "provider-timeout" && (httpStatus === null || successStatus);
+		case "transport":
+		case "aborted":
+			return category === "provider-unavailable" && (httpStatus === null || successStatus);
+		case "http-authentication":
+			return category === "provider-response" && httpStatus === 401;
+		case "http-authorization":
+			return category === "provider-response" && httpStatus === 403;
+		case "http-error":
+			return (
+				category === "provider-response" &&
+				httpStatus !== null &&
+				!successStatus &&
+				httpStatus !== 401 &&
+				httpStatus !== 403
+			);
+		case "worker-page-invalid":
+			return category === "provider-response" && httpStatus === null;
+		default:
+			return category === "provider-response" && successStatus;
+	}
+}
+
+export type JellyfinEpisodePageOperation = "episode-page-counted" | "episode-page-uncounted";
+
 export type JellyfinEpisodePageWorkerResult =
 	| { status: "page"; page: JellyfinEpisodeCollectedPage }
-	| { status: "failed"; category: JellyfinEpisodePageWorkerFailureCategory };
+	| {
+			status: "failed";
+			category: JellyfinEpisodePageWorkerFailureCategory;
+			providerRead?: JellyfinEpisodeProviderReadDiagnostic;
+	  };
 
 // Read data descriptors only: even synthetic/unexpected messages cannot make
 // validation invoke a getter, toJSON, coercion, or untrusted error formatter.
@@ -133,9 +193,26 @@ export function parseJellyfinEpisodePageWorkerResult(
 		const envelope = record(value);
 		if (!envelope) return null;
 		if (envelope.status === "failed") {
-			if (!record(value, ["status", "category"])) return null;
+			const fields = [
+				"status",
+				"category",
+				...("providerRead" in envelope ? ["providerRead"] : []),
+			];
+			if (!record(value, fields)) return null;
 			const category = failureCategories.find((allowed) => allowed === envelope.category);
-			return category ? { status: "failed", category } : null;
+			if (!category) return null;
+			if (!("providerRead" in envelope)) return { status: "failed", category };
+			const diagnostic = record(envelope.providerRead, ["kind", "httpStatus"]);
+			if (!diagnostic) return null;
+			const kind = providerFailureKinds.find((allowed) => allowed === diagnostic.kind);
+			const { httpStatus } = diagnostic;
+			if (
+				!kind ||
+				(httpStatus !== null && (!integer(httpStatus, 599) || httpStatus < 100)) ||
+				!isConsistentProviderReadFailure(category, kind, httpStatus)
+			)
+				return null;
+			return { status: "failed", category, providerRead: { kind, httpStatus } };
 		}
 		if (envelope.status !== "page" || !record(value, ["status", "page"])) return null;
 		const uncounted = coordinates.uncounted === true;

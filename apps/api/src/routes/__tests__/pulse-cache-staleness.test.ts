@@ -52,7 +52,7 @@ vi.mock("../../lib/pulse/collectors.js", async () => {
 	return { pulseCollectors: [actual.collectCacheStaleness] };
 });
 
-import { registerPulseRoutes } from "../pulse.js";
+import { invalidatePulseCache, registerPulseRoutes } from "../pulse.js";
 import { createInjectAuthenticated, setupAuthInjection } from "./test-helpers.js";
 
 let app: ReturnType<typeof Fastify>;
@@ -612,6 +612,105 @@ describe("GET /pulse — cache.refresh action emission", () => {
 			target: { instanceId: "inst-jellyfin", cacheType: "jellyfin_episode" },
 			label: "Retry refresh",
 		});
+	});
+
+	it.each([
+		["JELLYFIN", "Jellyfin"],
+		["EMBY", "Emby"],
+	] as const)(
+		"labels the %s positive episode watch warning without adding retry",
+		async (service, name) => {
+			cacheStatuses = [
+				makeRow({
+					cacheType: "jellyfin_episode_positive",
+					lastResult: "error",
+					instance: { label: "Media server", service, enabled: true },
+				}),
+			];
+			const body = (await injectAuthenticated("GET", "/pulse")).json();
+			const item = body.items.find(
+				(candidate: { id: string }) => candidate.id === "cache-error-row-1",
+			);
+			expect(item).toMatchObject({
+				title: `Media server: ${name} episode watch cache refresh failed`,
+				detail: "Cache refresh did not complete.",
+				severity: "warning",
+			});
+			expect(item.action).toBeUndefined();
+		},
+	);
+
+	it("replaces a library failure with partial coverage while keeping the episode failure", async () => {
+		cacheStatuses = [];
+		findJellyfinInstances.mockResolvedValue([
+			{
+				id: "inst-jellyfin",
+				label: "Home Jellyfin",
+				service: "JELLYFIN",
+				createdAt: new Date("2026-08-30T00:00:00.000Z"),
+			},
+		]);
+		const failedEpisode = makeHealthSource({
+			cacheType: "jellyfin_episode",
+			status: {
+				availability: "unavailable",
+				evidence: "unknown",
+				observedAt: null,
+				ageSeconds: null,
+				latestAttempt: "failed",
+				reasonCodes: ["no-publication", "refresh-failed"],
+			},
+		});
+		evidenceMocks.readOwnedJellyfinCacheHealthSources
+			.mockResolvedValueOnce([makeHealthSource(), failedEpisode])
+			.mockResolvedValueOnce([
+				makeHealthSource({
+					status: {
+						availability: "partial",
+						evidence: "positive-only",
+						latestAttempt: "successful",
+						reasonCodes: ["positive-only", "coverage-incomplete"],
+						domains: [
+							{
+								domain: "library-inventory",
+								availability: "current",
+								evidence: "positive-only",
+								valueSemantics: "lower-bound",
+								observedAt: "2026-09-01T00:00:00.000Z",
+								reasonCodes: ["coverage-incomplete"],
+							},
+						],
+					},
+				}),
+				failedEpisode,
+			]);
+
+		const before = (await injectAuthenticated("GET", "/pulse")).json();
+		expect(before.items).toContainEqual(
+			expect.objectContaining({
+				title: "Home Jellyfin: Jellyfin cache refresh failed",
+			}),
+		);
+
+		invalidatePulseCache(`user-cache-${userCounter}`);
+		const after = (await injectAuthenticated("GET", "/pulse")).json();
+		const items = after.items.filter((item: { source: string }) => item.source === "jellyfin");
+		expect(items).toHaveLength(2);
+		const library = items.find(
+			(item: { title: string }) =>
+				item.title === "Home Jellyfin: Jellyfin cache has informational coverage gaps",
+		);
+		expect(library).toMatchObject({ severity: "info" });
+		expect(library.action).toBeUndefined();
+		expect(items).toContainEqual(
+			expect.objectContaining({
+				title: "Home Jellyfin: Jellyfin episodes cache refresh failed",
+				severity: "warning",
+				action: expect.objectContaining({
+					target: { instanceId: "inst-jellyfin", cacheType: "jellyfin_episode" },
+				}),
+			}),
+		);
 	});
 
 	it.each([

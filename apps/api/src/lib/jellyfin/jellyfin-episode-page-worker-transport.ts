@@ -1,9 +1,11 @@
 import { Worker } from "node:worker_threads";
 import type { JellyfinEpisodeCollectedPage } from "./jellyfin-client.js";
 import {
+	type JellyfinEpisodePageOperation,
 	type JellyfinEpisodePageWorkerFailureCategory,
 	type JellyfinEpisodePageWorkerInput,
 	type JellyfinEpisodePageWorkerRequest,
+	type JellyfinEpisodeProviderReadDiagnostic,
 	parseJellyfinEpisodePageWorkerRequest,
 	parseJellyfinEpisodePageWorkerResult,
 } from "./jellyfin-episode-page-worker-protocol.js";
@@ -23,7 +25,11 @@ type FailureCategory =
 	| Exclude<JellyfinEpisodePageWorkerFailureCategory, "invalid-request">;
 
 export class JellyfinEpisodePageWorkerError extends Error {
-	constructor(readonly category: FailureCategory) {
+	constructor(
+		readonly category: FailureCategory,
+		readonly providerRead?: JellyfinEpisodeProviderReadDiagnostic,
+		readonly operation?: JellyfinEpisodePageOperation,
+	) {
 		super("Jellyfin episode page unavailable");
 		this.name = category === "worker-timeout" ? "TimeoutError" : "JellyfinEpisodePageWorkerError";
 	}
@@ -90,6 +96,7 @@ export async function runJellyfinEpisodePageWorker(
 		let received = false;
 		let stopRequested = false;
 		let failure: FailureCategory | undefined;
+		let providerRead: JellyfinEpisodeProviderReadDiagnostic | undefined;
 		let page: JellyfinEpisodeCollectedPage | undefined;
 		const requestStop = () => {
 			if (stopRequested || exited) return;
@@ -102,9 +109,15 @@ export async function runJellyfinEpisodePageWorker(
 				// Synchronous refusal also leaves the caller owning active work.
 			}
 		};
-		const fail = (category: FailureCategory) => {
+		const fail = (
+			category: FailureCategory,
+			diagnostic?: JellyfinEpisodeProviderReadDiagnostic,
+		) => {
 			if (exited) return;
-			failure ??= category;
+			if (!failure) {
+				failure = category;
+				providerRead = diagnostic;
+			}
 			page = undefined;
 			requestStop();
 		};
@@ -122,7 +135,14 @@ export async function runJellyfinEpisodePageWorker(
 			options.signal?.removeEventListener("abort", abort);
 			if (performance.now() - startedAt >= timeoutMs) failure ??= "worker-timeout";
 			if (!failure && page && code === 0) resolve(page);
-			else reject(new JellyfinEpisodePageWorkerError(failure ?? "worker-failed"));
+			else
+				reject(
+					new JellyfinEpisodePageWorkerError(
+						failure ?? "worker-failed",
+						providerRead,
+						payload.uncounted ? "episode-page-uncounted" : "episode-page-counted",
+					),
+				);
 		});
 		worker.on("error", () => fail("worker-failed"));
 		worker.on("messageerror", () => fail("invalid-message"));
@@ -133,7 +153,10 @@ export async function runJellyfinEpisodePageWorker(
 			const result = parseJellyfinEpisodePageWorkerResult(message, payload);
 			if (!result) return fail("invalid-message");
 			if (result.status === "failed")
-				return fail(result.category === "invalid-request" ? "worker-failed" : result.category);
+				return fail(
+					result.category === "invalid-request" ? "worker-failed" : result.category,
+					result.providerRead,
+				);
 			page = result.page;
 			// A success message is provisional; only a clean exit can return it.
 		});
