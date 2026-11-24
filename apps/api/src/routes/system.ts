@@ -20,12 +20,18 @@ import { validationQuarantine } from "../lib/validation/validation-quarantine.js
 const RESTART_RATE_LIMIT = { max: 2, timeWindow: "5 minutes" };
 const LOGS_RATE_LIMIT = { max: 30, timeWindow: "1 minute" };
 
+const MAX_EXTERNAL_URL_LENGTH = 8192;
+
 const systemSettingsBodySchema = z.object({
 	apiPort: z.number().optional(),
 	webPort: z.number().optional(),
 	listenAddress: z.string().optional(),
 	appName: z.string().optional(),
-	externalUrl: z.string().nullable().optional(),
+	externalUrl: z
+		.string()
+		.max(MAX_EXTERNAL_URL_LENGTH, "External URL must be at most 8192 characters")
+		.nullable()
+		.optional(),
 	trustProxy: z.boolean().optional(),
 	secureCookies: z.boolean().nullable().optional(),
 });
@@ -43,6 +49,14 @@ function getDatabaseHost(dbUrl: string, provider: "sqlite" | "postgresql"): stri
 	// SQLite: extract filename from path
 	const path = dbUrl.startsWith("file:") ? dbUrl.slice(5) : dbUrl;
 	return path.split("/").pop() || "database";
+}
+
+function stripTrailingSlashes(value: string): string {
+	let end = value.length;
+	while (end > 0 && value[end - 1] === "/") {
+		end--;
+	}
+	return value.slice(0, end);
 }
 
 const APP_VERSION_INFO = getAppVersionInfo();
@@ -199,7 +213,9 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		// Normalize before validation and persistence so every URL consumer sees
 		// the same canonical value. Empty or whitespace-only input clears it.
 		let normalizedExternalUrl =
-			externalUrl === undefined ? undefined : externalUrl?.trim().replace(/\/+$/, "") || null;
+			externalUrl === undefined
+				? undefined
+				: stripTrailingSlashes(externalUrl?.trim() ?? "") || null;
 
 		// Validate external URL if provided (null means clear)
 		if (normalizedExternalUrl !== undefined && normalizedExternalUrl !== null) {
@@ -224,7 +240,7 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 						error: "External URL must not include a query string or fragment",
 					});
 				}
-				normalizedExternalUrl = url.toString().replace(/\/+$/, "");
+				normalizedExternalUrl = stripTrailingSlashes(url.toString());
 			} catch {
 				return reply.status(400).send({
 					success: false,

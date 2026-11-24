@@ -129,6 +129,26 @@ describe("PUT /system/settings", () => {
 		expect(mockNotificationService.setBaseUrl).toHaveBeenCalledWith("http://localhost:3000");
 	});
 
+	it("rejects an oversized raw External URL before trimming or side effects", async () => {
+		const res = await injectAuthenticated("PUT", "/system/settings", {
+			body: { externalUrl: "https://arr.example.com".padEnd(8193, " ") },
+		});
+
+		expect(res.statusCode, res.payload).toBe(400);
+		expect(mockPrisma.systemSettings.upsert).not.toHaveBeenCalled();
+		expect(mockNotificationService.setBaseUrl).not.toHaveBeenCalled();
+	});
+
+	it("accepts a valid External URL at the raw input limit", async () => {
+		const externalUrl = "https://arr.example.com/".padEnd(8192, "a");
+		const res = await injectAuthenticated("PUT", "/system/settings", {
+			body: { externalUrl },
+		});
+
+		expect(res.statusCode, res.payload).toBe(200);
+		expect(JSON.parse(res.payload).data.externalUrl).toBe(externalUrl);
+	});
+
 	it("rejects a non-string External URL without persisting it", async () => {
 		const res = await injectAuthenticated("PUT", "/system/settings", {
 			body: { externalUrl: 123 },
