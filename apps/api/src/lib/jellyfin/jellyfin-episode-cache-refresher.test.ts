@@ -842,6 +842,57 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 		).resolves.toMatchObject({ errors: 1, progressed: false });
 	});
 
+	it.each([
+		["missing", "parent-status-missing"],
+		["unpublished", "parent-publication-unavailable"],
+		["stale", "parent-status-invalid-or-stale"],
+		["other generation", "parent-generation-incompatible"],
+		["invalid coverage", "parent-coverage-incompatible"],
+		["unavailable read", "parent-read-failed"],
+	])("diagnoses a %s episode parent without starting collection", async (scenario, reasonCode) => {
+		const state = ownedFixture("JELLYFIN");
+		configureDurableRun(state);
+		const readStatus = vi.mocked(state.prisma.cacheRefreshStatus.findUnique);
+		state.parentStatus.lastRefreshedAt = new Date("2026-09-08T12:00:00.000Z");
+		state.parentStatus.lastAttemptAt = state.parentStatus.lastRefreshedAt;
+		if (scenario === "missing") readStatus.mockResolvedValue(null);
+		if (scenario === "unpublished") state.parentStatus.lastResult = "error";
+		if (scenario === "stale") state.parentStatus.lastRefreshedAt = new Date(0);
+		if (scenario === "other generation") state.parentStatus.connectionGeneration = 8;
+		if (scenario === "invalid coverage") state.parentStatus.generationMetadata = "private-canary";
+		if (scenario === "unavailable read") readStatus.mockRejectedValue(new Error("private-canary"));
+		const warn = vi.fn();
+		const result = await refreshOwnedJellyfinEpisodeCache({
+			prisma: state.prisma,
+			encryptor: { decrypt: vi.fn() },
+			instance: state.instance,
+			log: { ...log, warn },
+			now: new Date("2026-09-08T12:01:00.000Z"),
+		});
+		expect(result).toMatchObject({
+			upserted: 0,
+			errors: 1,
+			complete: false,
+			progressed: false,
+			errorMessages: [reasonCode],
+		});
+		expect(warn).toHaveBeenCalledWith(
+			{ category: "parent-admission-failed", reasonCode },
+			"Jellyfin episode refresh pre-page dependency unavailable",
+		);
+		expect(durable.finishFailure).toHaveBeenCalledWith(
+			expect.anything(),
+			"jellyfin_episode",
+			"coverage-incomplete",
+			expect.anything(),
+			expect.anything(),
+			expect.anything(),
+			expect.anything(),
+		);
+		expect(JSON.stringify(warn.mock.calls)).not.toContain(state.instance.id);
+		expect(JSON.stringify(warn.mock.calls)).not.toContain("private-canary");
+	});
+
 	it("serializes only closed pre-page failure categories", () => {
 		const canaries = [
 			"https://private.invalid/Secret-Show?token=secret",

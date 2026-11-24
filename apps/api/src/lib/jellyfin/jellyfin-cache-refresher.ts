@@ -327,6 +327,7 @@ async function runOwnedJellyfinCacheAttempt(
 	claimedAttempt?: ProviderCacheRefreshAttempt,
 ): Promise<JellyfinCacheRefreshResult> {
 	let nativeInventoryStatus: JellyfinCacheRefreshResult["nativeInventoryStatus"];
+	let collectionFailureReason: string | undefined;
 	const onStage = createCanonicalPhaseObserver(
 		context.log,
 		context.instance.service === "EMBY" ? "emby" : "jellyfin",
@@ -377,6 +378,7 @@ async function runOwnedJellyfinCacheAttempt(
 					!collected.receipt ||
 					(!collected.complete && collected.snapshot.rows.length === 0)
 				) {
+					collectionFailureReason = collected.errorMessages[0];
 					throw new ProviderObservationCoordinatorError("provider-unavailable");
 				}
 				return collected;
@@ -476,7 +478,7 @@ async function runOwnedJellyfinCacheAttempt(
 					? "refresh-cancelled"
 					: error instanceof ProviderObservationCoordinatorError && error.code === "receipt-invalid"
 						? "receipt-invalid"
-						: "provider-unavailable",
+						: (collectionFailureReason ?? "provider-unavailable"),
 			],
 			complete: false,
 		};
@@ -682,7 +684,7 @@ export async function collectJellyfinCacheLiveEvidence(
 		}
 		if (users.length === 0) {
 			log.warn({ category: "no-users" }, "Jellyfin cache refresh found no users");
-			return unknown({ errors: 1, errorMessages: ["Jellyfin returned no users"], units: [] });
+			return unknown({ errors: 1, errorMessages: ["no-users"], units: [] });
 		}
 		const userIds = new Set<string>();
 		for (const user of users) {
@@ -736,8 +738,7 @@ export async function collectJellyfinCacheLiveEvidence(
 		if (librariesByUser.every(({ libraries }) => libraries.length === 0)) {
 			return unknown({
 				errors: Math.max(errors, 1),
-				errorMessages:
-					errorMessages.length > 0 ? errorMessages : ["Jellyfin returned no movie or TV libraries"],
+				errorMessages: errorMessages.length > 0 ? errorMessages : ["no-supported-libraries"],
 			});
 		}
 
@@ -806,6 +807,8 @@ export async function collectJellyfinCacheLiveEvidence(
 					unit.fatalCount = 1;
 					libraryUnit.fatalCount = 1;
 					mappingUnit.fatalCount = 1;
+					if (!errorMessages.includes("library-coverage-incomplete"))
+						errorMessages.push("library-coverage-incomplete");
 					log.warn(
 						{ category: "library-coverage-incomplete" },
 						"Jellyfin library coverage incomplete",
@@ -1000,8 +1003,28 @@ export async function collectJellyfinCacheLiveEvidence(
 		}
 		const completedAt = options.observedAt ?? new Date();
 		if (!complete && rows.length === 0) {
-			log.warn({ category: "partial-empty" }, "Skipping empty positive-only Jellyfin publication");
-			return unknown({ errors: 0, errorMessages });
+			const diagnostics = {
+				category: "partial-empty",
+				libraryItems: 0,
+				unmappedItems: 0,
+				missingItemKeys: 0,
+				unsupportedItems: 0,
+				onDeckIncomplete: false,
+			};
+			for (const unit of coverageUnits) {
+				if (unit.scopeKey.endsWith("/on-deck")) {
+					diagnostics.onDeckIncomplete ||= unit.fatalCount > 0 || unit.acceptedSkips.length > 0;
+					continue;
+				}
+				diagnostics.libraryItems += unit.rawObserved;
+				for (const { reason, count } of unit.acceptedSkips) {
+					if (reason === "missing-supported-mapping") diagnostics.unmappedItems += count;
+					if (reason === "missing-stable-key") diagnostics.missingItemKeys += count;
+					if (reason === "unsupported-provider-object") diagnostics.unsupportedItems += count;
+				}
+			}
+			log.warn(diagnostics, "Skipping empty positive-only Jellyfin publication");
+			return unknown({ errors: 0, errorMessages: ["partial-empty", ...errorMessages] });
 		}
 		const watchCountRows = rows.filter((row) => row.watchCount > 0);
 		const watchCountUnit = createCoverageUnit("jellyfin:watch-count", {

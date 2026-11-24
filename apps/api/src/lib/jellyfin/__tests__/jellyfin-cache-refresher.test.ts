@@ -1717,14 +1717,92 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 		);
 	});
 
-	it("preserves no publication when semantic omissions produce no safe rows", async () => {
-		const client = makeMockClient([makeMovieItem({ tmdbId: undefined })]);
-		const result = await collectJellyfinCacheLiveEvidence(client, "inst-1", silentLog);
+	it("keeps mapped rows with two users and unsupported Resume seasons", async () => {
+		const movies = Array.from({ length: 862 }, (_, id) =>
+			makeMovieItem({ id: `movie-${id}`, tmdbId: id + 1 }),
+		);
+		const shows = Array.from({ length: 194 }, (_, id) =>
+			makeSeriesItem({ id: `series-${id}`, tmdbId: id + 1 }),
+		);
+		const client = {
+			getUsers: vi.fn().mockResolvedValue([
+				{ id: "admin", name: "Admin" },
+				{ id: "viewer", name: "Viewer" },
+			]),
+			getLibraries: vi.fn().mockResolvedValue([
+				{ id: "movies", name: "Movies", collectionType: "movies" },
+				{ id: "shows", name: "Shows", collectionType: "tvshows" },
+			]),
+			getLibraryItemsWithCoverage: vi.fn(async (_user: string, library: string) => {
+				const items = library === "movies" ? movies : shows;
+				return {
+					items,
+					expectedRawCount: items.length,
+					rawObserved: items.length,
+					pagesAttempted: 1,
+					pagesCompleted: 1,
+					reason: null,
+				};
+			}),
+			getResumeItems: vi.fn(async (user: string) =>
+				user === "admin" ? [makeSeriesItem({ type: "Season" }), shows[0]] : movies.slice(0, 2),
+			),
+			getNextUp: vi.fn(async (user: string) =>
+				user === "admin" ? [makeSeriesItem({ type: "Episode", seriesId: shows[1]!.id })] : [],
+			),
+		} as unknown as JellyfinClient;
 
-		expect(result).toMatchObject({ complete: false, errors: 0 });
-		expect(result.snapshot).toBeUndefined();
-		expect(result.receipt?.evidence).toBe("unknown");
+		const result = await collectJellyfinCacheLiveEvidence(client, "instance", silentLog);
+		expect(result).toMatchObject({ complete: false, errors: 0, errorMessages: [] });
+		expect(result.snapshot?.rows).toHaveLength(1_056);
+		expect(evaluateProviderCoverageReceipt(result.receipt)).toMatchObject({
+			valid: true,
+			evidence: "positive-only",
+			publishedCanonicalEntities: 1_056,
+		});
 	});
+
+	it.each([
+		[
+			"unmapped",
+			{ tmdbId: undefined },
+			{ unmappedItems: 1, missingItemKeys: 0, unsupportedItems: 0 },
+		],
+		[
+			"unsupported",
+			{ type: "Episode" },
+			{ unmappedItems: 0, missingItemKeys: 0, unsupportedItems: 1 },
+		],
+		["missing key", { id: " " }, { unmappedItems: 0, missingItemKeys: 1, unsupportedItems: 0 }],
+	])(
+		"diagnoses zero-row partial collection with %s items without publishing",
+		async (_scenario, item, counts) => {
+			const client = makeMockClient([makeMovieItem({ id: "private-item", ...item })]);
+			const warn = vi.fn();
+			const result = await collectJellyfinCacheLiveEvidence(client, "inst-1", {
+				...silentLog,
+				warn,
+			});
+
+			expect(result).toMatchObject({
+				complete: false,
+				errors: 0,
+				errorMessages: ["partial-empty"],
+			});
+			expect(result.snapshot).toBeUndefined();
+			expect(result.receipt?.evidence).toBe("unknown");
+			expect(warn).toHaveBeenCalledExactlyOnceWith(
+				{
+					category: "partial-empty",
+					libraryItems: 1,
+					...counts,
+					onDeckIncomplete: false,
+				},
+				"Skipping empty positive-only Jellyfin publication",
+			);
+			expect(JSON.stringify(warn.mock.calls)).not.toContain("private-item");
+		},
+	);
 
 	it("blocks publication on a source identity collision", async () => {
 		const client = makeMockClient([

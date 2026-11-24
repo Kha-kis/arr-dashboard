@@ -76,6 +76,7 @@ export async function refreshScheduledJellyfinEpisodeCacheInstance(
 				complete: result.complete,
 				upserted: result.upserted,
 				errors: result.errors,
+				...(result.failureCategory ? { reasonCode: result.failureCategory } : {}),
 			},
 			"Jellyfin episode cache refresh completed",
 		);
