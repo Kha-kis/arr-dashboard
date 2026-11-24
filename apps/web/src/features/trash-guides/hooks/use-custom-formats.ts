@@ -53,6 +53,7 @@ export function useDeployMultipleCustomFormats() {
 	return useMutation({
 		mutationFn: (request: DeployMultipleCustomFormatsRequest) =>
 			deployMultipleCustomFormats(request),
+		retry: false,
 		onSuccess: () => {
 			// Invalidate related queries
 			queryClient.invalidateQueries({ queryKey: customFormatKeys.all });

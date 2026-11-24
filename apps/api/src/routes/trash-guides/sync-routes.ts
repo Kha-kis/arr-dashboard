@@ -32,6 +32,7 @@ import {
 } from "../../lib/trash-guides/deployment-profile-state.js";
 import {
 	createDeploymentEndpointKey,
+	createDeploymentConnectionStateToken,
 	createQualityProfileStateToken,
 	createUpstreamResourceStateToken,
 	getEquivalentServiceInstanceIds,
@@ -567,42 +568,87 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 		const userId = request.currentUser!.id;
 		const sync = await app.prisma.trashSyncHistory.findFirst({
 			where: { id: syncId, userId },
-			select: { status: true, backupId: true, errorLog: true },
+			select: { instanceId: true, status: true, backupId: true, errorLog: true },
 		});
 
 		if (!sync) {
 			return reply.status(404).send({ error: "NOT_FOUND", message: "Sync not found" });
 		}
-		if (sync.status !== "UNCERTAIN" || sync.backupId !== null) {
-			return reply.status(409).send({
-				error: "REVIEW_NOT_ACKNOWLEDGEABLE",
-				message: "Only an uncertain sync without a rollback ledger can be acknowledged manually.",
-			});
-		}
+		const instance = await requireInstance(app, userId, sync.instanceId);
+		return app.deploymentExecutor.runWithEndpointMutation(
+			userId,
+			instance,
+			"Manual deployment review",
+			async () => {
+				if (sync.status !== "UNCERTAIN" || sync.backupId !== null) {
+					return reply.status(409).send({
+						error: "REVIEW_NOT_ACKNOWLEDGEABLE",
+						message:
+							"Only an uncertain sync without a rollback ledger can be acknowledged manually.",
+					});
+				}
 
-		const reviewedAt = new Date();
-		const reviewMessage = `Manual review acknowledged at ${reviewedAt.toISOString()}. No automatic rollback was performed; the administrator accepted the current ARR state.`;
-		const updated = await app.prisma.trashSyncHistory.updateMany({
-			where: { id: syncId, userId, status: "UNCERTAIN", backupId: null },
-			data: {
-				status: "FAILED",
-				completedAt: reviewedAt,
-				errorLog: sync.errorLog ? `${sync.errorLog}\n${reviewMessage}` : reviewMessage,
+				// Standalone holds remain bound to the original configured endpoint,
+				// even if its renewable topology lease was lost during an in-flight write.
+				let standaloneConnectionToken: string | null = null;
+				try {
+					const metadata: unknown = JSON.parse(sync.errorLog ?? "null");
+					if (
+						metadata &&
+						typeof metadata === "object" &&
+						"type" in metadata &&
+						metadata.type === "STANDALONE_CUSTOM_FORMATS"
+					) {
+						standaloneConnectionToken =
+							"connectionStateToken" in metadata &&
+							typeof metadata.connectionStateToken === "string"
+								? metadata.connectionStateToken
+								: "";
+					}
+				} catch {
+					/* Legacy plain-text recovery logs retain their existing review contract. */
+				}
+				if (standaloneConnectionToken !== null) {
+					const current = await requireInstance(app, userId, sync.instanceId);
+					if (
+						!/^[a-f0-9]{64}$/.test(standaloneConnectionToken) ||
+						createDeploymentConnectionStateToken(current) !== standaloneConnectionToken ||
+						createDeploymentConnectionStateToken(instance) !== standaloneConnectionToken
+					) {
+						return reply.status(409).send({
+							error: "REVIEW_CONNECTION_CHANGED",
+							message:
+								"This standalone deployment belongs to a different instance connection. Reconcile the original connection before acknowledging its outcome.",
+						});
+					}
+				}
+
+				const reviewedAt = new Date();
+				const reviewMessage = `Manual review acknowledged at ${reviewedAt.toISOString()}. No automatic rollback was performed; the administrator accepted the current ARR state.`;
+				const updated = await app.prisma.trashSyncHistory.updateMany({
+					where: { id: syncId, userId, status: "UNCERTAIN", backupId: null },
+					data: {
+						status: "FAILED",
+						completedAt: reviewedAt,
+						errorLog: sync.errorLog ? `${sync.errorLog}\n${reviewMessage}` : reviewMessage,
+					},
+				});
+				if (updated.count !== 1) {
+					return reply.status(409).send({
+						error: "REVIEW_STATE_CHANGED",
+						message:
+							"The sync changed while manual review was being acknowledged. Refresh and retry.",
+					});
+				}
+
+				request.log.warn({ syncId }, "Backup-less uncertain sync manually acknowledged");
+				return reply.send({
+					success: true,
+					status: "FAILED",
+					message: "Manual review acknowledged. No automatic rollback was performed.",
+				});
 			},
-		});
-		if (updated.count !== 1) {
-			return reply.status(409).send({
-				error: "REVIEW_STATE_CHANGED",
-				message: "The sync changed while manual review was being acknowledged. Refresh and retry.",
-			});
-		}
-
-		request.log.warn({ syncId }, "Backup-less uncertain sync manually acknowledged");
-		return reply.send({
-			success: true,
-			status: "FAILED",
-			message: "Manual review acknowledged. No automatic rollback was performed.",
-		});
+		);
 	});
 
 	/**

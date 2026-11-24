@@ -55,6 +55,59 @@ export interface DeployMultipleCustomFormatsResponse {
 	failed: Array<{ name: string; error: string }>;
 }
 
+export interface StandaloneCustomFormatDeploymentResponse
+	extends DeployMultipleCustomFormatsResponse {
+	outcome: "complete" | "uncertain" | "partial" | "rejected";
+	historyId: string;
+	message: string;
+	unchanged: string[];
+	targets: Array<{
+		trashId: string;
+		name: string;
+		status: "created" | "updated" | "unchanged" | "uncertain" | "skipped";
+		tracked: boolean;
+	}>;
+}
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function isStandaloneResponse(value: unknown): value is StandaloneCustomFormatDeploymentResponse {
+	if (
+		!isRecord(value) ||
+		typeof value.success !== "boolean" ||
+		typeof value.historyId !== "string" ||
+		!value.historyId ||
+		typeof value.message !== "string" ||
+		!["complete", "uncertain", "partial", "rejected"].includes(String(value.outcome))
+	)
+		return false;
+	if (
+		![value.created, value.updated, value.unchanged].every(
+			(names) => Array.isArray(names) && names.every((name) => typeof name === "string"),
+		)
+	)
+		return false;
+	if (
+		!Array.isArray(value.failed) ||
+		!value.failed.every(
+			(target) =>
+				isRecord(target) && typeof target.name === "string" && typeof target.error === "string",
+		)
+	)
+		return false;
+	return (
+		Array.isArray(value.targets) &&
+		value.targets.every(
+			(target) =>
+				isRecord(target) &&
+				typeof target.trashId === "string" &&
+				typeof target.name === "string" &&
+				typeof target.tracked === "boolean" &&
+				["created", "updated", "unchanged", "uncertain", "skipped"].includes(String(target.status)),
+		)
+	);
+}
+
 // ============================================================================
 // User Custom Formats
 // ============================================================================
@@ -167,14 +220,53 @@ export async function fetchCFDescriptionsList(
  */
 export async function deployMultipleCustomFormats(
 	request: DeployMultipleCustomFormatsRequest,
-): Promise<DeployMultipleCustomFormatsResponse> {
-	return await apiRequest<DeployMultipleCustomFormatsResponse>(
-		"/api/trash-guides/custom-formats/deploy-multiple",
-		{
-			method: "POST",
-			json: request,
-		},
-	);
+): Promise<StandaloneCustomFormatDeploymentResponse> {
+	const data = await apiRequest<unknown>("/api/trash-guides/custom-formats/deploy-multiple", {
+		method: "POST",
+		json: request,
+		expectedSuccessStatus: 200,
+		requireJsonSuccess: true,
+	});
+	if (!isStandaloneResponse(data))
+		throw new Error(
+			"Deployment acknowledgment could not be verified. Inspect the instance and operation history before retrying.",
+		);
+	const requested = new Set(request.trashIds);
+	const unchanged = data.targets
+		.filter((target) => target.status === "unchanged")
+		.map((target) => target.name);
+	const targetIds = new Set(data.targets.map((target) => target.trashId));
+	const created = data.targets
+		.filter((target) => target.status === "created")
+		.map((target) => target.name);
+	const updated = data.targets
+		.filter((target) => target.status === "updated")
+		.map((target) => target.name);
+	if (
+		requested.size !== request.trashIds.length ||
+		targetIds.size !== data.targets.length ||
+		targetIds.size !== requested.size ||
+		data.targets.some((target) => !requested.has(target.trashId)) ||
+		JSON.stringify(created) !== JSON.stringify(data.created) ||
+		JSON.stringify(updated) !== JSON.stringify(data.updated) ||
+		JSON.stringify(unchanged) !== JSON.stringify(data.unchanged) ||
+		(data.success &&
+			(data.outcome !== "complete" ||
+				data.failed.length > 0 ||
+				data.targets.some(
+					(target) =>
+						!target.tracked ||
+						(target.status !== "created" &&
+							target.status !== "updated" &&
+							target.status !== "unchanged"),
+				))) ||
+		(!data.success && data.outcome === "complete")
+	) {
+		throw new Error(
+			"Deployment acknowledgment did not match the complete selection. Inspect the instance and operation history before retrying.",
+		);
+	}
+	return data;
 }
 
 /**
