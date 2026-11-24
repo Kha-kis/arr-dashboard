@@ -509,12 +509,21 @@ class Registry:
         parsed = urllib.parse.urlsplit(source_uri)
         path = parsed.path.rstrip("/").lower().removesuffix(".git")
         repository = (parsed.hostname or "").lower() + path
+        # BuildKit can also repeat source fields in its root build request.
+        root = request.get("root") or {}
+        root_args = (root.get("request") or {}).get("args") or {}
+        root_bindings = {
+            "vcs:source": source_uri,
+            "vcs:revision": source,
+            "build-arg:COMMIT_SHA": source,
+        }
         return (
             parsed.scheme == "https"
             and repository == SOURCE_REPOSITORY
             and not (parsed.username or parsed.password or parsed.port or parsed.query or parsed.fragment)
             and vcs.get("revision") == source
             and args.get("build-arg:COMMIT_SHA") == source
+            and all(root_args.get(key, value) == value for key, value in root_bindings.items())
         )
 
     @classmethod

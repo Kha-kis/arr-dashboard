@@ -324,6 +324,27 @@ class RegistryTests(unittest.TestCase):
         statement["predicate"]["runDetails"]["metadata"].clear()
         self.assertFalse(rr.Registry._source_matches(statement, SOURCE))
 
+    def test_provenance_rejects_conflicting_root_context_when_present(self):
+        statement = buildkit_v1_statement(SOURCE, "1" * 64)
+        request = statement["predicate"]["buildDefinition"]["externalParameters"]["request"]
+        root_args = {
+            "vcs:source": "https://github.com/Kha-kis/arr-dashboard",
+            "vcs:revision": SOURCE,
+            "build-arg:COMMIT_SHA": SOURCE,
+        }
+        request["root"] = {"request": {"args": root_args}}
+        self.assertTrue(rr.Registry._source_matches(statement, SOURCE))
+        for key, wrong in (
+            ("vcs:source", "https://github.com/other/arr-dashboard"),
+            ("vcs:revision", "b" * 40),
+            ("build-arg:COMMIT_SHA", "b" * 40),
+        ):
+            with self.subTest(key=key):
+                original = root_args[key]
+                root_args[key] = wrong
+                self.assertFalse(rr.Registry._source_matches(statement, SOURCE))
+                root_args[key] = original
+
     def test_config_uses_created_label_and_linux_platform(self):
         config = {
             "os": "linux",
