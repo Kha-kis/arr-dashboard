@@ -670,10 +670,18 @@ def qualify(args: argparse.Namespace) -> dict[str, Any]:
         "platforms": receipts,
         "registries": {},
     }
+    result["expectedAliases"] = {}
+    major, minor, _patch = args.version.split(".")
     for repository in REGISTRIES:
-        result["registries"][repository] = Registry(repository).qualify_graph(
+        registry = Registry(repository)
+        result["registries"][repository] = registry.qualify_graph(
             index_digest, receipts["amd64"], receipts["arm64"], expected
         )
+        if registry.tag_digest(args.version) is not None:
+            raise QualificationError("stable version tag already exists")
+        result["expectedAliases"][repository] = {
+            alias: registry.tag_digest(alias) for alias in (f"{major}.{minor}", major, "latest")
+        }
     Path(args.output).write_text(
         json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )

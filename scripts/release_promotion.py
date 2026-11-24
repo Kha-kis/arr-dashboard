@@ -1,5 +1,6 @@
 """Authorize and copy one previously qualified OCI index within each registry."""
 
+from datetime import datetime
 import hashlib
 import io
 import json
@@ -8,12 +9,16 @@ import re
 import signal
 import subprocess
 import sys
+from pathlib import Path
 import zipfile
+
+from release_registry import REGISTRIES, Registry, verify_qualification
 
 
 REPOSITORY = "Kha-kis/arr-dashboard"
-REGISTRIES = ("khak1s/arr-dashboard", "ghcr.io/kha-kis/arr-dashboard")
-ENVIRONMENT = "stable-release"
+MAINTAINER = "Kha-kis"
+STAGE_WORKFLOW = "docker-stage.yml"
+LEGACY_WORKFLOW_ID = 196258923
 DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
 SHA = re.compile(r"[0-9a-f]{40}")
 VERSION = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
@@ -52,10 +57,11 @@ def read_expected(registries, repository, tag, old, index):
     return current
 
 
-def check_aliases(registries, plan, index):
+def check_aliases(registries, plan, index, *, recovery=True):
     require(DIGEST.fullmatch(index), "invalid qualified index")
     for repo, tag, old in plan:
-        read_expected(registries, repo, tag, old, index)
+        current = read_expected(registries, repo, tag, old, index)
+        require(recovery or current == old, f"existing promotion state requires a deliberate rerun: {repo}:{tag}")
 
 
 def apply_aliases(registries, plan, index, write_index, emit):
@@ -95,30 +101,6 @@ def apply_aliases(registries, plan, index, write_index, emit):
             require(complete, "final registry observation incomplete or drifted")
 
 
-def require_environment_approval(environment, reviews, approval_comment):
-    require(environment.get("name") == ENVIRONMENT
-            and environment.get("can_admins_bypass") is not True,
-            "stable-release protection is missing or reports administrator bypass")
-    reviewers = {
-        row["reviewer"]["id"]
-        for rule in environment.get("protection_rules", [])
-        if rule["type"] == "required_reviewers"
-        for row in rule.get("reviewers", [])
-        if row["type"] == "User"
-    }
-    require(reviewers, "stable-release needs named individual required reviewers")
-    matching = [
-        review for review in reviews
-        if any(env["id"] == environment["id"] for env in review.get("environments", []))
-    ]
-    require(not any(review["state"] == "rejected" for review in matching),
-            "this stable-release deployment was rejected")
-    require(any(review["state"] == "approved" and review["user"]["id"] in reviewers
-                and isinstance(review.get("comment"), str) and review["comment"].strip() == approval_comment
-                for review in matching),
-            "current dispatch lacks an explicit configured reviewer approval")
-
-
 def output(*args):
     return subprocess.check_output(args, stdin=subprocess.DEVNULL, timeout=120)
 
@@ -136,68 +118,120 @@ def emit_record(value):
             stream.write(line + "\n")
 
 
-def require_dispatch():
-    require(os.environ.get("GITHUB_REPOSITORY") == REPOSITORY
-            and os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch"
-            and os.environ.get("GITHUB_REF") == "refs/heads/main"
-            and os.environ.get("GITHUB_RUN_ATTEMPT") == "1",
-            "promotion requires a new canonical main dispatch")
-    source = os.environ["GITHUB_SHA"]
-    run_id = os.environ["GITHUB_RUN_ID"]
-    require(SHA.fullmatch(source) and IDENTIFIER.fullmatch(run_id), "invalid source or run ID")
-    require(output("git", "rev-parse", "HEAD").decode().strip() == source,
-            "checkout differs from dispatch source")
-    require(get_api("git/ref/heads/main")["object"]["sha"] == source, "main has advanced")
-    return source, run_id
+def timestamp(value):
+    require(isinstance(value, str), "missing release evidence timestamp")
+    when = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    require(when.tzinfo is not None, "release evidence timestamp needs timezone")
+    return when
 
 
-def approved(run_id, approval_comment):
-    require_environment_approval(
-        get_api(f"environments/{ENVIRONMENT}"),
-        get_api(f"actions/runs/{run_id}/approvals"),
-        approval_comment,
-    )
+def require_release_event():
+    """Bind a trusted create-only tag push to the checked-out current main."""
+    env = os.environ
+    require(env.get("GITHUB_REPOSITORY") == REPOSITORY
+            and env.get("GITHUB_EVENT_NAME") == "push"
+            and env.get("GITHUB_ACTOR") == MAINTAINER
+            and env.get("GITHUB_TRIGGERING_ACTOR") == MAINTAINER,
+            "publication requires a stable tag push or recovery rerun by the maintainer")
+    ref = env.get("GITHUB_REF", "")
+    version = ref.removeprefix("refs/tags/v")
+    require(ref == "refs/tags/v" + version and VERSION.fullmatch(version), "invalid stable tag")
+    require(env.get("GITHUB_REF_PROTECTED") == "true", "stable tag needs an active repository ruleset")
+    run_id = env.get("GITHUB_RUN_ID", "")
+    require(IDENTIFIER.fullmatch(run_id) and IDENTIFIER.fullmatch(env.get("GITHUB_RUN_ATTEMPT", "")),
+            "invalid promotion run identity")
+    event = json.loads(Path(env["GITHUB_EVENT_PATH"]).read_bytes())
+    require(event.get("ref") == ref and event.get("created") is True
+            and event.get("deleted") is False and event.get("forced") is False
+            and event.get("before") == "0" * 40 and event["sender"]["login"] == MAINTAINER
+            and event["repository"]["full_name"] == REPOSITORY,
+            "promotion requires creation of the exact release tag")
 
-
-def require_tag(version, source):
     reference = get_api(f"git/ref/tags/v{version}")
     obj = reference["object"]
-    require(reference["ref"] == f"refs/tags/v{version}" and obj["type"] == "tag",
+    require(reference["ref"] == ref and obj["type"] == "tag" and SHA.fullmatch(obj["sha"]),
             "the exact release tag must be annotated")
-    require(SHA.fullmatch(obj["sha"]), "invalid annotated tag identity")
     tag = get_api(f"git/tags/{obj['sha']}")
-    require(tag["tag"] == "v" + version
-            and tag["object"]["type"] == "commit" and tag["object"]["sha"] == source,
-            "release tag does not point directly to the qualified main commit")
+    source = tag["object"]["sha"]
+    require(tag["tag"] == "v" + version and tag["object"]["type"] == "commit" and SHA.fullmatch(source)
+            and env.get("GITHUB_SHA") in (obj["sha"], source)
+            and event.get("after") in (obj["sha"], source),
+            "release tag or push identity differs from the checked-out source")
+    require(output("git", "rev-parse", "HEAD").decode().strip() == source
+            and get_api("git/ref/heads/main")["object"]["sha"] == source,
+            "release tag does not point to exact current main")
+    require(json.loads(output("git", "show", "HEAD:package.json"))["version"] == version,
+            "package version differs from the release tag")
+    run = get_api(f"actions/runs/{run_id}")
+    require(run["id"] == int(run_id) and run["event"] == "push"
+            and run["head_sha"] in (obj["sha"], source), "promotion run source differs")
+    require(get_api(f"actions/workflows/{LEGACY_WORKFLOW_ID}")["state"] == "disabled_manually",
+            "retire the historical unqualified release workflow before publishing")
+    cutoff = min(timestamp(tag["tagger"]["date"]), timestamp(run["created_at"]))
+    return version, source, obj["sha"], cutoff
 
 
-def read_qualification(stage_id, attempt, source, expected_hash):
-    workflow = get_api("actions/workflows/docker-combined.yml")
-    run = get_api(f"actions/runs/{stage_id}/attempts/{attempt}")
-    require(run["workflow_id"] == workflow["id"] and run["id"] == int(stage_id)
-            and run["run_attempt"] == int(attempt) and run["event"] == "workflow_dispatch"
+def read_qualification(stage_id, source, cutoff, workflow_id):
+    run = get_api(f"actions/runs/{stage_id}/attempts/1")
+    require(run["workflow_id"] == workflow_id and run["id"] == stage_id
+            and run["run_attempt"] == 1 and run["event"] == "workflow_dispatch"
             and run["head_branch"] == "main" and run["head_sha"] == source
             and run["head_repository"]["full_name"] == REPOSITORY
-            and run["status"] == "completed" and run["conclusion"] == "success",
-            "qualification is not a successful canonical stage run at this source")
-    name = f"release-qualification-attempt-{attempt}"
+            and run["status"] == "completed" and run["conclusion"] == "success"
+            and timestamp(run["updated_at"]) < cutoff,
+            "qualification is not a successful canonical stage before the tag")
+    name = "release-qualification-attempt-1"
     response = get_api(f"actions/runs/{stage_id}/artifacts?name={name}&per_page=2")
     require(response["total_count"] == len(response["artifacts"]) == 1,
-            "expected one immutable qualification artifact for the selected attempt")
+            "expected one immutable qualification artifact for the selected run")
     artifact = response["artifacts"][0]
     require(artifact["name"] == name and artifact["expired"] is False
             and 0 < artifact["size_in_bytes"] <= MAX_RECORD_BYTES
-            and type(artifact["id"]) is int, "qualification artifact is invalid or expired")
+            and type(artifact["id"]) is int and artifact["id"] > 0
+            and DIGEST.fullmatch(artifact["digest"]) and timestamp(artifact["created_at"]) < cutoff,
+            "qualification artifact is invalid, expired, or newer than the tag")
     archive = output("gh", "api", f"repos/{REPOSITORY}/actions/artifacts/{artifact['id']}/zip")
-    require(0 < len(archive) <= MAX_RECORD_BYTES, "qualification archive exceeds the allowed size")
+    require(0 < len(archive) <= MAX_RECORD_BYTES
+            and "sha256:" + hashlib.sha256(archive).hexdigest() == artifact["digest"],
+            "qualification archive size or immutable digest differs")
     with zipfile.ZipFile(io.BytesIO(archive)) as files:
         require(files.namelist() == [MANIFEST_FILE], "unexpected qualification archive contents")
         require(0 < files.getinfo(MANIFEST_FILE).file_size <= MAX_RECORD_BYTES,
                 "qualification record exceeds the allowed size")
         raw = files.read(MANIFEST_FILE)
-    require(hashlib.sha256(raw).hexdigest() == expected_hash,
-            "qualification record hash differs from the approved hash")
-    return json.loads(raw)
+    record = json.loads(raw)
+    require(type(record) is dict, "qualification record must be a JSON object")
+    return record, hashlib.sha256(raw).hexdigest()
+
+
+def discover_qualification(version, source, tree, cutoff):
+    workflow = get_api(f"actions/workflows/{STAGE_WORKFLOW}")
+    require(workflow["path"] == ".github/workflows/" + STAGE_WORKFLOW and workflow["state"] == "active"
+            and type(workflow["id"]) is int and workflow["id"] != LEGACY_WORKFLOW_ID,
+            "invalid staging workflow identity")
+    found = get_api(f"actions/workflows/{workflow['id']}/runs?"
+                    f"head_sha={source}&branch=main&event=workflow_dispatch&status=success&per_page=100")
+    require(found["total_count"] == len(found["workflow_runs"]) <= 100,
+            "qualification discovery was incomplete")
+    candidates = []
+    for run in found["workflow_runs"]:
+        if run["run_attempt"] != 1 or timestamp(run["updated_at"]) >= cutoff:
+            continue
+        stage_id = run["id"]
+        require(type(stage_id) is int and stage_id > 0, "invalid stage run ID")
+        record, digest = read_qualification(stage_id, source, cutoff, workflow["id"])
+        require(record.get("version") == version and record.get("source") == source
+                and record.get("tree") == tree and record.get("runId") == stage_id
+                and record.get("runAttempt") == 1 and DIGEST.fullmatch(record["indexDigest"]),
+                "qualification record differs from the exact tagged release")
+        plan = alias_plan(version, record["expectedAliases"])
+        candidates.append((stage_id, record, digest, plan))
+    require(candidates, "no successful canonical qualification found before the tag")
+    first = min(candidates, key=lambda candidate: candidate[0])
+    for _, record, _, plan in candidates:
+        require(record["indexDigest"] == first[1]["indexDigest"] and plan == first[3],
+                "incompatible qualification records exist for this tag")
+    return first
 
 
 def verify_copy_plan(repository, index):
@@ -217,56 +251,46 @@ def copy_index(repository, alias, index):
 
 
 def main(mode):
-    source, promotion_id = require_dispatch()
-    version = os.environ["RELEASE_VERSION"]
-    stage_id = os.environ["STAGE_RUN_ID"]
-    attempt = os.environ["STAGE_RUN_ATTEMPT"]
-    sha = os.environ["QUALIFICATION_SHA256"]
-    index = os.environ["QUALIFIED_INDEX_DIGEST"]
-    require(VERSION.fullmatch(version) and IDENTIFIER.fullmatch(stage_id)
-            and attempt == "1" and re.fullmatch(r"[0-9a-f]{64}", sha)
-            and DIGEST.fullmatch(index), "invalid promotion input")
-    approval_comment = f"Promote v{version} {index} {sha}"
-    if mode in ("authorize", "promote"):
-        approved(promotion_id, approval_comment)
-    if mode == "authorize":
-        return
-    require(json.loads(output("git", "show", "HEAD:package.json"))["version"] == version,
-            "package version differs from the authorized release")
+    version, source, tag, cutoff = require_release_event()
     tree = output("git", "rev-parse", "HEAD^{tree}").decode().strip()
-    require_tag(version, source)
-    record = read_qualification(stage_id, attempt, source, sha)
-    plan = alias_plan(version, json.loads(os.environ["EXPECTED_ALIASES"]))
-    from release_registry import Registry, verify_qualification
+    stage_id, record, receipt_hash, plan = discover_qualification(version, source, tree, cutoff)
+    index = record["indexDigest"]
+    selected = f"{tag}:{stage_id}:{receipt_hash}:{index}"
+    if mode == "promote":
+        require(os.environ.get("PREFLIGHT_SELECTION") == selected,
+                "qualification changed since read-only preflight")
 
     verify_qualification(record, version=version, source=source, tree=tree,
-                         run_id=int(stage_id), run_attempt=int(attempt), index_digest=index)
+                         run_id=stage_id, run_attempt=1, index_digest=index)
     registries = {repo: Registry(repo) for repo in REGISTRIES}
+    recovery = os.environ["GITHUB_RUN_ATTEMPT"] != "1"
     if mode == "preflight":
-        check_aliases(registries, plan, index)
+        check_aliases(registries, plan, index, recovery=recovery)
         emit_record({"status": "preflight-verified", "source": source, "tree": tree, "version": version,
-                     "stageRun": stage_id, "stageAttempt": attempt, "qualificationSha256": sha,
-                     "qualifiedIndex": index, "expectedAliases": plan,
-                     "requiredApprovalComment": approval_comment})
+                     "tagObject": tag, "stageRun": stage_id, "qualificationSha256": receipt_hash,
+                     "qualifiedIndex": index, "expectedAliases": plan})
+        with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as stream:
+            stream.write("selection=" + selected + "\n")
         return
-    require_dispatch()
-    require_tag(version, source)
-    approved(promotion_id, approval_comment)
+
     for repository in REGISTRIES:
         verify_copy_plan(repository, index)
+    require(require_release_event() == (version, source, tag, cutoff),
+            "release authorization changed before writing")
+    check_aliases(registries, plan, index, recovery=recovery)
     apply_aliases(registries, plan, index, copy_index, emit_record)
 
 
 def interrupted(_signum, _frame):
-    raise InterruptedError("promotion interrupted; inspect registry state before requesting a new dispatch")
+    raise InterruptedError("promotion interrupted; inspect registry state before deliberately rerunning promotion")
 
 
 if __name__ == "__main__":
     signal.signal(signal.SIGTERM, interrupted)
     signal.signal(signal.SIGINT, interrupted)
     try:
-        require(len(sys.argv) == 2 and sys.argv[1] in ("preflight", "authorize", "promote"),
-                "expected preflight, authorize or promote")
+        require(len(sys.argv) == 2 and sys.argv[1] in ("preflight", "promote"),
+                "expected preflight or promote")
         main(sys.argv[1])
     except (ValueError, KeyError, TypeError, OSError, subprocess.SubprocessError, zipfile.BadZipFile) as error:
         print(f"Release gate failed ({type(error).__name__}): {error}", file=sys.stderr)
