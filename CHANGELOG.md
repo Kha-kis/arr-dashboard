@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.25.1] — Quality-order and diagnostic maintenance
+
+### Fixes
+
+- Preserve TRaSH quality order when editing or deploying a saved quality profile. Review previously affected priorities before redeploying. Saved templates and existing provider profiles require operator review.
+- Report why a Jellyfin library or episode refresh stopped. Episode-read logs now distinguish HTTP refusals, malformed responses and invalid page data. The Dashboard names the episode watch-cache warning and keeps it separate from the episode refresh retry. Jellyfin episode refresh now skips the Playlists view, which can return playlist folders to an episode query. Normal movie, TV and mixed libraries remain eligible. Unexpected rows in a supported library still stop an incomplete refresh.
+- Report the first failing SQLite startup or migration-preparation stage and allowlisted error codes while retaining ownership, migration and rollback safeguards.
+
+### Upgrade guidance
+
+Keep a verified backup of the database, configuration and secrets before updating. Stop the application for a consistent offline SQLite appdata copy. Use one Arr Dashboard instance per database. Let normal startup run its migrations before resuming operation. If startup refuses the upgrade, preserve the original data and capture the first named startup phase and safe error code. If rollback is necessary, use a compatible pre-upgrade backup with the previous image. See the [v2.25.0 migration and upgrade notes](https://github.com/Kha-kis/arr-dashboard/releases/tag/v2.25.0).
+
+### Known limits
+
+The Playlists scope defect reported in #889 is covered. Recovery on the original server remains to be confirmed. The separate Jellyfin parent-admission failure in #790 and the reporter-specific SQLite startup failures in #913 and #934 remain under investigation. Plex-to-Radarr Label Sync on v2.25.0 still needs reporter confirmation for #914. Initial TRaSH override import and first-deploy partial-success behavior remain separate.
+
+Thanks to the issue reporters and contributors for the reproduction steps, provider observations and startup traces.
+
 ## [2.25.0] — Durable grabs and restore recovery
 
 ### Upgrade and API migration
@@ -1888,7 +1906,8 @@ Major dependency updates:
 
 ---
 
-[Unreleased]: https://github.com/Kha-kis/arr-dashboard/compare/v2.25.0...HEAD
+[Unreleased]: https://github.com/Kha-kis/arr-dashboard/compare/v2.25.1...HEAD
+[2.25.1]: https://github.com/Kha-kis/arr-dashboard/compare/v2.25.0...v2.25.1
 [2.25.0]: https://github.com/Kha-kis/arr-dashboard/compare/v2.24.1...v2.25.0
 [2.9.0]: https://github.com/Kha-kis/arr-dashboard/compare/v2.8.5...v2.9.0
 [2.8.5]: https://github.com/Kha-kis/arr-dashboard/compare/v2.8.4...v2.8.5
