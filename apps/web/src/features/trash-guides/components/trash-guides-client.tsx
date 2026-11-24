@@ -50,14 +50,14 @@ function PremiumSkeleton() {
 			<div className="space-y-4">
 				<div className="flex items-center gap-4">
 					<div
-						className="h-14 w-14 rounded-2xl animate-pulse"
+						className="h-14 w-14 shrink-0 rounded-2xl animate-pulse"
 						style={{
 							background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
 						}}
 					/>
-					<div className="space-y-2">
-						<div className="h-8 w-56 rounded-lg bg-muted/30 animate-pulse" />
-						<div className="h-4 w-96 rounded bg-muted/20 animate-pulse" />
+					<div className="min-w-0 flex-1 space-y-2">
+						<div className="h-8 w-56 max-w-full rounded-lg bg-muted/30 animate-pulse" />
+						<div className="h-4 w-96 max-w-full rounded bg-muted/20 animate-pulse" />
 					</div>
 				</div>
 			</div>
@@ -411,9 +411,9 @@ export function TrashGuidesClient() {
 					>
 						<AlertCircle className="h-5 w-5" style={{ color: SEMANTIC_COLORS.error.from }} />
 					</div>
-					<div>
+					<div className="min-w-0">
 						<h3 className="font-semibold text-foreground mb-1">Failed to load cache status</h3>
-						<p className="text-sm text-muted-foreground">
+						<p className="wrap-anywhere text-sm text-muted-foreground">
 							{getErrorMessage(error, "Please refresh the page and try again.")}
 						</p>
 					</div>
