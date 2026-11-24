@@ -392,11 +392,14 @@ export async function synchronizeSqliteRuntimeSchema(
 async function synchronizeSqliteRuntimeSchemaPhases(
 	databaseUrl: string,
 ): Promise<RuntimeSchemaStartupSettings> {
-	const registry = loadRuntimeSchemaRegistry("sqlite");
-	const targets = readRuntimeSchemaRegistryTargets(registry);
-	const indexes = registry.tables.flatMap(({ target }) =>
-		target.indexes.map(({ name }) => ({ name, tableName: target.name })),
-	);
+	const { registry, targets, indexes } = timeSqliteStartupPhase("schema-registry", () => {
+		const registry = loadRuntimeSchemaRegistry("sqlite");
+		const targets = readRuntimeSchemaRegistryTargets(registry);
+		const indexes = registry.tables.flatMap(({ target }) =>
+			target.indexes.map(({ name }) => ({ name, tableName: target.name })),
+		);
+		return { registry, targets, indexes };
+	});
 	return provisionSqliteRestoreRuntimeSchema(
 		databaseUrl,
 		{ runtimeEpoch: randomUUID() },

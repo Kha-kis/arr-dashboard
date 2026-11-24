@@ -163,7 +163,8 @@ describe.skipIf(process.platform !== "linux")("native startup phase diagnostics"
 		expect(result.code).toBe(1);
 		expect(result.signal).toBeNull();
 		expect(result.stdout).toBe("");
-		expect(events(result.stderr).map((event) => [event.phase, event.outcome])).toEqual([
+		const timings = events(result.stderr);
+		expect(timings.map((event) => [event.phase, event.outcome])).toEqual([
 			["catalog-preflight", "completed"],
 			["schema-plan", "started"],
 			["schema-plan", "completed"],
@@ -172,6 +173,22 @@ describe.skipIf(process.platform !== "linux")("native startup phase diagnostics"
 			["date-plan", "started"],
 			["date-plan", "failed"],
 			["total", "failed"],
+		]);
+		const failures = timings.filter((event) => event.outcome === "failed");
+		for (const event of failures) {
+			expect(Object.keys(event).sort()).toEqual([
+				"category",
+				"code",
+				"elapsedMs",
+				"errorCategory",
+				"level",
+				"outcome",
+				"phase",
+			]);
+		}
+		expect(failures).toMatchObject([
+			{ phase: "date-plan", errorCategory: "unknown", code: null },
+			{ phase: "total", errorCategory: "schema", code: null },
 		]);
 		expect(result.stderr).toContain("Database schema startup is unavailable");
 		expect(result.stderr).not.toContain("private-invalid-date");

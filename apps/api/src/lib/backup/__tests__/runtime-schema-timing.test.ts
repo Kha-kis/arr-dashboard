@@ -1,3 +1,7 @@
+import { randomUUID } from "node:crypto";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const boundary = vi.hoisted(() => ({
@@ -90,6 +94,8 @@ describe("SQLite startup timing isolation", () => {
 				phase: "date-plan",
 				outcome: "failed",
 				elapsedMs: expect.any(Number),
+				errorCategory: "unknown",
+				code: null,
 			},
 		]);
 	});
@@ -132,5 +138,155 @@ describe("SQLite startup timing isolation", () => {
 		boundary.createFails = false;
 		boundary.writeFails = true;
 		expect(await timeSqliteStartupPhaseAsync("schema-apply", async () => 11)).toBe(11);
+	});
+	it("reports an allowlisted filesystem code without exposing error text", async () => {
+		const { timeSqliteStartupPhase } = await import("../runtime-schema-timing.js");
+		const error = Object.assign(new Error("/private/config/media-name.sqlite"), { code: "EACCES" });
+		let caught: unknown;
+		try {
+			timeSqliteStartupPhase("database-file", () => {
+				throw error;
+			});
+		} catch (failure) {
+			caught = failure;
+		}
+		expect(caught).toBe(error);
+		expect(boundary.events.at(-1)).toEqual({
+			category: "sqlite-startup-phase",
+			phase: "database-file",
+			outcome: "failed",
+			elapsedMs: expect.any(Number),
+			errorCategory: "filesystem",
+			code: "EACCES",
+		});
+		expect(JSON.stringify(boundary.events)).not.toContain("/private/config/media-name.sqlite");
+	});
+	it("omits unknown and accessor-backed error codes", async () => {
+		const { timeSqliteStartupPhase } = await import("../runtime-schema-timing.js");
+		const error = Object.assign(new Error("private payload"), { code: "EACCES /secret" });
+		try {
+			timeSqliteStartupPhase("database-open", () => {
+				throw error;
+			});
+		} catch {}
+		expect(boundary.events.at(-1)).toMatchObject({ errorCategory: "unknown", code: null });
+		boundary.events.length = 0;
+		const hostile = new Error("hidden");
+		Object.defineProperty(hostile, "code", { get: () => "EACCES" });
+		try {
+			timeSqliteStartupPhase("database-open", () => {
+				throw hostile;
+			});
+		} catch {}
+		expect(boundary.events.at(-1)).toMatchObject({ errorCategory: "unknown", code: null });
+		expect(JSON.stringify(boundary.events)).not.toContain("private payload");
+	});
+	it("identifies an early missing-parent startup failure before catalog preflight", async () => {
+		const { provisionSqliteRestoreRuntimeSchema } = await import(
+			"../restore-runtime-sqlite-enrollment.js"
+		);
+		const parent = join(tmpdir(), "arr-sqlite-missing-" + randomUUID());
+		await expect(
+			provisionSqliteRestoreRuntimeSchema(
+				pathToFileURL(join(parent, "app.db")).href,
+				{
+					runtimeEpoch: "00000000-0000-4000-8000-000000000001",
+				},
+				{
+					preflight: () => ({}),
+					apply: async () => {},
+					finish: () => ({ apiPort: null, webPort: null, listenAddress: null }),
+				},
+			),
+		).rejects.toMatchObject({ name: "RuntimeSchemaStartupError", category: "startup-unavailable" });
+		expect(boundary.events).toEqual([
+			{
+				category: "sqlite-startup-phase",
+				phase: "database-file",
+				outcome: "failed",
+				elapsedMs: expect.any(Number),
+				errorCategory: "filesystem",
+				code: "ENOENT",
+			},
+		]);
+		expect(JSON.stringify(boundary.events)).not.toContain(parent);
+	});
+	it("classifies a packaged registry load failure before schema provisioning", async () => {
+		vi.doMock("../runtime-schema-registry.js", async () => {
+			const actual = await vi.importActual<typeof import("../runtime-schema-registry.js")>(
+				"../runtime-schema-registry.js",
+			);
+			return {
+				...actual,
+				loadRuntimeSchemaRegistry: () => {
+					throw new actual.RuntimeSchemaRegistryError();
+				},
+			};
+		});
+		try {
+			const { synchronizeSqliteRuntimeSchema } = await import("../runtime-schema-sqlite.js");
+			await expect(synchronizeSqliteRuntimeSchema("file:/unused.sqlite")).rejects.toMatchObject({
+				name: "RuntimeSchemaRegistryError",
+			});
+			expect(boundary.events).toEqual([
+				{
+					category: "sqlite-startup-phase",
+					phase: "schema-registry",
+					outcome: "failed",
+					elapsedMs: expect.any(Number),
+					errorCategory: "schema",
+					code: null,
+				},
+				{
+					category: "sqlite-startup-phase",
+					phase: "total",
+					outcome: "failed",
+					elapsedMs: expect.any(Number),
+					errorCategory: "schema",
+					code: null,
+				},
+			]);
+		} finally {
+			vi.doUnmock("../runtime-schema-registry.js");
+		}
+	});
+
+	it("preserves selected exact SQLite extended codes and rejects prefix-like values", async () => {
+		const { timeSqliteStartupPhase } = await import("../runtime-schema-timing.js");
+		for (const [code, expected] of [
+			["SQLITE_IOERR_FSTAT", "SQLITE_IOERR_FSTAT"],
+			["SQLITE_IOERR_FSTAT_PRIVATE", null],
+		] as const) {
+			boundary.events.length = 0;
+			const error = Object.assign(new Error("private"), { code });
+			try {
+				timeSqliteStartupPhase("database-open", () => {
+					throw error;
+				});
+			} catch {}
+			expect(boundary.events.at(-1)).toMatchObject({
+				errorCategory: expected === null ? "unknown" : "database",
+				code: expected,
+			});
+		}
+	});
+	it("classifies only the exact known storage identity and ownership errors", async () => {
+		const { timeSqliteStartupPhase } = await import("../runtime-schema-timing.js");
+		const { SqliteRestoreRuntimeEnrollmentError } = await import(
+			"../restore-runtime-sqlite-enrollment.js"
+		);
+		const { SqliteRestoreRuntimeOwnershipError } = await import("../restore-runtime-sqlite.js");
+		for (const [error, errorCategory] of [
+			[new SqliteRestoreRuntimeEnrollmentError(), "storage-identity"],
+			[new SqliteRestoreRuntimeOwnershipError(), "storage-ownership"],
+		] as const) {
+			boundary.events.length = 0;
+			try {
+				timeSqliteStartupPhase("storage-resolution", () => {
+					throw error;
+				});
+			} catch {}
+			expect(boundary.events.at(-1)).toMatchObject({ errorCategory, code: null });
+		}
 	});
 });

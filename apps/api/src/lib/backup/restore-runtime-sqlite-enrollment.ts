@@ -32,7 +32,7 @@ import {
 	RuntimeSchemaStartupError,
 	type RuntimeSchemaStartupSettings,
 } from "./runtime-schema-startup.js";
-import { timeSqliteStartupPhase } from "./runtime-schema-timing.js";
+import { timeSqliteStartupPhase, timeSqliteStartupPhaseAsync } from "./runtime-schema-timing.js";
 import { validateTrackedSqliteForeignKeys } from "./runtime-sqlite-foreign-keys.js";
 import { isSqliteSnapshotDateValidationTrigger } from "./runtime-sqlite-snapshot-dates.js";
 import { applySqliteStartupCacheHint } from "./runtime-sqlite-startup-cache.js";
@@ -401,71 +401,98 @@ export async function provisionSqliteRestoreRuntimeSchema<Plan>(
 	let result: RuntimeSchemaStartupSettings | undefined;
 	let failure: RuntimeSchemaStartupError | undefined;
 	try {
-		const initial = initialStartupRecord(startup);
-		const created = createMissingSchemaFile(databaseUrl);
-		const storage = resolveSqliteRestoreStorage(databaseUrl);
-		if (created) {
-			const current = lstatSync(storage.databasePath, { bigint: true });
+		const initial = timeSqliteStartupPhase("startup-record", () => initialStartupRecord(startup));
+		const created = timeSqliteStartupPhase("database-file", () =>
+			createMissingSchemaFile(databaseUrl),
+		);
+		const storage = timeSqliteStartupPhase("storage-resolution", () => {
+			const resolved = resolveSqliteRestoreStorage(databaseUrl);
+			if (created) {
+				const current = lstatSync(resolved.databasePath, { bigint: true });
+				if (
+					created.path !== resolved.databasePath ||
+					created.device !== current.dev ||
+					created.inode !== current.ino
+				)
+					throw new RuntimeSchemaStartupError();
+			}
+			return resolved;
+		});
+		main = timeSqliteStartupPhase(
+			"database-open",
+			() => new Database(storage.databasePath, { fileMustExist: true, timeout: 0 }),
+		);
+		const writer = main;
+		timeSqliteStartupPhase("descriptor-identity", () => assertMainDescriptor(storage, writer));
+		const mode = timeSqliteStartupPhase("database-configuration", () => {
+			applySqliteStartupCacheHint(writer);
+			writer.pragma("foreign_keys=ON");
+			writer.pragma("synchronous=FULL");
+			const configuredMode = writer.pragma("journal_mode", { simple: true });
 			if (
-				created.path !== storage.databasePath ||
-				created.device !== current.dev ||
-				created.inode !== current.ino
+				!["delete", "wal"].includes(String(configuredMode)) ||
+				writer.pragma("foreign_keys", { simple: true }) !== 1 ||
+				writer.pragma("synchronous", { simple: true }) !== 2
 			)
 				throw new RuntimeSchemaStartupError();
-		}
-		main = new Database(storage.databasePath, { fileMustExist: true, timeout: 0 });
-		const writer = main;
-		assertMainDescriptor(storage, writer);
-		applySqliteStartupCacheHint(writer);
-		writer.pragma("foreign_keys=ON");
-		writer.pragma("synchronous=FULL");
-		const mode = writer.pragma("journal_mode", { simple: true });
-		if (
-			!["delete", "wal"].includes(String(mode)) ||
-			writer.pragma("foreign_keys", { simple: true }) !== 1 ||
-			writer.pragma("synchronous", { simple: true }) !== 2
-		)
-			throw new RuntimeSchemaStartupError();
-		writer.exec("BEGIN EXCLUSIVE");
-		assertMainDescriptor(storage, writer);
+			return configuredMode;
+		});
+		timeSqliteStartupPhase("exclusive-transaction-begin", () => writer.exec("BEGIN EXCLUSIVE"));
+		timeSqliteStartupPhase("descriptor-identity", () => assertMainDescriptor(storage, writer));
 		// Complete read-only plan before any coordination creation/application DDL.
 		const plan = operation.preflight(writer);
 		const exists = (table: string) =>
 			writer
 				.prepare("SELECT 1 FROM main.sqlite_schema WHERE type='table' AND name=?")
 				.get(table) !== undefined;
-		const bindings = exists("SqliteRestoreStorageBinding")
-			? (writer
-					.prepare(`SELECT ${COLUMNS.join(", ")} FROM SqliteRestoreStorageBinding LIMIT 2`)
-					.all() as Binding[])
-			: [];
-		const journals = exists("RestoreRuntimeControl")
-			? (writer
-					.prepare(`SELECT ${RUNTIME_COLUMNS.join(", ")} FROM RestoreRuntimeControl LIMIT 2`)
-					.all() as Record<string, unknown>[])
-			: [];
+		const { bindings, journals } = timeSqliteStartupPhase("enrollment-catalog-read", () => {
+			const bindings = exists("SqliteRestoreStorageBinding")
+				? (writer
+						.prepare(`SELECT ${COLUMNS.join(", ")} FROM SqliteRestoreStorageBinding LIMIT 2`)
+						.all() as Binding[])
+				: [];
+			const journals = exists("RestoreRuntimeControl")
+				? (writer
+						.prepare(`SELECT ${RUNTIME_COLUMNS.join(", ")} FROM RestoreRuntimeControl LIMIT 2`)
+						.all() as Record<string, unknown>[])
+				: [];
+			return { bindings, journals };
+		});
 		const cold = bindings.length === 0;
 		let binding: Binding;
 		if (cold) {
-			if (
-				journals.length ||
-				exists("ArrSchemaMigrationReceipt") ||
-				(exists("ArrRuntimeDataFormatReceipt") &&
-					writer.prepare("SELECT 1 FROM main.ArrRuntimeDataFormatReceipt LIMIT 1").get()) ||
-				!absent(storage.coordinationDirectoryPath)
-			)
-				throw new RuntimeSchemaStartupError();
-			createCoordination(storage);
-			binding = captureBinding(storage);
+			timeSqliteStartupPhase("cold-enrollment-check", () => {
+				if (
+					journals.length ||
+					exists("ArrSchemaMigrationReceipt") ||
+					(exists("ArrRuntimeDataFormatReceipt") &&
+						writer.prepare("SELECT 1 FROM main.ArrRuntimeDataFormatReceipt LIMIT 1").get()) ||
+					!absent(storage.coordinationDirectoryPath)
+				)
+					throw new RuntimeSchemaStartupError();
+			});
+			binding = timeSqliteStartupPhase("coordination-enrollment", () => {
+				createCoordination(storage);
+				return captureBinding(storage);
+			});
 		} else {
-			if (bindings.length !== 1 || journals.length !== 1) throw new RuntimeSchemaStartupError();
-			binding = bindings[0]!;
-			assertBinding(storage, binding);
-			parseSqliteRestoreRuntimeRecord(journals[0]!);
+			binding = timeSqliteStartupPhase("storage-binding-validation", () => {
+				if (bindings.length !== 1 || journals.length !== 1) throw new RuntimeSchemaStartupError();
+				const persisted = bindings[0]!;
+				assertBinding(storage, persisted);
+				return persisted;
+			});
+			timeSqliteStartupPhase("startup-journal-validation", () =>
+				parseSqliteRestoreRuntimeRecord(journals[0]!),
+			);
 		}
-		ownership = await acquireSqliteRestoreRuntimeOwnership(`file:${storage.databasePath}`);
-		if (!(await ownership.tryAcquireExclusive())) throw new RuntimeSchemaStartupError();
+		ownership = await timeSqliteStartupPhaseAsync("ownership-acquire", () =>
+			acquireSqliteRestoreRuntimeOwnership(`file:${storage.databasePath}`),
+		);
 		const owner = ownership;
+		await timeSqliteStartupPhaseAsync("ownership-exclusive", async () => {
+			if (!(await owner.tryAcquireExclusive())) throw new RuntimeSchemaStartupError();
+		});
 		const assertOwned = async () => {
 			await owner.assertOwned();
 			if (!(await owner.tryAcquireExclusive()) || !writer.inTransaction)
@@ -473,7 +500,7 @@ export async function provisionSqliteRestoreRuntimeSchema<Plan>(
 			assertMainDescriptor(storage, writer);
 			assertBinding(storage, binding);
 		};
-		await assertOwned();
+		await timeSqliteStartupPhaseAsync("pre-apply-ownership", assertOwned);
 		await operation.apply(writer, plan, assertOwned);
 		await assertOwned();
 		if (cold)
@@ -525,21 +552,26 @@ export async function provisionSqliteRestoreRuntimeSchema<Plan>(
 		);
 	} finally {
 		try {
-			if (main?.inTransaction) main.exec("ROLLBACK");
+			timeSqliteStartupPhase("rollback", () => {
+				if (main?.inTransaction) main.exec("ROLLBACK");
+			});
 		} catch {
 			if (!failure || failure.category === "format-migration-required")
 				failure = new RuntimeSchemaStartupError();
 		}
 		try {
-			if (main?.open) main.close();
-			if (main?.open && (!failure || failure.category === "format-migration-required"))
-				failure = new RuntimeSchemaStartupError("closure-unverified");
+			timeSqliteStartupPhase("database-close", () => {
+				if (main?.open) main.close();
+				if (main?.open) throw new RuntimeSchemaStartupError("closure-unverified");
+			});
 		} catch {
 			if (!failure || failure.category === "format-migration-required")
 				failure = new RuntimeSchemaStartupError("closure-unverified");
 		}
 		try {
-			await ownership?.close();
+			await timeSqliteStartupPhaseAsync("ownership-close", async () => {
+				await ownership?.close();
+			});
 		} catch {
 			if (!failure || failure.category === "format-migration-required")
 				failure = new RuntimeSchemaStartupError("closure-unverified");

@@ -2,10 +2,12 @@ import { type ChildProcess, fork, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
 	chmodSync,
+	copyFileSync,
 	existsSync,
 	lstatSync,
 	mkdirSync,
 	mkdtempSync,
+	readFileSync,
 	renameSync,
 	rmSync,
 } from "node:fs";
@@ -120,13 +122,18 @@ function validateSqliteCliDiagnostics(
 		.map((line) => JSON.parse(line) as Record<string, unknown>);
 	// Reject extra fields/lines rather than hiding arbitrary stderr or private data.
 	for (const event of events) {
-		expect(Object.keys(event).sort()).toEqual([
-			"category",
-			"elapsedMs",
-			"level",
-			"outcome",
-			"phase",
-		]);
+		const failed = event.outcome === "failed";
+		expect(Object.keys(event).sort()).toEqual(
+			failed
+				? ["category", "code", "elapsedMs", "errorCategory", "level", "outcome", "phase"]
+				: ["category", "elapsedMs", "level", "outcome", "phase"],
+		);
+		if (failed) {
+			expect(success).toBe(false);
+			expect(event.phase).toBe("total");
+			expect(event.errorCategory).toBe("schema");
+			expect(event.code).toBeNull();
+		}
 		expect(event.category).toBe("sqlite-startup-phase");
 		expect(event.level).toBe(30);
 		expect(typeof event.elapsedMs).toBe("number");
@@ -334,6 +341,58 @@ describe.skipIf(process.platform !== "linux")("native SQLite schema startup writ
 			);
 			expect(rows("RestoreRuntimeControl")).toEqual(before);
 			expect(rows("ArrSchemaMigrationReceipt")).toEqual(receipt);
+		},
+		startupCliTestTimeoutMs,
+	);
+	it.each([
+		["unanchored coordination", "cold-enrollment-check", "schema"],
+		["copied enrolled file", "storage-binding-validation", "storage-identity"],
+	])(
+		"distinguishes the #934 pre-apply signature for %s and conserves data",
+		async (scenario, phase, errorCategory) => {
+			if (scenario === "unanchored coordination") {
+				new Database(path).close();
+				mkdirSync(path + ".arr-restore-runtime", { mode: 0o700 });
+			} else {
+				await synchronize();
+				const original = path + ".original";
+				renameSync(path, original);
+				copyFileSync(original, path);
+			}
+			const before = readFileSync(path);
+			const result = await runStartupCli(url);
+			expect(result).toMatchObject({ code: 1, signal: null, stdout: "" });
+			expect(result.stderr.endsWith(cliUnavailable.stderr)).toBe(true);
+			expect(result.stderr).not.toContain(directory);
+			const logText = result.stderr.slice(0, -cliUnavailable.stderr.length);
+			expect(logText.endsWith("\n")).toBe(true);
+			const diagnostics = logText
+				.slice(0, -1)
+				.split("\n")
+				.map((line) => JSON.parse(line) as Record<string, unknown>);
+			expect(diagnostics).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({ phase: "catalog-preflight", outcome: "completed" }),
+					expect.objectContaining({ phase: "schema-plan", outcome: "completed" }),
+				]),
+			);
+			if (scenario === "unanchored coordination") {
+				expect(diagnostics).toContainEqual(
+					expect.objectContaining({ phase: "date-plan", outcome: "completed" }),
+				);
+			}
+			expect(diagnostics.some((event) => event.phase === "schema-apply")).toBe(false);
+			expect(diagnostics.at(-2)).toEqual({
+				level: 30,
+				category: "sqlite-startup-phase",
+				elapsedMs: expect.any(Number),
+				phase,
+				outcome: "failed",
+				errorCategory,
+				code: null,
+			});
+			expect(diagnostics.at(-1)).toMatchObject({ phase: "total", outcome: "failed" });
+			expect(readFileSync(path)).toEqual(before);
 		},
 		startupCliTestTimeoutMs,
 	);
