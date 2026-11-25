@@ -79,6 +79,20 @@ type SafeFailure = Readonly<{
 		| "unknown";
 	code: string | null;
 	refusal?: string;
+	storageBinding?: Readonly<{
+		header: "valid" | "invalid";
+		objects: readonly Readonly<{
+			object: "database" | "directory" | "coordination" | "owner" | "operations";
+			classification:
+				| "match"
+				| "device-mismatch"
+				| "inode-mismatch"
+				| "device-and-inode-mismatch"
+				| "missing"
+				| "invalid"
+				| "unknown";
+		}>[];
+	}>;
 }>;
 
 const COLD_REFUSALS = new Set([
@@ -88,9 +102,71 @@ const COLD_REFUSALS = new Set([
 	"coordination-path",
 ]);
 
+function safeStorageBinding(error: unknown): SafeFailure["storageBinding"] | undefined {
+	if (typeof error !== "object" || error === null) return undefined;
+	try {
+		const property = Object.getOwnPropertyDescriptor(error, "storageBinding");
+		if (!property || !("value" in property)) return undefined;
+		const value = property.value;
+		if (typeof value !== "object" || value === null) return undefined;
+		const header = Object.getOwnPropertyDescriptor(value, "header");
+		const objectsDescriptor = Object.getOwnPropertyDescriptor(value, "objects");
+		if (
+			!header ||
+			!("value" in header) ||
+			(header.value !== "valid" && header.value !== "invalid") ||
+			!objectsDescriptor ||
+			!("value" in objectsDescriptor) ||
+			!Array.isArray(objectsDescriptor.value) ||
+			objectsDescriptor.value.length !== 5
+		)
+			return undefined;
+		const allowedObjects = ["database", "directory", "coordination", "owner", "operations"];
+		const allowedClassifications = [
+			"match",
+			"device-mismatch",
+			"inode-mismatch",
+			"device-and-inode-mismatch",
+			"missing",
+			"invalid",
+			"unknown",
+		];
+		const objects: NonNullable<SafeFailure["storageBinding"]>["objects"][number][] = [];
+		for (const [index, item] of objectsDescriptor.value.entries()) {
+			if (typeof item !== "object" || item === null) return undefined;
+			const object = Object.getOwnPropertyDescriptor(item, "object");
+			const classification = Object.getOwnPropertyDescriptor(item, "classification");
+			if (
+				!object ||
+				!("value" in object) ||
+				object.value !== allowedObjects[index] ||
+				!classification ||
+				!("value" in classification) ||
+				!allowedClassifications.includes(classification.value)
+			)
+				return undefined;
+			objects.push({
+				object: object.value as NonNullable<
+					SafeFailure["storageBinding"]
+				>["objects"][number]["object"],
+				classification: classification.value as NonNullable<
+					SafeFailure["storageBinding"]
+				>["objects"][number]["classification"],
+			});
+		}
+		return { header: header.value, objects };
+	} catch {
+		return undefined;
+	}
+}
+
 function safeFailure(error: unknown, phase: SqliteStartupPhase): SafeFailure {
 	let rawCode: unknown;
 	let name: unknown;
+	const storageBinding =
+		phase === "storage-binding-validation" ? safeStorageBinding(error) : undefined;
+	const withBinding = <T extends SafeFailure>(failure: T): SafeFailure =>
+		storageBinding ? { ...failure, storageBinding } : failure;
 	try {
 		if (typeof error === "object" && error !== null) {
 			const code = Object.getOwnPropertyDescriptor(error, "code");
@@ -107,7 +183,7 @@ function safeFailure(error: unknown, phase: SqliteStartupPhase): SafeFailure {
 				typeof refusal.value === "string" &&
 				COLD_REFUSALS.has(refusal.value)
 			)
-				return { errorCategory: "schema", code: null, refusal: refusal.value };
+				return withBinding({ errorCategory: "schema", code: null, refusal: refusal.value });
 			if (ownName && "value" in ownName) name = ownName.value;
 			else {
 				const prototype = Object.getPrototypeOf(error);
@@ -117,27 +193,27 @@ function safeFailure(error: unknown, phase: SqliteStartupPhase): SafeFailure {
 			}
 		}
 	} catch {
-		return { errorCategory: "unknown", code: null };
+		return withBinding({ errorCategory: "unknown", code: null });
 	}
 	if (typeof rawCode === "string" && FILESYSTEM_CODES.has(rawCode))
-		return { errorCategory: "filesystem", code: rawCode };
+		return withBinding({ errorCategory: "filesystem", code: rawCode });
 	if (typeof rawCode === "string" && SQLITE_CODES.has(rawCode))
-		return { errorCategory: "database", code: rawCode };
+		return withBinding({ errorCategory: "database", code: rawCode });
 	if (
 		typeof name === "string" &&
 		["RuntimeSchemaStartupError", "RuntimeSchemaRegistryError", "RuntimeSchemaPlanError"].includes(
 			name,
 		)
 	)
-		return { errorCategory: "schema", code: null };
+		return withBinding({ errorCategory: "schema", code: null });
 	if (
 		typeof name === "string" &&
 		["SqliteRestoreStorageUnavailableError", "SqliteRestoreRuntimeEnrollmentError"].includes(name)
 	)
-		return { errorCategory: "storage-identity", code: null };
+		return withBinding({ errorCategory: "storage-identity", code: null });
 	if (name === "SqliteRestoreRuntimeOwnershipError")
-		return { errorCategory: "storage-ownership", code: null };
-	return { errorCategory: "unknown", code: null };
+		return withBinding({ errorCategory: "storage-ownership", code: null });
+	return withBinding({ errorCategory: "unknown", code: null });
 }
 
 function report(
