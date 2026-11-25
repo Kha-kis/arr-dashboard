@@ -78,6 +78,16 @@ describe("Docker runtime-selected liveness", () => {
 		expect(requests).toEqual(["/live"]);
 	});
 
+	it.each(["::ffff:127.0.0.2", "::ffff:0.0.0.0"])(
+		"normalizes the local IPv4-mapped listener %s",
+		async (host) => {
+			const port = await listen(200, false, 0, host);
+			health.publishWebPort(port, directory, host);
+			expect(await health.checkWebHealth(directory)).toBe(true);
+			expect(requests).toEqual(["/live"]);
+		},
+	);
+
 	it("does not probe a nonlocal address from runtime metadata", async () => {
 		health.publishWebPort("3000", directory);
 		writeFileSync(join(directory, "web-port"), "3000\n192.0.2.1\n");
