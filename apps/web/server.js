@@ -42,6 +42,52 @@ try {
 	process.exit(1);
 }
 
+const { dockerIPv6ApiSocket, localSocketTarget } = require("./docker-socket-target.cjs");
+const apiSocket = dockerIPv6ApiSocket(process.env.ARR_INTERNAL_API_SOCKET, apiHost);
+let apiRewriteOrigin = apiHost;
+if (apiSocket) {
+	// Next treats IPv6 colons as rewrite parameters. Use a non-routable
+	// placeholder for the two owned rewrites and restore the socket at dial time.
+	const placeholder = new URL(`http://arr-dashboard-api.invalid:${apiSocket.port}`);
+	apiRewriteOrigin = placeholder.origin;
+	const httpxyModule = require.resolve("next/dist/compiled/httpxy");
+	const httpxy = require(httpxyModule);
+	class DockerApiProxy extends httpxy.ProxyServer {
+		constructor(options) {
+			const target = options?.target;
+			if (target instanceof URL && target.origin === placeholder.origin) {
+				if (!/^\/(api|auth)\//.test(target.pathname))
+					throw new Error("Unexpected internal API rewrite");
+				super({
+					...options,
+					target: {
+						hostname: localSocketTarget(apiSocket.hostname),
+						host: apiSocket.origin.host,
+						protocol: "http:",
+						port: apiSocket.port,
+						pathname: target.pathname + target.search,
+					},
+				});
+			} else {
+				super(options);
+			}
+		}
+	}
+	require.cache[httpxyModule].exports = { ...httpxy, ProxyServer: DockerApiProxy };
+}
+
+if (hostname.includes("%") && require("node:net").isIPv6(hostname)) {
+	// A zone belongs to the listened socket, not to a WHATWG URL authority.
+	// Next still passes the original hostname to listen().
+	const originModule = require.resolve("next/dist/server/lib/format-hostname");
+	const formatter = require(originModule);
+	require.cache[originModule].exports = {
+		formatHostname(value) {
+			return formatter.formatHostname(value === hostname ? value.split("%")[0] : value);
+		},
+	};
+}
+
 // Keep Next's compiled route matchers and proxy implementation. Only replace
 // the two application-owned destinations, leaving other rewrites untouched.
 function patchBackendRewrites(groups) {
@@ -56,7 +102,7 @@ function patchBackendRewrites(groups) {
 			expected.delete(route.source);
 			return {
 				...route,
-				destination: apiHost + route.destination.slice("http://localhost:3001".length),
+				destination: apiRewriteOrigin + route.destination.slice("http://localhost:3001".length),
 			};
 		});
 	}

@@ -136,7 +136,9 @@ RUN chown root:root /app/web \
 # Copy startup scripts and fix line endings (single layer)
 COPY --chown=root:root docker/start-combined.sh ./
 COPY --chown=root:root docker/validate-runtime.sh docker/validate-provider-runtime.cjs ./api/
-COPY --chown=root:root docker/runtime-health.cjs ./runtime-health.cjs
+COPY --chown=root:root docker/runtime-health.cjs apps/web/docker-socket-target.cjs ./
+# Server.js runs outside Next's bundled route code and loads this same socket contract.
+COPY --chown=root:root apps/web/docker-socket-target.cjs ./web/
 # Heap-snapshot helper for operators (issue #427). Installed in PATH so
 # users can run `docker exec <container> dump-heap` without needing to
 # know the API's internal process layout.

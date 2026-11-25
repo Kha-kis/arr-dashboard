@@ -1,3 +1,5 @@
+import { fetchInternalApi } from "@/lib/fetch-internal-api";
+
 export const dynamic = "force-dynamic";
 
 const HOP_HEADERS = [
@@ -34,7 +36,7 @@ export async function GET(request: Request): Promise<Response> {
 	let upstream: Response;
 	let body: ArrayBuffer;
 	try {
-		upstream = await fetch(target, {
+		upstream = await fetchInternalApi(target, {
 			method: "GET",
 			headers: requestHeaders,
 			cache: "no-store",

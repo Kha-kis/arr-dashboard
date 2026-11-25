@@ -5,7 +5,12 @@ const path = require("node:path");
 const { randomUUID } = require("node:crypto");
 const { lookup } = require("node:dns/promises");
 const { isIP } = require("node:net");
-const { networkInterfaces } = require("node:os");
+const { get } = require("node:http");
+const { localSocketTarget, socketOrigin } = fs.existsSync(
+	path.join(__dirname, "docker-socket-target.cjs"),
+)
+	? require("./docker-socket-target.cjs")
+	: require("../apps/web/docker-socket-target.cjs");
 
 // Ephemeral container state, not database/configuration or readiness evidence.
 const runtimeDirectory = "/tmp/arr-dashboard-runtime-health";
@@ -19,69 +24,9 @@ function parsePort(value) {
 	return port;
 }
 
-function canonicalIp(address) {
-	if (isIP(address) === 4) return address;
-	if (isIP(address) === 6) {
-		const canonical = new URL(`http://[${address}]`).hostname.slice(1, -1);
-		const mapped = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(canonical);
-		if (!mapped) return canonical;
-		const high = Number.parseInt(mapped[1], 16);
-		const low = Number.parseInt(mapped[2], 16);
-		return [high >> 8, high & 255, low >> 8, low & 255].join(".");
-	}
-	throw new Error("Invalid local address");
-}
-
-function localBindTarget(value) {
-	const address = canonicalIp(value);
-	if (address === "0.0.0.0") return "127.0.0.1";
-	if (address === "::") return "::1";
-	if (address.startsWith("127.") || address === "::1") return address;
-	const local = Object.values(networkInterfaces())
-		.flat()
-		.some((entry) => entry && canonicalIp(entry.address) === address);
-	if (!local) throw new Error("Invalid local address");
-	return address;
-}
-
-function scopedLoopbackTarget(address) {
-	const [literal, scope] = address.split("%");
-	const canonical = canonicalIp(literal);
-	if (
-		canonical !== "::" &&
-		canonical !== "::1" &&
-		canonical !== "0.0.0.0" &&
-		!canonical.startsWith("127.")
-	) {
-		throw new Error("Scoped listener requires an interface-aware HTTP target");
-	}
-
-	const interfaces = fs.readdirSync("/sys/class/net");
-	const scopeExists = /^[0-9]+$/.test(scope)
-		? interfaces.some(
-				(name) =>
-					Number(fs.readFileSync(path.join("/sys/class/net", name, "ifindex"), "utf8")) ===
-					Number(scope),
-			)
-		: interfaces.includes(scope);
-	if (!scopeExists) throw new Error("Invalid local interface scope");
-
-	// The kernel has no interface-specific destination for these addresses.
-	// Keep HOST intact for both listeners and the supervisor.
-	return {
-		target: localBindTarget(canonical),
-		scopedWildcard: canonical === "::" || canonical === "0.0.0.0",
-	};
-}
-
 async function resolveLocalBindTarget(value) {
-	if (isIP(value) === 6 && value.includes("%")) return scopedLoopbackTarget(value);
 	const address = isIP(value) ? value : (await lookup(value)).address;
-	return { target: localBindTarget(address) };
-}
-
-function origin(port, target) {
-	return `http://${isIP(target) === 6 ? `[${target}]` : target}:${port}`;
+	return localSocketTarget(address);
 }
 
 function directoryOwner(directory, publishing) {
@@ -99,7 +44,7 @@ function directoryOwner(directory, publishing) {
 
 function publishWebPort(value, directory = runtimeDirectory, target) {
 	const port = parsePort(value);
-	const metadata = target === undefined ? `${port}\n` : `${port}\n${localBindTarget(target)}\n`;
+	const metadata = target === undefined ? `${port}\n` : `${port}\n${localSocketTarget(target)}\n`;
 	try {
 		fs.mkdirSync(directory, { mode: 0o700 });
 	} catch (error) {
@@ -127,7 +72,7 @@ function publishWebPort(value, directory = runtimeDirectory, target) {
 	}
 }
 
-function readWebOrigin(directory) {
+function readWebSocket(directory) {
 	const owner = directoryOwner(directory, false);
 	const descriptor = fs.openSync(
 		path.join(directory, "web-port"),
@@ -140,19 +85,19 @@ function readWebOrigin(directory) {
 			state.uid !== owner ||
 			(state.mode & 0o777) !== 0o600 ||
 			state.size < 2 ||
-			state.size > 46
+			state.size > 81
 		) {
 			throw new Error("Invalid runtime metadata");
 		}
-		const buffer = Buffer.alloc(47);
+		const buffer = Buffer.alloc(82);
 		const length = fs.readSync(descriptor, buffer, 0, buffer.length, 0);
 		const value = buffer.subarray(0, length).toString("utf8");
 		if (length !== state.size || !value.endsWith("\n")) throw new Error("Invalid runtime metadata");
 		const fields = value.slice(0, -1).split("\n");
 		if (fields.length !== 1 && fields.length !== 2) throw new Error("Invalid runtime metadata");
 		const port = parsePort(fields[0]);
-		const target = fields.length === 2 ? localBindTarget(fields[1]) : "127.0.0.1";
-		return origin(port, target);
+		const hostname = fields.length === 2 ? localSocketTarget(fields[1]) : "127.0.0.1";
+		return { port, hostname };
 	} finally {
 		fs.closeSync(descriptor);
 	}
@@ -160,16 +105,24 @@ function readWebOrigin(directory) {
 
 async function checkWebHealth(directory = runtimeDirectory) {
 	try {
-		const base = readWebOrigin(directory);
-		const response = await fetch(`${base}/live`, {
-			redirect: "manual",
-			// Web /live already permits an 8s API response. Stay above that
-			// budget and below the image's unchanged 10s Docker timeout.
-			signal: AbortSignal.timeout(9000),
+		const { hostname, port } = readWebSocket(directory);
+		return await new Promise((resolve) => {
+			const request = get(
+				{
+					hostname,
+					port,
+					path: "/live",
+					headers: { host: new URL(socketOrigin(port, hostname)).host },
+					// Web allows an 8s API response. Stay below the Docker probe timeout.
+					signal: AbortSignal.timeout(9000),
+				},
+				(response) => {
+					response.destroy();
+					resolve(response.statusCode === 200);
+				},
+			);
+			request.once("error", () => resolve(false));
 		});
-		const healthy = response.status === 200;
-		await response.body?.cancel();
-		return healthy;
 	} catch {
 		return false;
 	}
@@ -178,20 +131,22 @@ async function checkWebHealth(directory = runtimeDirectory) {
 module.exports = { publishWebPort, checkWebHealth };
 
 if (require.main === module) {
-	const [command, port, host] = process.argv.slice(2);
-	if ((command === "publish" || command === "target") && process.argv.length === 5) {
+	const [command, webPort, apiPort, host] = process.argv.slice(2);
+	if (command === "handoff" && process.argv.length === 6) {
 		resolveLocalBindTarget(host)
-			.then(({ target, scopedWildcard }) => {
-				if (command === "target") {
-					process.stdout.write(origin(parsePort(port), target));
-					return;
-				}
-				publishWebPort(port, runtimeDirectory, target);
-				if (scopedWildcard) {
+			.then((target) => {
+				const apiOrigin = socketOrigin(parsePort(apiPort), target);
+				publishWebPort(webPort, runtimeDirectory, target);
+				const literal = host.split("%")[0];
+				if (
+					host.includes("%") &&
+					["::", "::ffff:0:0"].includes(new URL(`http://[${literal}]`).hostname.slice(1, -1))
+				) {
 					process.stderr.write(
 						"WARNING: An interface scope does not restrict a wildcard HOST. Use ::1 or 127.0.0.1 for loopback-only access.\n",
 					);
 				}
+				process.stdout.write(`${apiOrigin}\t${target}`);
 			})
 			.catch(() => {
 				process.stderr.write("ERROR: Runtime listener metadata unavailable\n");

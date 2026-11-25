@@ -1,3 +1,5 @@
+import { fetchInternalApi } from "@/lib/fetch-internal-api";
+
 export const dynamic = "force-dynamic";
 
 export async function GET() {
@@ -6,7 +8,7 @@ export async function GET() {
 	// Allow a transient SQLite busy wait while staying below Docker's 10s probe timeout.
 	try {
 		const apiHost = process.env.API_HOST ?? "http://127.0.0.1:3001";
-		const response = await fetch(new URL("/live", apiHost), {
+		const response = await fetchInternalApi(new URL("/live", apiHost), {
 			method: "HEAD",
 			cache: "no-store",
 			signal: AbortSignal.timeout(8_000),

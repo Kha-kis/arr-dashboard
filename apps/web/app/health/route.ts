@@ -1,10 +1,12 @@
+import { fetchInternalApi } from "@/lib/fetch-internal-api";
+
 export const dynamic = "force-dynamic";
 
 export async function GET() {
 	const apiHost = process.env.API_HOST || "http://localhost:3001";
 	const healthUrl = `${apiHost}/health`;
 	try {
-		const res = await fetch(healthUrl, {
+		const res = await fetchInternalApi(healthUrl, {
 			signal: AbortSignal.timeout(2000),
 			cache: "no-store",
 		});

@@ -52,7 +52,7 @@ setInterval(()=>{},1000);}\n`,
 );
 fixture(
 	"/app/runtime-health.cjs",
-	"if(process.argv[2]==='target')process.stdout.write('http://'+process.argv[4]+':'+process.argv[3]);else process.stdout.write('TEST_HEALTH_PORT:'+process.argv[3]+'\\n');\n",
+	"process.stderr.write('TEST_HEALTH_PORT:'+process.argv[3]+'\\n');process.stdout.write('http://'+process.argv[5]+':'+process.argv[4]+'\\t'+process.argv[5]);\n",
 );
 fixture(
 	"/app/web/server.js",

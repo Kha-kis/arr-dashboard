@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+import { fetchInternalApi } from "@/lib/fetch-internal-api";
 
 const SESSION_COOKIE_NAME = process.env.NEXT_PUBLIC_SESSION_COOKIE_NAME ?? "arr_session";
 const PUBLIC_PATHS = new Set(["/login", "/setup", "/favicon.ico", "/robots.txt", "/sitemap.xml"]);
@@ -49,7 +50,7 @@ async function validateSession(request: NextRequest): Promise<boolean> {
 async function validateSessionAgainstApi(sessionToken: string): Promise<boolean> {
 	try {
 		const apiHost = process.env.API_HOST || "http://localhost:3001";
-		const response = await fetch(`${apiHost}/auth/me`, {
+		const response = await fetchInternalApi(`${apiHost}/auth/me`, {
 			method: "GET",
 			headers: {
 				Cookie: `${SESSION_COOKIE_NAME}=${sessionToken}`,
