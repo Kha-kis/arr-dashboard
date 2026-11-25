@@ -68,13 +68,16 @@ function scopedLoopbackTarget(address) {
 
 	// The kernel has no interface-specific destination for these addresses.
 	// Keep HOST intact for both listeners and the supervisor.
-	return localBindTarget(canonical);
+	return {
+		target: localBindTarget(canonical),
+		scopedWildcard: canonical === "::" || canonical === "0.0.0.0",
+	};
 }
 
 async function resolveLocalBindTarget(value) {
 	if (isIP(value) === 6 && value.includes("%")) return scopedLoopbackTarget(value);
 	const address = isIP(value) ? value : (await lookup(value)).address;
-	return localBindTarget(address);
+	return { target: localBindTarget(address) };
 }
 
 function origin(port, target) {
@@ -178,9 +181,17 @@ if (require.main === module) {
 	const [command, port, host] = process.argv.slice(2);
 	if ((command === "publish" || command === "target") && process.argv.length === 5) {
 		resolveLocalBindTarget(host)
-			.then((target) => {
-				if (command === "publish") publishWebPort(port, runtimeDirectory, target);
-				else process.stdout.write(origin(parsePort(port), target));
+			.then(({ target, scopedWildcard }) => {
+				if (command === "target") {
+					process.stdout.write(origin(parsePort(port), target));
+					return;
+				}
+				publishWebPort(port, runtimeDirectory, target);
+				if (scopedWildcard) {
+					process.stderr.write(
+						"WARNING: An interface scope does not restrict a wildcard HOST. Use ::1 or 127.0.0.1 for loopback-only access.\n",
+					);
+				}
 			})
 			.catch(() => {
 				process.stderr.write("ERROR: Runtime listener metadata unavailable\n");
