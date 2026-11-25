@@ -102,6 +102,42 @@ describe("native inventory durable run admission", { timeout: 30_000 }, () => {
 		expect(await prisma.providerNativeInventoryRun.count()).toBe(1);
 	});
 
+	it("persists progressive replacement admission cooldown on terminal coverage failures", async () => {
+		const { prisma, dbPath, authority } = await database();
+		const reopened = createTestPrismaClient(dbPath);
+		try {
+			let now = NOW;
+			for (const expectedMinutes of [5, 10, 20, 40, 60, 60]) {
+				expect(await admitNativeInventoryRun(prisma, authority, "paired", now)).toEqual({
+					status: "acquired",
+				});
+				const run = await prisma.providerNativeInventoryRun.findFirstOrThrow({
+					where: { activeSlotKey: { not: null } },
+				});
+				const claimed = await claimDueNativeInventoryRun(prisma, run.id, now);
+				if (claimed.status !== "acquired") throw new Error("expected claim");
+				expect(
+					await failNativeInventoryRun(prisma, claimed.claim, "coverage-incomplete", null, now),
+				).toEqual({ status: "incomplete" });
+				const retry = new Date(now.getTime() + expectedMinutes * 60_000);
+				expect(
+					await reopened.providerNativeInventoryRun.findUniqueOrThrow({ where: { id: run.id } }),
+				).toMatchObject({ state: "incomplete", activeSlotKey: null, nextAttemptAt: retry });
+				expect(
+					await admitNativeInventoryRun(
+						reopened,
+						authority,
+						"paired",
+						new Date(retry.getTime() - 1),
+					),
+				).toEqual({ status: "deferred" });
+				now = retry;
+			}
+		} finally {
+			await reopened.$disconnect();
+		}
+	});
+
 	it("settles two clients racing for one paired work slot without duplicate runs", async () => {
 		const { prisma, dbPath, authority } = await database();
 		const other = createTestPrismaClient(dbPath);

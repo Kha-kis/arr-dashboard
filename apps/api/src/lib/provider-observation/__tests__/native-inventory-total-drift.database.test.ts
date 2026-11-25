@@ -194,7 +194,7 @@ describe("native inventory incompatible-total recovery", { timeout: 30_000 }, ()
 				activeSlotKey: null,
 				claimToken: null,
 				leaseUntil: null,
-				nextAttemptAt: null,
+				nextAttemptAt: expect.any(Date),
 				failureCount: 1,
 				lastFailureCategory: "coverage-incomplete",
 			});
@@ -279,7 +279,7 @@ describe("native inventory incompatible-total recovery", { timeout: 30_000 }, ()
 				activeSlotKey: null,
 				claimToken: null,
 				leaseUntil: null,
-				nextAttemptAt: null,
+				nextAttemptAt: expect.any(Date),
 				failureCount: 1,
 				lastFailureCategory: "coverage-incomplete",
 			});

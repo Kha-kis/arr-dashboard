@@ -18,8 +18,9 @@ import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
 const STARTUP_DELAY_MS = 30_000;
 const INTERVAL_MS = 30_000;
 const RETENTION_INTERVAL_MS = 5_000;
+const RETENTION_IDLE_INTERVAL_MS = 60_000;
 const RETENTION_AGE_MS = 24 * 60 * 60_000;
-type RetentionState = { cursor: NativeInventoryRetentionCursor | null };
+type RetentionState = { cursor: NativeInventoryRetentionCursor | null; nextSweepAt?: number };
 const CADENCE = {
 	maxInstances: 8,
 	refreshIntervalMs: NATIVE_INVENTORY_REFRESH_INTERVAL_MS,
@@ -74,11 +75,13 @@ export async function runNativeInventoryRetentionTick(
 ): Promise<void> {
 	if (options.signal?.aborted) return;
 	const state = options.retentionState ?? { cursor: null };
+	if (state.nextSweepAt && Date.now() < state.nextSweepAt) return;
 	const cutoff = new Date(Date.now() - RETENTION_AGE_MS);
 	const started = performance.now();
 	let deletedRows = 0,
 		deletedRuns = 0,
 		scannedRuns = 0;
+	let completedSweep = false;
 	try {
 		// Bound admission, not database latency: an already-started transaction
 		// must commit/roll back before another slice or shutdown can proceed.
@@ -107,9 +110,14 @@ export async function runNativeInventoryRetentionTick(
 			deletedRows += result.deletedRows;
 			deletedRuns += result.deletedRuns;
 			scannedRuns += result.scannedRuns;
-			if (!result.hasMore) break;
+			if (!result.hasMore) {
+				completedSweep = true;
+				break;
+			}
 			await yieldToEventLoop();
 		}
+		if (completedSweep && deletedRows === 0)
+			state.nextSweepAt = Date.now() + RETENTION_IDLE_INTERVAL_MS;
 		app.log.info(
 			{ category: "native-inventory-retention", deletedRows, deletedRuns, scannedRuns },
 			"Native inventory retention completed",
@@ -161,7 +169,12 @@ const nativeInventorySchedulerPlugin = fastifyPlugin(
 		}
 
 		async function retentionTick(): Promise<void> {
-			if (closing || retentionRunning) return;
+			if (
+				closing ||
+				retentionRunning ||
+				(retentionState.nextSweepAt && Date.now() < retentionState.nextSweepAt)
+			)
+				return;
 			retentionRunning = app.schedulerRegistry
 				.track(JOB_ID.nativeInventoryRetention, async () =>
 					runNativeInventoryRetentionTick(app, { signal: shutdown.signal, retentionState }),

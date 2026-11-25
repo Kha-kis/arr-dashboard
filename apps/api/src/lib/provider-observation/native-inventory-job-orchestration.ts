@@ -58,7 +58,7 @@ let fairnessOffset = 0;
 let periodicOffset = 0;
 
 export type NativeInventoryRefreshRequestResult = {
-	status: "accepted" | "coalesced" | "current" | "superseded" | "retryable";
+	status: "accepted" | "coalesced" | "current" | "deferred" | "superseded" | "retryable";
 };
 
 export const NATIVE_INVENTORY_REFRESH_INTERVAL_MS = 30 * 60_000;
@@ -120,6 +120,7 @@ export async function requestNativeInventoryRefresh(
 	let accepted = false;
 	let retryable = false;
 	let coalesced = false;
+	let deferred = false;
 	for (const workKey of workKeys) {
 		if (options.mode !== "force") {
 			const state = await inspectCurrentNativeWork(
@@ -137,9 +138,18 @@ export async function requestNativeInventoryRefresh(
 		if (result.status === "retryable") retryable = true;
 		if (result.status === "acquired") accepted = true;
 		if (result.status === "coalesced") coalesced = true;
+		if (result.status === "deferred") deferred = true;
 	}
 	return {
-		status: retryable ? "retryable" : accepted ? "accepted" : coalesced ? "coalesced" : "current",
+		status: retryable
+			? "retryable"
+			: accepted
+				? "accepted"
+				: coalesced
+					? "coalesced"
+					: deferred
+						? "deferred"
+						: "current",
 	};
 }
 
@@ -202,7 +212,11 @@ export async function schedulePeriodicNativeInventoryWork(
 				latest.connectionGeneration === authority.connectionGeneration &&
 				latest.identityGeneration === authority.identityGeneration;
 			if (options.signal?.aborted) return totals;
-			if (sameAuthority && latest.activeSlotKey !== null) {
+			if (
+				sameAuthority &&
+				(latest.activeSlotKey !== null ||
+					(latest.state === "incomplete" && latest.nextAttemptAt && latest.nextAttemptAt > now))
+			) {
 				totals.skipped++;
 				continue;
 			}
@@ -229,6 +243,7 @@ export async function schedulePeriodicNativeInventoryWork(
 				if (options.signal?.aborted) return totals;
 				const result = await admitNativeInventoryRun(prisma, authority, workKey, now);
 				if (result.status === "acquired") totals.accepted++;
+				else if (result.status === "deferred") totals.skipped++;
 				else totals[result.status]++;
 			} catch {
 				totals.retryable++;

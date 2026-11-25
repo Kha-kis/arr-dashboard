@@ -179,7 +179,7 @@ export const KNOWN_JOBS: readonly JobDefinition[] = [
 		id: JOB_ID.nativeInventoryRetention,
 		label: "Native inventory retention",
 		description:
-			"Drains obsolete native staging independently of provider work every five seconds. Serial ticks admit bounded 500-row transactions for up to two seconds; shutdown joins accepted work.",
+			"Drains obsolete native staging independently of provider work in bounded 500-row slices. Checks every five seconds with work and waits a minute after an idle sweep; shutdown joins accepted work.",
 		concurrency: "serial",
 		intervalMs: 5 * 1000,
 	},
