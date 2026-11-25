@@ -55,7 +55,7 @@ docker-compose up -d
 
 ### SQLite (Default)
 
-No configuration needed. Database stored at `/config/prod.db`:
+No `DATABASE_URL` is needed. Keep the default database at `/config/prod.db` on an explicit persistent directory mount. Check the [SQLite storage transition guide](../docs/SQLITE-STORAGE.md) before replacing a writable-layer installation:
 
 ```bash
 docker run -d \
