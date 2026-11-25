@@ -9,6 +9,7 @@ import {
 	type RestoreRuntime,
 } from "../restore-runtime-admission.js";
 import { createRuntimePrismaClient } from "../restore-runtime-client.js";
+import { readSqliteRuntimeControlCreateSql } from "../runtime-schema-registry.js";
 
 describe("opt-in guarded SQLite transaction write intent", () => {
 	let directory: string;
@@ -25,10 +26,7 @@ describe("opt-in guarded SQLite transaction write intent", () => {
 		writer = new Database(path, { timeout: 0 });
 		chmodSync(path, 0o600);
 		writer.pragma("journal_mode=WAL");
-		writer.exec(`CREATE TABLE RestoreRuntimeControl (
-			id INTEGER PRIMARY KEY, protocolVersion INTEGER NOT NULL, phase TEXT NOT NULL,
-			runtimeEpoch TEXT, ownerBackendPid INTEGER, activeRestoreId TEXT,
-			lastCommittedRestoreId TEXT, lastCommittedAt DATETIME, destinationInstallationId TEXT);
+		writer.exec(`${readSqliteRuntimeControlCreateSql()}
 			CREATE TABLE SqliteRestoreStorageBinding (
 			id INTEGER PRIMARY KEY, protocolVersion INTEGER NOT NULL,
 			databaseDevice TEXT NOT NULL, databaseInode TEXT NOT NULL,
@@ -38,9 +36,7 @@ describe("opt-in guarded SQLite transaction write intent", () => {
 			operationsDevice TEXT NOT NULL, operationsInode TEXT NOT NULL);
 			CREATE TABLE IntentProbe(id INTEGER PRIMARY KEY,value INTEGER NOT NULL);
 			INSERT INTO IntentProbe VALUES(1,0),(2,0);
-			CREATE TABLE IntentTrigger(value INTEGER);
-			CREATE TRIGGER intent_control_update AFTER UPDATE ON RestoreRuntimeControl
-			BEGIN INSERT INTO IntentTrigger VALUES(1); END;`);
+			CREATE TABLE IntentTrigger(value INTEGER);`);
 		losses = 0;
 		runtime = await openRestoreRuntime({
 			databaseUrl: `file:${path}`,
@@ -48,6 +44,9 @@ describe("opt-in guarded SQLite transaction write intent", () => {
 				losses += 1;
 			},
 		});
+		// The trigger observes later guarded writes, not the private enrollment sentinel.
+		writer.exec(`CREATE TRIGGER intent_control_update AFTER UPDATE ON RestoreRuntimeControl
+			BEGIN INSERT INTO IntentTrigger VALUES(1); END;`);
 		await runtime.bindDestination("synthetic-destination");
 		await runtime.activate();
 		writer.exec("DELETE FROM IntentTrigger");

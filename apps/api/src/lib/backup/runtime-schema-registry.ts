@@ -700,6 +700,18 @@ export type RuntimeSchemaExecution = Readonly<{
 	execute: (apply: (sql: string) => void | Promise<void>) => Promise<void>;
 }>;
 
+/** Canonical SQLite guard table needed before normal enrollment schema publication. */
+export function readSqliteRuntimeControlCreateSql(): string {
+	const registry = loadRuntimeSchemaRegistry("sqlite");
+	const document = loadedRegistries.get(registry);
+	const atom = document?.atoms.find(
+		({ kind, tableName, objectName }) =>
+			kind === "table" && tableName === "RestoreRuntimeControl" && objectName === tableName,
+	);
+	if (!atom) unavailable();
+	return atom.sql;
+}
+
 export function prepareRuntimeSchemaExecution(
 	registry: Readonly<RuntimeSchemaRegistry>,
 	catalog: RuntimeSchemaCatalog | RuntimeSchemaPlanningCatalog,

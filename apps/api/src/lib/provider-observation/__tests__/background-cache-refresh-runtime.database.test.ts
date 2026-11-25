@@ -12,6 +12,7 @@ import {
 	loadRuntimeSchemaRegistry,
 	prepareRuntimeSchemaExecution,
 } from "../../backup/runtime-schema-registry.js";
+import { synchronizeSqliteRuntimeSchema } from "../../backup/runtime-schema-sqlite.js";
 import {
 	type JellyfinCacheRefreshResult,
 	refreshOwnedJellyfinCacheWithAttempt,
@@ -140,7 +141,7 @@ async function fixture(runtimeOwned: boolean) {
 			void providerState.beforeItems().then(send);
 		} else send();
 	});
-	const db = new Database(path);
+	let db = new Database(path);
 	const resource = { directory, server, db, close: async () => {} };
 	resources.push(resource);
 	await new Promise<void>((resolve, reject) => {
@@ -149,14 +150,24 @@ async function fixture(runtimeOwned: boolean) {
 	});
 	const address = server.address();
 	if (!address || typeof address === "string") throw new Error("fixture bind failed");
+	if (runtimeOwned) {
+		// A full raw schema creates an empty migration receipt table, which is
+		// historical evidence until the native schema actor establishes enrollment.
+		db.close();
+		await synchronizeSqliteRuntimeSchema(`file:${path}`);
+		db = new Database(path);
+		resource.db = db;
+	}
 	db.pragma("foreign_keys=ON");
 	db.pragma("journal_mode=WAL");
-	await prepareRuntimeSchemaExecution(loadRuntimeSchemaRegistry("sqlite"), {
-		provider: "sqlite",
-		tables: [],
-	}).execute((sql) => {
-		db.exec(sql);
-	});
+	if (!runtimeOwned) {
+		await prepareRuntimeSchemaExecution(loadRuntimeSchemaRegistry("sqlite"), {
+			provider: "sqlite",
+			tables: [],
+		}).execute((sql) => {
+			db.exec(sql);
+		});
+	}
 	let client: PrismaClient;
 	let runtime: RestoreRuntime | undefined;
 	let run = <T>(operation: () => Promise<T>) => operation();
@@ -270,7 +281,7 @@ afterEach(async () => {
 	try {
 		for (const resource of resources.splice(0).reverse()) {
 			await resource.close();
-			resource.db.close();
+			if (resource.db.open) resource.db.close();
 			resource.server.closeAllConnections();
 			if (resource.server.listening)
 				await new Promise<void>((resolve, reject) => {

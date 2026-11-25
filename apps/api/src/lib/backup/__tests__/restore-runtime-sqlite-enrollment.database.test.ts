@@ -1,4 +1,4 @@
-import { fork, type ChildProcess, execFile } from "node:child_process";
+import { type ChildProcess, execFile, fork } from "node:child_process";
 import {
 	chmodSync,
 	existsSync,
@@ -17,15 +17,16 @@ import { promisify } from "node:util";
 import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-	enrollSqliteRestoreRuntimeStorage,
-	SqliteRestoreRuntimeEnrollmentError,
-	type SqliteRestoreRuntimeEnrollment,
-} from "../restore-runtime-sqlite-enrollment.js";
-import { resolveSqliteRestoreStorage } from "../restore-runtime-sqlite-storage.js";
-import {
 	acquireSqliteRestoreOperationLock,
 	acquireSqliteRestoreRuntimeOwnership,
 } from "../restore-runtime-sqlite.js";
+import {
+	enrollSqliteRestoreRuntimeStorage,
+	type SqliteRestoreRuntimeEnrollment,
+	SqliteRestoreRuntimeEnrollmentError,
+} from "../restore-runtime-sqlite-enrollment.js";
+import { resolveSqliteRestoreStorage } from "../restore-runtime-sqlite-storage.js";
+import { readSqliteRuntimeControlCreateSql } from "../runtime-schema-registry.js";
 
 describe("SQLite Restore destination-owned cold storage enrollment", () => {
 	let directory: string;
@@ -43,7 +44,7 @@ describe("SQLite Restore destination-owned cold storage enrollment", () => {
 		main = new Database(databasePath);
 		main.pragma("journal_mode = WAL");
 		main.exec(`CREATE TABLE Marker(value INTEGER); INSERT INTO Marker VALUES(7);
-			CREATE TABLE RestoreRuntimeControl (id INTEGER PRIMARY KEY, protocolVersion INTEGER, phase TEXT);
+			${readSqliteRuntimeControlCreateSql()}
 			CREATE TABLE SqliteRestoreStorageBinding (
 				id INTEGER PRIMARY KEY, protocolVersion INTEGER NOT NULL,
 				databaseDevice TEXT NOT NULL, databaseInode TEXT NOT NULL,
@@ -137,13 +138,15 @@ describe("SQLite Restore destination-owned cold storage enrollment", () => {
 		const first = await enroll();
 		const original = binding();
 		await first.ownership.close();
-		main.exec("INSERT INTO RestoreRuntimeControl VALUES(1,1,'restart-required')");
+		main.exec(
+			"INSERT INTO RestoreRuntimeControl(id,protocolVersion,phase) VALUES(1,1,'restart-required')",
+		);
 		const next = await enroll();
 		await next.ownership.assertOwned();
 		expect(binding()).toEqual(original);
-		expect(main.prepare("SELECT * FROM RestoreRuntimeControl").all()).toEqual([
-			{ id: 1, protocolVersion: 1, phase: "restart-required" },
-		]);
+		expect(
+			main.prepare("SELECT id,protocolVersion,phase FROM RestoreRuntimeControl").all(),
+		).toEqual([{ id: 1, protocolVersion: 1, phase: "restart-required" }]);
 	});
 
 	it("uses one binding for a symlink alias rather than provisioning another namespace", async () => {
@@ -229,7 +232,7 @@ describe("SQLite Restore destination-owned cold storage enrollment", () => {
 	});
 
 	it("refuses a journal with evidence but no anchor without creating sidecars", async () => {
-		main.exec("INSERT INTO RestoreRuntimeControl VALUES(1,1,'idle')");
+		main.exec("INSERT INTO RestoreRuntimeControl(id,protocolVersion,phase) VALUES(1,1,'idle')");
 		await refuse(enroll());
 		expect(binding()).toEqual([]);
 		expect(existsSync(coordinator)).toBe(false);

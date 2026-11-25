@@ -5,6 +5,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { assertRestoreRuntimeOperation, openRestoreRuntime } from "../restore-runtime-admission.js";
+import { readSqliteRuntimeControlCreateSql } from "../runtime-schema-registry.js";
 
 async function fixture(mode: "DELETE" | "WAL" = "DELETE") {
 	const directory = mkdtempSync(join(tmpdir(), "arr-read-proof-"));
@@ -12,10 +13,7 @@ async function fixture(mode: "DELETE" | "WAL" = "DELETE") {
 	const main = new Database(path, { timeout: 0 });
 	chmodSync(path, 0o600);
 	main.pragma(`journal_mode = ${mode}`);
-	main.exec(`CREATE TABLE RestoreRuntimeControl (
-		id INTEGER PRIMARY KEY, protocolVersion INTEGER NOT NULL, phase TEXT NOT NULL,
-		runtimeEpoch TEXT, ownerBackendPid INTEGER, activeRestoreId TEXT,
-		lastCommittedRestoreId TEXT, lastCommittedAt DATETIME, destinationInstallationId TEXT);
+	main.exec(`${readSqliteRuntimeControlCreateSql()}
 		CREATE TABLE SqliteRestoreStorageBinding (
 		id INTEGER PRIMARY KEY, protocolVersion INTEGER NOT NULL,
 		databaseDevice TEXT NOT NULL, databaseInode TEXT NOT NULL,

@@ -921,7 +921,7 @@ describe.skipIf(process.platform !== "linux")(
 			expect(ready()).toEqual({ n: receipt.n + 2 });
 		});
 		it.each(["after-create", "after-copy", "after-drop", "after-rename", "before-commit"] as const)(
-			"SIGKILL at %s preserves the legacy main schema and rows without cold-marker repair",
+			"SIGKILL at %s preserves the legacy main schema and rows under a publishing hold",
 			async (action) => {
 				const original = before();
 				const { actor, closed } = await actorAt(action);
@@ -930,13 +930,40 @@ describe.skipIf(process.platform !== "linux")(
 				});
 				actor.kill("SIGKILL");
 				expect(await closed).toMatchObject({ signal: "SIGKILL" });
-				expect(before()).toEqual(original);
+				const held = before();
+				const internalNames = [
+					"ArrSqliteEnrollmentIntent",
+					"RestoreRuntimeControl",
+					"sqlite_sequence",
+				];
+				const schema = held.schema as { name: string }[];
+				expect(schema.filter(({ name }) => !internalNames.includes(name))).toEqual(original.schema);
+				expect(
+					schema.filter(({ name }) => internalNames.includes(name)).map(({ name }) => name),
+				).toEqual(internalNames);
+				expect(held.rows).toEqual(original.rows);
+				const enrollmentState = () =>
+					read((db) => ({
+						control: db.prepare("SELECT id,protocolVersion,phase FROM RestoreRuntimeControl").all(),
+						intent: db.prepare("SELECT id,payload FROM ArrSqliteEnrollmentIntent").all() as {
+							id: number;
+							payload: string;
+						}[],
+					}));
+				const pending = enrollmentState();
+				expect(pending.control).toEqual([
+					{ id: 1, protocolVersion: 0, phase: "sqlite-enrollment-intent" },
+				]);
+				expect(pending.intent).toHaveLength(1);
+				expect(pending.intent[0]!.id).toBe(1);
+				expect(JSON.parse(pending.intent[0]!.payload)).toMatchObject({ phase: "publishing" });
 				expect(canonical()).toBe(false);
 				expect(existsSync(`${path}.arr-restore-runtime`)).toBe(true);
 				await expect(synchronizeSqliteRuntimeSchema(url)).rejects.toMatchObject({
 					category: "startup-unavailable",
 				});
-				expect(before()).toEqual(original);
+				expect(before()).toEqual(held);
+				expect(enrollmentState()).toEqual(pending);
 			},
 		);
 		it("retains canonical values after acknowledged commit and joins the killed child before retry", async () => {

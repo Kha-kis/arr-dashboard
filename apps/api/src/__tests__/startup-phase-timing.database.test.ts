@@ -101,9 +101,17 @@ describe.skipIf(process.platform !== "linux")("native startup phase diagnostics"
 				["catalog-preflight", "completed"],
 				["schema-plan", "started"],
 				["schema-plan", "completed"],
-				// Fresh schemas plan legacy dates before DDL; current receipts wait
-				// until FK tracking is prepared after the schema postflight.
-				...(iteration === 0 ? datePlan : []),
+				// Fresh schemas repeat preflight and planning after durable enrollment.
+				// With current receipts, date planning waits until after schema postflight.
+				...(iteration === 0
+					? [
+							...datePlan,
+							["catalog-preflight", "completed"],
+							["schema-plan", "started"],
+							["schema-plan", "completed"],
+							...datePlan,
+						]
+					: []),
 				["schema-apply", "completed"],
 				["catalog-postflight", "completed"],
 				...(iteration === 1 ? datePlan : []),

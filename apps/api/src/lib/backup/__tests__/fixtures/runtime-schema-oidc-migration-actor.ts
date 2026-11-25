@@ -51,7 +51,13 @@ process.once("message", async (input: unknown) => {
 			};
 			const original = Database.prototype.exec;
 			Database.prototype.exec = function (this: Database.Database, sql: string) {
-				if (this.name === path && action === "before-commit" && sql === "COMMIT") pause();
+				if (
+					this.name === path &&
+					action === "before-commit" &&
+					sql === "COMMIT" &&
+					this.prepare("SELECT 1 FROM sqlite_schema WHERE name='ArrSchemaMigrationReceipt'").get()
+				)
+					pause();
 				const result = original.call(this, sql);
 				if (
 					this.name === path &&

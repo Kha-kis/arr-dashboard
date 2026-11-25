@@ -63,7 +63,7 @@ function assertCoordination(storage: SqliteRestoreStorage, expected: Coordinatio
 	}
 }
 
-function assertProtocol(
+export function assertSqliteRestoreCoordinatorProtocol(
 	db: Database.Database,
 	table: "RestoreOwnerCoordination" | "RestoreOperationCoordination",
 ): void {
@@ -99,10 +99,10 @@ export async function acquireSqliteRestoreRuntimeOwnership(
 		const storage = resolveSqliteRestoreStorage(databaseUrl);
 		const metadata = inspectCoordination(storage);
 		owner = new Database(metadata.paths[1]!, { timeout: 0, fileMustExist: true });
-		assertProtocol(owner, "RestoreOwnerCoordination");
+		assertSqliteRestoreCoordinatorProtocol(owner, "RestoreOwnerCoordination");
 		owner.exec("BEGIN IMMEDIATE");
 		operations = new Database(metadata.paths[2]!, { timeout: 0, fileMustExist: true });
-		assertProtocol(operations, "RestoreOperationCoordination");
+		assertSqliteRestoreCoordinatorProtocol(operations, "RestoreOperationCoordination");
 		assertCoordination(storage, metadata);
 		const ownerDb = owner;
 		const operationsDb = operations;
@@ -135,8 +135,8 @@ export async function acquireSqliteRestoreRuntimeOwnership(
 				if (!ownerDb.inTransaction || operationsDb.inTransaction !== exclusive) {
 					throw new SqliteRestoreRuntimeOwnershipError();
 				}
-				assertProtocol(ownerDb, "RestoreOwnerCoordination");
-				assertProtocol(operationsDb, "RestoreOperationCoordination");
+				assertSqliteRestoreCoordinatorProtocol(ownerDb, "RestoreOwnerCoordination");
+				assertSqliteRestoreCoordinatorProtocol(operationsDb, "RestoreOperationCoordination");
 				const result = operation();
 				assertCoordination(storage, metadata);
 				return result;
@@ -202,9 +202,9 @@ export async function acquireSqliteRestoreOperationLock(
 		const storage = resolveSqliteRestoreStorage(databaseUrl);
 		const metadata = inspectCoordination(storage);
 		db = new Database(metadata.paths[2]!, { timeout: 0, fileMustExist: true });
-		assertProtocol(db, "RestoreOperationCoordination");
+		assertSqliteRestoreCoordinatorProtocol(db, "RestoreOperationCoordination");
 		db.exec("BEGIN");
-		assertProtocol(db, "RestoreOperationCoordination");
+		assertSqliteRestoreCoordinatorProtocol(db, "RestoreOperationCoordination");
 		assertCoordination(storage, metadata);
 		const operationsDb = db;
 		let available = true;
@@ -216,7 +216,7 @@ export async function acquireSqliteRestoreOperationLock(
 						throw new SqliteRestoreRuntimeOwnershipError();
 					}
 					assertCoordination(storage, metadata);
-					assertProtocol(operationsDb, "RestoreOperationCoordination");
+					assertSqliteRestoreCoordinatorProtocol(operationsDb, "RestoreOperationCoordination");
 				} catch {
 					available = false;
 					closeDatabase(operationsDb);

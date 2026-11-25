@@ -7,6 +7,7 @@ import {
 	openRestoreRuntime,
 	type RestoreRuntime,
 } from "../../lib/backup/restore-runtime-admission.js";
+import { readSqliteRuntimeControlCreateSql } from "../../lib/backup/runtime-schema-registry.js";
 
 /**
  * Genuine native admission for scheduler lifecycle tests with synthetic
@@ -26,10 +27,7 @@ export async function installRuntimeFixture(
 		try {
 			chmodSync(path, 0o600);
 			database.exec(`
-				CREATE TABLE RestoreRuntimeControl (
-					id INTEGER PRIMARY KEY, protocolVersion INTEGER NOT NULL, phase TEXT NOT NULL,
-					runtimeEpoch TEXT, ownerBackendPid INTEGER, activeRestoreId TEXT,
-					lastCommittedRestoreId TEXT, lastCommittedAt DATETIME, destinationInstallationId TEXT);
+				${readSqliteRuntimeControlCreateSql()}
 				CREATE TABLE SqliteRestoreStorageBinding (
 					id INTEGER PRIMARY KEY, protocolVersion INTEGER NOT NULL,
 					databaseDevice TEXT NOT NULL, databaseInode TEXT NOT NULL,

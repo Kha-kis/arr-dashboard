@@ -30,6 +30,8 @@ import {
 	SqliteRestoreRuntimeEnrollmentError,
 } from "../restore-runtime-sqlite-enrollment.js";
 
+import { readSqliteRuntimeControlCreateSql } from "../runtime-schema-registry.js";
+
 const OLD_EPOCH = "11111111-1111-4111-8111-111111111111";
 const EPOCH = "44444444-4444-4444-8444-444444444444";
 const RESTORE = "22222222-2222-4222-8222-222222222222";
@@ -49,10 +51,7 @@ describe("native SQLite starting admission enrollment", () => {
 		main = new Database(path);
 		main.pragma("journal_mode = WAL");
 		main.exec(`CREATE TABLE Marker(value INTEGER); INSERT INTO Marker VALUES(7);
-			CREATE TABLE RestoreRuntimeControl (
-				id INTEGER PRIMARY KEY, protocolVersion INTEGER NOT NULL, phase TEXT NOT NULL,
-				runtimeEpoch TEXT, ownerBackendPid INTEGER, activeRestoreId TEXT,
-				lastCommittedRestoreId TEXT, lastCommittedAt DATETIME, destinationInstallationId TEXT);
+			${readSqliteRuntimeControlCreateSql()}
 			CREATE TABLE SqliteRestoreStorageBinding (
 				id INTEGER PRIMARY KEY, protocolVersion INTEGER NOT NULL,
 				databaseDevice TEXT NOT NULL, databaseInode TEXT NOT NULL,
@@ -83,6 +82,16 @@ describe("native SQLite starting admission enrollment", () => {
 		return result;
 	}
 	const journal = () => main.prepare("SELECT * FROM RestoreRuntimeControl").all();
+	const assertHeldEnrollment = (phase = "publishing") => {
+		expect(journal()).toEqual([
+			expect.objectContaining({ id: 1, protocolVersion: 0, phase: "sqlite-enrollment-intent" }),
+		]);
+		const row = main.prepare("SELECT payload FROM ArrSqliteEnrollmentIntent").get() as {
+			payload: string;
+		};
+		expect(JSON.parse(row.payload)).toMatchObject({ phase });
+	};
+
 	const binding = () => main.prepare("SELECT * FROM SqliteRestoreStorageBinding").all();
 	const unchangedData = () =>
 		expect(main.prepare("SELECT * FROM Marker").all()).toEqual([{ value: 7 }]);
@@ -238,16 +247,27 @@ describe("native SQLite starting admission enrollment", () => {
 	);
 
 	it("rolls back the binding when real journal insertion aborts and refuses the orphan on retry", async () => {
-		main.exec(`CREATE TRIGGER reject_journal BEFORE INSERT ON RestoreRuntimeControl
-			BEGIN SELECT RAISE(ABORT, 'synthetic refusal'); END`);
-		await refuse(start());
+		const original = Database.prototype.prepare;
+		const hook = vi.spyOn(Database.prototype, "prepare").mockImplementation(function (
+			this: Database.Database,
+			sql: string,
+		) {
+			if (this.name === url.slice(5) && sql.includes("INSERT INTO RestoreRuntimeControl"))
+				this.exec(`CREATE TRIGGER reject_journal BEFORE INSERT ON RestoreRuntimeControl
+					BEGIN SELECT RAISE(ABORT, 'synthetic refusal'); END`);
+			return original.call(this, sql);
+		});
+		try {
+			await refuse(start());
+		} finally {
+			hook.mockRestore();
+		}
 		expect(binding()).toEqual([]);
-		expect(journal()).toEqual([]);
+		assertHeldEnrollment();
 		unchangedData();
-		main.exec("DROP TRIGGER reject_journal");
 		await refuse(start());
 		expect(binding()).toEqual([]);
-		expect(journal()).toEqual([]);
+		assertHeldEnrollment();
 	});
 
 	it("rolls back both rows when the actual binding insert aborts", async () => {
@@ -255,18 +275,30 @@ describe("native SQLite starting admission enrollment", () => {
 			BEGIN SELECT RAISE(ABORT, 'synthetic refusal'); END`);
 		await refuse(start());
 		expect(binding()).toEqual([]);
-		expect(journal()).toEqual([]);
+		assertHeldEnrollment();
 		unchangedData();
 	});
 
 	it("a real deferred foreign-key COMMIT failure cannot publish either row", async () => {
 		main.exec(`CREATE TABLE RequiredParent(id INTEGER PRIMARY KEY);
-			CREATE TABLE DeferredFailure(parentId INTEGER REFERENCES RequiredParent(id) DEFERRABLE INITIALLY DEFERRED);
-			CREATE TRIGGER fail_commit AFTER INSERT ON RestoreRuntimeControl
-			BEGIN INSERT INTO DeferredFailure VALUES(1); END`);
-		await refuse(start());
+			CREATE TABLE DeferredFailure(parentId INTEGER REFERENCES RequiredParent(id) DEFERRABLE INITIALLY DEFERRED)`);
+		const original = Database.prototype.prepare;
+		const hook = vi.spyOn(Database.prototype, "prepare").mockImplementation(function (
+			this: Database.Database,
+			sql: string,
+		) {
+			if (this.name === url.slice(5) && sql.includes("INSERT INTO RestoreRuntimeControl"))
+				this.exec(`CREATE TRIGGER fail_commit AFTER INSERT ON RestoreRuntimeControl
+					BEGIN INSERT INTO DeferredFailure VALUES(1); END`);
+			return original.call(this, sql);
+		});
+		try {
+			await refuse(start());
+		} finally {
+			hook.mockRestore();
+		}
 		expect(binding()).toEqual([]);
-		expect(journal()).toEqual([]);
+		assertHeldEnrollment();
 		expect(main.prepare("SELECT * FROM DeferredFailure").all()).toEqual([]);
 		unchangedData();
 	});
@@ -284,7 +316,7 @@ describe("native SQLite starting admission enrollment", () => {
 			await exit;
 			expect(child.signalCode).toBe("SIGKILL");
 			expect(binding()).toEqual([]);
-			expect(journal()).toEqual([]);
+			assertHeldEnrollment(mode === "interrupt" ? "preparing" : "publishing");
 			unchangedData();
 			await refuse(start());
 		},
@@ -490,10 +522,7 @@ describe("actor-owned restore runtime operation admission", () => {
 			url = `file:${path}`;
 			sqlite = new Database(path);
 			sqlite.pragma("journal_mode = WAL");
-			sqlite.exec(`CREATE TABLE RestoreRuntimeControl (
-				id INTEGER PRIMARY KEY, protocolVersion INTEGER NOT NULL, phase TEXT NOT NULL,
-				runtimeEpoch TEXT, ownerBackendPid INTEGER, activeRestoreId TEXT,
-				lastCommittedRestoreId TEXT, lastCommittedAt DATETIME, destinationInstallationId TEXT);
+			sqlite.exec(`${readSqliteRuntimeControlCreateSql()}
 				CREATE TABLE SqliteRestoreStorageBinding (
 				id INTEGER PRIMARY KEY, protocolVersion INTEGER NOT NULL,
 				databaseDevice TEXT NOT NULL, databaseInode TEXT NOT NULL,

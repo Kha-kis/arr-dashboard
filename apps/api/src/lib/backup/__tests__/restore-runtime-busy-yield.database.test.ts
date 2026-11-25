@@ -17,6 +17,7 @@ import {
 	createRuntimePrismaClient,
 	createRuntimeSessionMetadataPrismaClient,
 } from "../restore-runtime-client.js";
+import { readSqliteRuntimeControlCreateSql } from "../runtime-schema-registry.js";
 
 const WRITE = "UPDATE BusyProbe SET value=value+1 WHERE id=1";
 type Message = { category: string; [key: string]: unknown };
@@ -136,10 +137,7 @@ describe("default guarded SQLite writes preserve real worker proof", () => {
 			const inspector = new Database(path, { timeout: 0 });
 			chmodSync(path, 0o600);
 			inspector.pragma("journal_mode=WAL");
-			inspector.exec(`CREATE TABLE RestoreRuntimeControl (
-			id INTEGER PRIMARY KEY,protocolVersion INTEGER NOT NULL,phase TEXT NOT NULL,
-			runtimeEpoch TEXT,ownerBackendPid INTEGER,activeRestoreId TEXT,lastCommittedRestoreId TEXT,
-			lastCommittedAt DATETIME,destinationInstallationId TEXT);
+			inspector.exec(`${readSqliteRuntimeControlCreateSql()}
 			CREATE TABLE SqliteRestoreStorageBinding (
 			id INTEGER PRIMARY KEY,protocolVersion INTEGER NOT NULL,databaseDevice TEXT NOT NULL,
 			databaseInode TEXT NOT NULL,directoryDevice TEXT NOT NULL,directoryInode TEXT NOT NULL,
@@ -371,10 +369,7 @@ async function withFencedFixture(
 	const writer = new Database(path, { timeout: 0 });
 	chmodSync(path, 0o600);
 	writer.pragma(`journal_mode=${journal}`);
-	writer.exec(`CREATE TABLE RestoreRuntimeControl (
-		id INTEGER PRIMARY KEY,protocolVersion INTEGER NOT NULL,phase TEXT NOT NULL,
-		runtimeEpoch TEXT,ownerBackendPid INTEGER,activeRestoreId TEXT,lastCommittedRestoreId TEXT,
-		lastCommittedAt DATETIME,destinationInstallationId TEXT);
+	writer.exec(`${readSqliteRuntimeControlCreateSql()}
 		CREATE TABLE SqliteRestoreStorageBinding (
 		id INTEGER PRIMARY KEY,protocolVersion INTEGER NOT NULL,databaseDevice TEXT NOT NULL,
 		databaseInode TEXT NOT NULL,directoryDevice TEXT NOT NULL,directoryInode TEXT NOT NULL,

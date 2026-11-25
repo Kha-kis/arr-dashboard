@@ -471,8 +471,21 @@ describe("SQLite date-format startup admission", () => {
 		});
 		expect(read("SELECT * FROM sessions")).toEqual(sessions);
 		expect(read("SELECT * FROM User")).toEqual(users);
-		expect(read("SELECT name,type,sql FROM sqlite_schema ORDER BY name")).toEqual(objects);
+		expect(
+			read(
+				"SELECT name,type,sql FROM sqlite_schema WHERE name!='ArrSqliteEnrollmentIntent' ORDER BY name",
+			),
+		).toEqual(objects);
 		expect(read("SELECT * FROM SqliteRestoreStorageBinding")).toEqual([]);
-		expect(read("SELECT * FROM RestoreRuntimeControl")).toEqual([]);
+		expect(read("SELECT id,protocolVersion,phase FROM RestoreRuntimeControl")).toEqual([
+			{ id: 1, protocolVersion: 0, phase: "sqlite-enrollment-intent" },
+		]);
+		const intent = read("SELECT id,payload FROM ArrSqliteEnrollmentIntent") as {
+			id: number;
+			payload: string;
+		}[];
+		expect(intent).toHaveLength(1);
+		expect(intent[0]!.id).toBe(1);
+		expect(JSON.parse(intent[0]!.payload)).toMatchObject({ phase: "publishing" });
 	});
 });

@@ -12,6 +12,8 @@ const failureOnlyPhases = [
 	"exclusive-transaction-begin",
 	"enrollment-catalog-read",
 	"cold-enrollment-check",
+	"enrollment-intent-commit",
+	"enrollment-object-checkpoint",
 	"coordination-enrollment",
 	"storage-binding-validation",
 	"startup-journal-validation",
@@ -76,9 +78,17 @@ type SafeFailure = Readonly<{
 		| "storage-ownership"
 		| "unknown";
 	code: string | null;
+	refusal?: string;
 }>;
 
-function safeFailure(error: unknown): SafeFailure {
+const COLD_REFUSALS = new Set([
+	"runtime-journal",
+	"migration-receipt-table",
+	"data-format-receipt",
+	"coordination-path",
+]);
+
+function safeFailure(error: unknown, phase: SqliteStartupPhase): SafeFailure {
 	let rawCode: unknown;
 	let name: unknown;
 	try {
@@ -86,6 +96,18 @@ function safeFailure(error: unknown): SafeFailure {
 			const code = Object.getOwnPropertyDescriptor(error, "code");
 			if (code && "value" in code) rawCode = code.value;
 			const ownName = Object.getOwnPropertyDescriptor(error, "name");
+			const refusal = Object.getOwnPropertyDescriptor(error, "refusal");
+			if (
+				phase === "cold-enrollment-check" &&
+				ownName &&
+				"value" in ownName &&
+				ownName.value === "RuntimeSchemaStartupError" &&
+				refusal &&
+				"value" in refusal &&
+				typeof refusal.value === "string" &&
+				COLD_REFUSALS.has(refusal.value)
+			)
+				return { errorCategory: "schema", code: null, refusal: refusal.value };
 			if (ownName && "value" in ownName) name = ownName.value;
 			else {
 				const prototype = Object.getPrototypeOf(error);
@@ -159,7 +181,7 @@ export function timeSqliteStartupPhase<T>(phase: SqliteStartupPhase, operation: 
 		outcome = "completed";
 		return result;
 	} catch (error) {
-		failure = safeFailure(error);
+		failure = safeFailure(error, phase);
 		throw error;
 	} finally {
 		report(phase, outcome, began, failure);
@@ -179,7 +201,7 @@ export async function timeSqliteStartupPhaseAsync<T>(
 		outcome = "completed";
 		return result;
 	} catch (error) {
-		failure = safeFailure(error);
+		failure = safeFailure(error, phase);
 		throw error;
 	} finally {
 		report(phase, outcome, began, failure);

@@ -4,6 +4,7 @@ import {
 	chmodSync,
 	copyFileSync,
 	existsSync,
+	readdirSync as fsReaddir,
 	lstatSync,
 	mkdirSync,
 	mkdtempSync,
@@ -150,7 +151,15 @@ function validateSqliteCliDiagnostics(
 		["schema-plan", "completed"],
 		// Current receipts plan dates only after preparing FK tracking, while
 		// fresh schemas still plan legacy normalization before applying DDL.
-		...(!currentDateReceipt ? datePlan : []),
+		...(!currentDateReceipt
+			? [
+					...datePlan,
+					["catalog-preflight", "completed"],
+					["schema-plan", "started"],
+					["schema-plan", "completed"],
+					...datePlan,
+				]
+			: []),
 		["schema-apply", "completed"],
 		["catalog-postflight", "completed"],
 		...(currentDateReceipt ? datePlan : []),
@@ -199,6 +208,24 @@ describe.skipIf(process.platform !== "linux")("native SQLite schema startup writ
 		}
 	};
 	const synchronize = () => sqlite.synchronizeSqliteRuntimeSchema(url);
+	const isApplicationDdl = (sql: string) =>
+		sql.startsWith("CREATE TABLE ") &&
+		!/^CREATE TABLE "(?:RestoreRuntimeControl|ArrSqliteEnrollmentIntent)"/.test(sql);
+	const expectOnlyEnrollmentEvidence = (main: Database.Database) => {
+		expect(
+			main
+				.prepare("SELECT name FROM sqlite_schema WHERE name NOT GLOB 'sqlite_*' ORDER BY name")
+				.all(),
+		).toEqual([{ name: "ArrSqliteEnrollmentIntent" }, { name: "RestoreRuntimeControl" }]);
+		expect(
+			main.prepare("SELECT id,protocolVersion,phase FROM RestoreRuntimeControl").all(),
+		).toEqual([{ id: 1, protocolVersion: 0, phase: "sqlite-enrollment-intent" }]);
+		const row = main.prepare("SELECT payload FROM ArrSqliteEnrollmentIntent WHERE id=1").get() as {
+			payload: string;
+		};
+		expect(JSON.parse(row.payload)).toMatchObject({ phase: "publishing" });
+	};
+
 	const rows = (
 		table:
 			| "RestoreRuntimeControl"
@@ -236,7 +263,12 @@ describe.skipIf(process.platform !== "linux")("native SQLite schema startup writ
 			.finally(() => main.close());
 	};
 	const actorAt = async (
-		action: "after-first-ddl" | "before-commit" | "after-commit" | "hold-shared",
+		action:
+			| "after-first-ddl"
+			| "before-commit"
+			| "after-commit"
+			| "hold-shared"
+			| "hold-partial-owner",
 	) => {
 		const actor = fork(
 			fileURLToPath(new URL("./fixtures/runtime-schema-actor.ts", import.meta.url)),
@@ -389,6 +421,7 @@ describe.skipIf(process.platform !== "linux")("native SQLite schema startup writ
 				phase,
 				outcome: "failed",
 				errorCategory,
+				...(scenario === "unanchored coordination" ? { refusal: "coordination-path" } : {}),
 				code: null,
 			});
 			expect(diagnostics.at(-1)).toMatchObject({ phase: "total", outcome: "failed" });
@@ -482,6 +515,105 @@ describe.skipIf(process.platform !== "linux")("native SQLite schema startup writ
 			main.exec("BEGIN EXCLUSIVE; ROLLBACK");
 		});
 	});
+	it.each([0, 1, 2, 3])(
+		"resumes cold enrollment after acknowledged checkpoint with %i objects",
+		async (objectsRecorded) => {
+			const original = Database.prototype.exec;
+			let interrupted = false;
+			const hook = vi.spyOn(Database.prototype, "exec").mockImplementation(function (
+				this: Database.Database,
+				sql: string,
+			) {
+				if (this.name === path && sql === "BEGIN EXCLUSIVE" && interrupted)
+					throw new Error("interrupted after the cold intent checkpoint");
+				const result = original.call(this, sql);
+				if (
+					this.name === path &&
+					sql === "COMMIT" &&
+					this.prepare("SELECT 1 FROM sqlite_schema WHERE name='ArrSqliteEnrollmentIntent'").get()
+				) {
+					const row = this.prepare("SELECT payload FROM ArrSqliteEnrollmentIntent").get() as {
+						payload: string;
+					};
+					const intent = JSON.parse(row.payload);
+					interrupted = intent.phase === "preparing" && intent.objects.length === objectsRecorded;
+				}
+				return result;
+			});
+			try {
+				await expect(synchronize()).rejects.toThrow();
+			} finally {
+				hook.mockRestore();
+			}
+			expect(interrupted).toBe(true);
+			expect(existsSync(`${path}.arr-restore-runtime`)).toBe(objectsRecorded !== 0);
+			const { enrollSqliteRestoreRuntimeStorage } = await import(
+				"../restore-runtime-sqlite-enrollment.js"
+			);
+			await expect(enrollSqliteRestoreRuntimeStorage(url)).rejects.toMatchObject({
+				statusCode: 503,
+			});
+			if (objectsRecorded === 2) {
+				const contender = await actorAt("hold-partial-owner");
+				try {
+					await refuse();
+					expect(existsSync(join(`${path}.arr-restore-runtime`, "operations.sqlite3"))).toBe(false);
+				} finally {
+					contender.actor.send({ category: "close" });
+					expect(await contender.closed).toEqual({ code: 0, signal: null });
+				}
+			}
+			await expect(synchronize()).resolves.toMatchObject({ apiPort: null });
+			expect(rows("SqliteRestoreStorageBinding")).toHaveLength(1);
+			expect(rows("RestoreRuntimeControl")[0]).toMatchObject({
+				protocolVersion: 1,
+				phase: "starting",
+			});
+			expect(objects().some((object) => object.name === "ArrSqliteEnrollmentIntent")).toBe(false);
+		},
+	);
+
+	it.each([0, 1, 2])(
+		"preserves an object created before its durable checkpoint with %i prior objects",
+		async (objectsRecorded) => {
+			const original = Database.prototype.prepare;
+			let interrupted = false;
+			const hook = vi.spyOn(Database.prototype, "prepare").mockImplementation(function (
+				this: Database.Database,
+				sql: string,
+			) {
+				if (this.name === path && sql.startsWith("UPDATE main.ArrSqliteEnrollmentIntent")) {
+					const statement = original.call(
+						this,
+						"SELECT payload FROM ArrSqliteEnrollmentIntent",
+					) as Database.Statement<[]>;
+					const row = statement.get() as { payload: string };
+					if (JSON.parse(row.payload).objects.length === objectsRecorded) {
+						interrupted = true;
+						throw new Error("interrupted before checkpoint publication");
+					}
+				}
+				return original.call(this, sql);
+			});
+			try {
+				await refuse();
+			} finally {
+				hook.mockRestore();
+			}
+			expect(interrupted).toBe(true);
+			const namespace = `${path}.arr-restore-runtime`;
+			const created = fsReaddir(namespace);
+			expect(created).toHaveLength(objectsRecorded);
+			const committedIntent = database((main) =>
+				main.prepare("SELECT payload FROM ArrSqliteEnrollmentIntent").get(),
+			);
+			await refuse();
+			expect(fsReaddir(namespace)).toEqual(created);
+			expect(
+				database((main) => main.prepare("SELECT payload FROM ArrSqliteEnrollmentIntent").get()),
+			).toEqual(committedIntent);
+		},
+	);
 	it("dispatches file startup through the actual SQLite writer without extra result fields", async () => {
 		expect(await startup.synchronizeRuntimeSchema(url)).toEqual({
 			apiPort: null,
@@ -730,7 +862,7 @@ describe.skipIf(process.platform !== "linux")("native SQLite schema startup writ
 			sql: string,
 		) {
 			const result = originalExec.call(this, sql);
-			if (this.name === path && !replaced && /^CREATE TABLE\b/.test(sql)) {
+			if (this.name === path && !replaced && isApplicationDdl(sql)) {
 				replaced = true;
 				renameSync(path, retired);
 				const replacement = new Database(path);
@@ -748,7 +880,7 @@ describe.skipIf(process.platform !== "linux")("native SQLite schema startup writ
 		expect(objects()).toEqual([]);
 		const original = new Database(retired, { fileMustExist: true, timeout: 0 });
 		try {
-			expect(original.prepare("SELECT name FROM sqlite_schema").all()).toEqual([]);
+			expectOnlyEnrollmentEvidence(original);
 			original.exec("BEGIN EXCLUSIVE; ROLLBACK");
 		} finally {
 			original.close();
@@ -765,7 +897,7 @@ describe.skipIf(process.platform !== "linux")("native SQLite schema startup writ
 			sql: string,
 		) {
 			const result = originalExec.call(this, sql);
-			if (this.name === path && !extra && /^CREATE TABLE\b/.test(sql))
+			if (this.name === path && !extra && isApplicationDdl(sql))
 				extra = new Database(path, { fileMustExist: true, timeout: 0 });
 			return result;
 		});
@@ -776,53 +908,60 @@ describe.skipIf(process.platform !== "linux")("native SQLite schema startup writ
 			extra?.close();
 		}
 		expect(extra?.open).toBe(false);
-		expect(objects()).toEqual([]);
+		database(expectOnlyEnrollmentEvidence);
 		await refuse();
-		expect(objects()).toEqual([]);
+		database(expectOnlyEnrollmentEvidence);
 	});
-	it.each(["before-native-commit", "after-native-commit"] as const)(
-		"keeps %s acknowledgement uncertainty explicit, closes locks and never retries COMMIT",
-		async (stage) => {
+	describe("COMMIT acknowledgement on an enrolled database", () => {
+		// Fresh enrollment is fixture setup. The fault and reopen are still timed together.
+		beforeEach(async () => {
 			await synchronize();
-			const before = rows("RestoreRuntimeControl"),
-				receipts = rows("ArrSchemaMigrationReceipt"),
-				binding = rows("SqliteRestoreStorageBinding");
-			const originalExec = Database.prototype.exec;
-			let commits = 0;
-			const intercepted = vi.spyOn(Database.prototype, "exec").mockImplementation(function (
-				this: Database.Database,
-				sql: string,
-			) {
-				if (this.name === path && sql === "COMMIT") {
-					commits++;
-					if (stage === "after-native-commit") originalExec.call(this, sql);
-					throw new Error("Synthetic native-call acknowledgement interruption");
+		}, 5_000);
+
+		it.each(["before-native-commit", "after-native-commit"] as const)(
+			"keeps %s acknowledgement uncertainty explicit, closes locks and never retries COMMIT",
+			async (stage) => {
+				const before = rows("RestoreRuntimeControl"),
+					receipts = rows("ArrSchemaMigrationReceipt"),
+					binding = rows("SqliteRestoreStorageBinding");
+				const originalExec = Database.prototype.exec;
+				let commits = 0;
+				const intercepted = vi.spyOn(Database.prototype, "exec").mockImplementation(function (
+					this: Database.Database,
+					sql: string,
+				) {
+					if (this.name === path && sql === "COMMIT") {
+						commits++;
+						if (stage === "after-native-commit") originalExec.call(this, sql);
+						throw new Error("Synthetic native-call acknowledgement interruption");
+					}
+					return originalExec.call(this, sql);
+				});
+				try {
+					await expect(synchronize()).rejects.toMatchObject({ category: "commit-unknown" });
+				} finally {
+					intercepted.mockRestore();
 				}
-				return originalExec.call(this, sql);
-			});
-			try {
-				await expect(synchronize()).rejects.toMatchObject({ category: "commit-unknown" });
-			} finally {
-				intercepted.mockRestore();
-			}
-			expect(commits).toBe(1);
-			expect(rows("SqliteRestoreStorageBinding")).toEqual(binding);
-			const after = rows("ArrSchemaMigrationReceipt");
-			expect(after).toHaveLength(receipts.length + (stage === "after-native-commit" ? 1 : 0));
-			expect(after).toContainEqual(receipts[0]);
-			if (stage === "before-native-commit") expect(rows("RestoreRuntimeControl")).toEqual(before);
-			else expect(rows("RestoreRuntimeControl")).not.toEqual(before);
-			const owner = await acquireSqliteRestoreRuntimeOwnership(url);
-			try {
-				expect(await owner.tryAcquireExclusive()).toBe(true);
-			} finally {
-				await owner.close();
-			}
-			await synchronize();
-			expect(rows("ArrSchemaMigrationReceipt")).toHaveLength(after.length + 1);
-			expect(rows("SqliteRestoreStorageBinding")).toEqual(binding);
-		},
-	);
+				expect(commits).toBe(1);
+				expect(rows("SqliteRestoreStorageBinding")).toEqual(binding);
+				const after = rows("ArrSchemaMigrationReceipt");
+				expect(after).toHaveLength(receipts.length + (stage === "after-native-commit" ? 1 : 0));
+				expect(after).toContainEqual(receipts[0]);
+				if (stage === "before-native-commit") expect(rows("RestoreRuntimeControl")).toEqual(before);
+				else expect(rows("RestoreRuntimeControl")).not.toEqual(before);
+				const owner = await acquireSqliteRestoreRuntimeOwnership(url);
+				try {
+					expect(await owner.tryAcquireExclusive()).toBe(true);
+				} finally {
+					await owner.close();
+				}
+				await synchronize();
+				expect(rows("ArrSchemaMigrationReceipt")).toHaveLength(after.length + 1);
+				expect(rows("SqliteRestoreStorageBinding")).toEqual(binding);
+			},
+			5_000,
+		);
+	});
 	it("blocks a real child-held shared operation without committing schema or epoch", async () => {
 		await synchronize();
 		const before = rows("RestoreRuntimeControl"),
@@ -850,11 +989,11 @@ describe.skipIf(process.platform !== "linux")("native SQLite schema startup writ
 			await refuse();
 			expect(actor.kill(signal)).toBe(true);
 			expect(await closed).toMatchObject({ signal });
-			expect(objects()).toEqual([]);
+			database(expectOnlyEnrollmentEvidence);
 			const coordination = `${path}.arr-restore-runtime`;
 			expect(existsSync(coordination)).toBe(true);
 			await refuse();
-			expect(objects()).toEqual([]);
+			database(expectOnlyEnrollmentEvidence);
 			expect(existsSync(coordination)).toBe(true);
 		},
 	);
