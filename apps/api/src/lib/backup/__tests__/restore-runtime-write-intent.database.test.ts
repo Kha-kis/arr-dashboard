@@ -36,9 +36,7 @@ describe("opt-in guarded SQLite transaction write intent", () => {
 			operationsDevice TEXT NOT NULL, operationsInode TEXT NOT NULL);
 			CREATE TABLE IntentProbe(id INTEGER PRIMARY KEY,value INTEGER NOT NULL);
 			INSERT INTO IntentProbe VALUES(1,0),(2,0);
-			CREATE TABLE IntentTrigger(value INTEGER);
-			CREATE TRIGGER intent_control_update AFTER UPDATE ON RestoreRuntimeControl
-			BEGIN INSERT INTO IntentTrigger VALUES(1); END;`);
+			CREATE TABLE IntentTrigger(value INTEGER);`);
 		losses = 0;
 		runtime = await openRestoreRuntime({
 			databaseUrl: `file:${path}`,
@@ -46,6 +44,9 @@ describe("opt-in guarded SQLite transaction write intent", () => {
 				losses += 1;
 			},
 		});
+		// The trigger observes later guarded writes, not the private enrollment sentinel.
+		writer.exec(`CREATE TRIGGER intent_control_update AFTER UPDATE ON RestoreRuntimeControl
+			BEGIN INSERT INTO IntentTrigger VALUES(1); END;`);
 		await runtime.bindDestination("synthetic-destination");
 		await runtime.activate();
 		writer.exec("DELETE FROM IntentTrigger");
