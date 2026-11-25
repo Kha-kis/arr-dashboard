@@ -77,24 +77,80 @@ function environmentPort(value: string | undefined, fallback: number): number {
 	return port(Number(value));
 }
 
-/** Combined boot preserves the container's database > environment > default contract. */
+type ListenerSource = "env" | "database" | "default" | "supervisor";
+type CombinedStartupResolution = CombinedStartupSettings &
+	Readonly<{ source: Readonly<Record<keyof CombinedStartupSettings, ListenerSource>> }>;
+
+function resolveListener<T>(
+	variable: "API_PORT" | "PORT" | "HOST",
+	environment: string | undefined,
+	saved: T | null,
+	fallback: T,
+	parseEnvironment: (value: string) => T,
+	validate: (value: unknown) => T,
+): { value: T; source: ListenerSource } {
+	if (environment !== undefined && environment !== "") {
+		try {
+			return { value: parseEnvironment(environment), source: "env" };
+		} catch {
+			throw Object.assign(new Error("Invalid combined listener override."), {
+				code: `INVALID_COMBINED_${variable}`,
+			});
+		}
+	}
+	return saved === null
+		? { value: fallback, source: "default" }
+		: { value: validate(saved), source: "database" };
+}
+
+/** The image leaves override variables unset; the supervisor owns restart listeners. */
 export function resolveCombinedStartupSettings(
 	settings: SettingsInput,
 	env: Environment,
 	phase: "initial" | "restart" = "initial",
-): CombinedStartupSettings {
+): CombinedStartupResolution {
 	if (phase === "restart") {
 		requireValue(Boolean(env.API_PORT) && Boolean(env.PORT) && Boolean(env.HOST));
 		return Object.freeze({
 			apiPort: environmentPort(env.API_PORT, 3001),
 			webPort: environmentPort(env.PORT, 3000),
 			listenAddress: address(env.HOST),
+			source: Object.freeze({
+				apiPort: "supervisor",
+				webPort: "supervisor",
+				listenAddress: "supervisor",
+			} as const),
 		});
 	}
+	const api = resolveListener(
+		"API_PORT",
+		env.API_PORT,
+		settings.apiPort,
+		3001,
+		(value) => environmentPort(value, 3001),
+		port,
+	);
+	const web = resolveListener(
+		"PORT",
+		env.PORT,
+		settings.webPort,
+		3000,
+		(value) => environmentPort(value, 3000),
+		port,
+	);
+	const host = resolveListener(
+		"HOST",
+		env.HOST,
+		settings.listenAddress,
+		"0.0.0.0",
+		address,
+		address,
+	);
 	return Object.freeze({
-		apiPort: port(settings.apiPort ?? environmentPort(env.API_PORT, 3001)),
-		webPort: port(settings.webPort ?? environmentPort(env.PORT, 3000)),
-		listenAddress: address(settings.listenAddress ?? (env.HOST || "0.0.0.0")),
+		apiPort: api.value,
+		webPort: web.value,
+		listenAddress: host.value,
+		source: Object.freeze({ apiPort: api.source, webPort: web.source, listenAddress: host.source }),
 	});
 }
 

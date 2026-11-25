@@ -151,8 +151,6 @@ RUN sed -i 's/\r$//' ./start-combined.sh && chmod +x ./start-combined.sh \
 # Configuration
 EXPOSE 3000 3001
 ENV DATABASE_URL="file:/config/prod.db" \
-    API_PORT=3001 \
-    PORT=3000 \
     HOSTNAME=0.0.0.0 \
     NODE_ENV=production \
     PUID=911 \

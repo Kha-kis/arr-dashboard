@@ -35,8 +35,7 @@ import { getAppVersionInfo } from "./lib/utils/version.js";
 import { buildServer } from "./server.js";
 
 // Validate unrelated environment settings before database I/O. Combined initial
-// boot selects its API port from native DB settings first; validate that effective
-// port in the resolver below, not a raw value that the saved setting overrides.
+// boot validates the operator override and native DB settings together below.
 const combinedInitial =
 	process.env.LAUNCHER_MANAGED === "true" &&
 	process.env.ARR_COMBINED_STARTUP_PHASE === "initial" &&
@@ -158,19 +157,21 @@ const start = async () => {
 		const combined = combinedMode
 			? resolveCombinedStartupSettings(schemaSettings, process.env, combinedMode.phase)
 			: null;
-		const portConfig = getPortConfig(
-			settings,
-			combined
-				? { ...process.env, API_PORT: String(combined.apiPort), PORT: String(combined.webPort) }
-				: process.env,
-		);
+		const portConfig = combined ?? getPortConfig(settings);
 		const securityConfig = getSecurityConfig(settings);
 		if (combined && combinedMode) {
 			process.env.PORT = String(combined.webPort);
 			process.env.HOST = combined.listenAddress;
 			process.env.API_HOST = combined.listenAddress;
 			combinedMessage = parseCombinedStartupMessage(
-				{ kind: "arr-combined-startup", version: 1, nonce: combinedMode.nonce, ...combined },
+				{
+					kind: "arr-combined-startup",
+					version: 1,
+					nonce: combinedMode.nonce,
+					apiPort: combined.apiPort,
+					webPort: combined.webPort,
+					listenAddress: combined.listenAddress,
+				},
 				combinedMode.nonce,
 			);
 		}

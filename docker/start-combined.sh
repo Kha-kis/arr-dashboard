@@ -468,7 +468,10 @@ STARTUP_CHANNEL_PREPARED=false
 echo "  - Listen Address: $HOST"
 echo "  - API Port: $API_PORT"
 echo "  - Web Port: $PORT"
-if ! run_as_user node /app/runtime-health.cjs publish "$PORT"; then startup_failure; fi
+if ! run_as_user node /app/runtime-health.cjs publish "$PORT" "$HOST"; then startup_failure; fi
+if ! WEB_API_TARGET=$(run_as_user node /app/runtime-health.cjs target "$API_PORT" "$HOST"); then
+    startup_failure
+fi
 if ! process_is_alive "$API_PID"; then startup_failure; fi
 
 # ============================================
@@ -482,9 +485,9 @@ cd /app/web
 # Backgrounded as a simple external command so WEB_PID is the node process
 # itself (not a subshell wrapper) — same rationale as the API launch above.
 if [ "$ROOTLESS" = true ]; then
-    sh -c "API_HOST=http://localhost:$API_PORT PORT=$PORT HOSTNAME=$HOST HOST=$HOST exec node server.js" &
+    sh -c "API_HOST=$WEB_API_TARGET PORT=$PORT HOSTNAME=$HOST HOST=$HOST exec node server.js" &
 else
-    su-exec abc sh -c "API_HOST=http://localhost:$API_PORT PORT=$PORT HOSTNAME=$HOST HOST=$HOST exec node server.js" &
+    su-exec abc sh -c "API_HOST=$WEB_API_TARGET PORT=$PORT HOSTNAME=$HOST HOST=$HOST exec node server.js" &
 fi
 WEB_PID=$!
 echo "Web started with PID $WEB_PID"

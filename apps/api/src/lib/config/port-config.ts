@@ -10,8 +10,9 @@ interface PortConfig {
 	apiPort: number;
 	webPort: number;
 	source: {
-		apiPort: "env" | "database" | "default";
-		webPort: "env" | "database" | "default";
+		apiPort: "env" | "database" | "default" | "supervisor";
+		webPort: "env" | "database" | "default" | "supervisor";
+		listenAddress?: "env" | "database" | "default" | "supervisor";
 	};
 }
 
@@ -168,6 +169,7 @@ export function logPortConfig(config: PortConfig, log?: Pick<FastifyBaseLogger, 
 			apiSource: config.source.apiPort,
 			webPort: config.webPort,
 			webSource: config.source.webPort,
+			...(config.source.listenAddress ? { listenSource: config.source.listenAddress } : {}),
 		},
 		"Port configuration loaded",
 	);
