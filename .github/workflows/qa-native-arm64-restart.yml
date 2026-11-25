@@ -1,0 +1,45 @@
+{
+  "name": "Diagnostic only - native ARM64 SQLite restart binding",
+  "on": {
+    "push": {
+      "branches": [
+        "qa/2251-arm64-binding-003049ad"
+      ]
+    }
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "jobs": {
+    "observe": {
+      "runs-on": "ubuntu-24.04-arm",
+      "timeout-minutes": 25,
+      "steps": [
+        {
+          "name": "Check out the branch-scoped diagnostic",
+          "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "with": {
+            "persist-credentials": false,
+            "fetch-depth": 2
+          }
+        },
+        {
+          "name": "Run exact existing digest comparison",
+          "shell": "bash",
+          "run": "test \"$(uname -m)\" = aarch64\ntest \"$(git rev-parse HEAD^)\" = \"003049ad3a6e56cb941fa05eeaf006d9967ea443\"\nmkdir -p \"$RUNNER_TEMP/arm64-binding-observations\"\nsudo -n python3 scripts/diagnostics/arm64-restart-binding.py \"$RUNNER_TEMP/arm64-binding-observations\""
+        },
+        {
+          "name": "Retain disposable binding and lifecycle metadata",
+          "if": "always()",
+          "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+          "with": {
+            "name": "arm64-binding-observations",
+            "path": "${{ runner.temp }}/arm64-binding-observations/result.json",
+            "if-no-files-found": "error",
+            "retention-days": 14
+          }
+        }
+      ]
+    }
+  }
+}
