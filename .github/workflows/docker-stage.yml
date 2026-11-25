@@ -231,6 +231,7 @@ jobs:
           path: |
             ${{ runner.temp }}/trivy.json
             ${{ runner.temp }}/release/playwright.json
+            ${{ runner.temp }}/release/sqlite-storage.json
           if-no-files-found: error
           retention-days: 90
   assemble:

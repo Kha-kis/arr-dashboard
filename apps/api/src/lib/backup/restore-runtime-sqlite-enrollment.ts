@@ -19,7 +19,9 @@ import {
 	type SqliteRestoreRuntimeOwnership,
 } from "./restore-runtime-sqlite.js";
 import {
+	assertDockerSqliteMount,
 	resolveSqliteRestoreStorage,
+	SqliteDockerMountRequiredError,
 	type SqliteRestoreStorage,
 } from "./restore-runtime-sqlite-storage.js";
 import {
@@ -322,6 +324,7 @@ function absent(path: string): boolean {
 /** Create only a known-new file; never raw-open/close an existing SQLite file. */
 function createMissingSchemaFile(
 	databaseUrl: string,
+	requireSeparate: boolean,
 ): Readonly<{ path: string; device: bigint; inode: bigint }> | undefined {
 	if (
 		typeof databaseUrl !== "string" ||
@@ -333,8 +336,12 @@ function createMissingSchemaFile(
 	if (!raw || raw === ":memory:" || /^[a-z][a-z0-9+.-]*:/i.test(raw))
 		throw new RuntimeSchemaStartupError();
 	const alias = resolve(raw);
-	if (!absent(alias)) return undefined;
+	if (!absent(alias)) {
+		if (requireSeparate) assertDockerSqliteMount(realpathSync(alias));
+		return undefined;
+	}
 	const path = join(realpathSync(dirname(alias)), basename(alias));
+	if (requireSeparate) assertDockerSqliteMount(path);
 	if (!absent(`${path}.arr-restore-runtime`)) throw new RuntimeSchemaStartupError();
 	const descriptor = openSync(
 		path,
@@ -379,6 +386,7 @@ function assertMainDescriptor(storage: SqliteRestoreStorage, main: Database.Data
 export type SqliteRuntimeSchemaProvisioning<Plan> = Readonly<{
 	/** Date-aware callers prepare tracking before sealing their schema checkpoint. */
 	requirePreparedForeignKeySchema?: boolean;
+	requireDockerSqliteMount?: boolean;
 	preflight(main: Database.Database): Plan;
 	apply(main: Database.Database, plan: Plan, assertOwned: () => Promise<void>): Promise<void>;
 	finish(main: Database.Database, plan: Plan): RuntimeSchemaStartupSettings;
@@ -403,10 +411,11 @@ export async function provisionSqliteRestoreRuntimeSchema<Plan>(
 	try {
 		const initial = timeSqliteStartupPhase("startup-record", () => initialStartupRecord(startup));
 		const created = timeSqliteStartupPhase("database-file", () =>
-			createMissingSchemaFile(databaseUrl),
+			createMissingSchemaFile(databaseUrl, operation.requireDockerSqliteMount === true),
 		);
 		const storage = timeSqliteStartupPhase("storage-resolution", () => {
 			const resolved = resolveSqliteRestoreStorage(databaseUrl);
+			if (operation.requireDockerSqliteMount) assertDockerSqliteMount(resolved.databasePath);
 			if (created) {
 				const current = lstatSync(resolved.databasePath, { bigint: true });
 				if (
@@ -543,13 +552,16 @@ export async function provisionSqliteRestoreRuntimeSchema<Plan>(
 		timeSqliteStartupPhase("commit", () => writer.exec("COMMIT"));
 		commitAcknowledged = true;
 	} catch (error) {
-		failure = new RuntimeSchemaStartupError(
-			commitStarted && !commitAcknowledged
-				? "commit-unknown"
-				: error instanceof SqliteDateCompatibilityError
-					? "format-migration-required"
-					: "startup-unavailable",
-		);
+		failure =
+			error instanceof SqliteDockerMountRequiredError
+				? error
+				: new RuntimeSchemaStartupError(
+						commitStarted && !commitAcknowledged
+							? "commit-unknown"
+							: error instanceof SqliteDateCompatibilityError
+								? "format-migration-required"
+								: "startup-unavailable",
+					);
 	} finally {
 		try {
 			timeSqliteStartupPhase("rollback", () => {

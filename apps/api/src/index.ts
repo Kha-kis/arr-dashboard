@@ -138,7 +138,10 @@ const start = async () => {
 		// Every actual API child validates, including managed replacements. A
 		// combined handoff coordinates settings; it never bypasses this boundary.
 		startupStage = "schema";
-		const schemaSettings = await synchronizeRuntimeSchema(validatedEnv.DATABASE_URL!);
+		const schemaSettings = await synchronizeRuntimeSchema(
+			validatedEnv.DATABASE_URL!,
+			combinedMode !== null && process.env.ARR_DOCKER_SQLITE_MOUNT_CHECK === "1",
+		);
 		if (shutdown) return;
 		startupStage = "runtime-open";
 		runtime = await openRestoreRuntime({

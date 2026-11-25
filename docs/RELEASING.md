@@ -61,8 +61,23 @@ Before bumping any version numbers, decide *what* this release contains.
 - [ ] Container starts and both API (3001) and Web (3000) respond
 - [ ] `GET /health` returns `{ "status": "ok", "version": "X.Y.Z", "commit": "..." }`
 - [ ] Test with `PUID`/`PGID` override
-- [ ] Test fresh install (no `/config` volume)
-- [ ] Test upgrade from previous version (existing `/config` volume)
+- [ ] For Docker SQLite, test a fresh install with an explicit persistent directory
+      mount, then clean shutdown, restart, and container replacement using the same mount.
+- [ ] Verify a fresh writable-layer-only SQLite launch refuses before database creation,
+      and a legacy writable-layer-only database is conserved on refusal. Verify the
+      [storage transition](SQLITE-STORAGE.md) with an encrypted backup from a disposable
+      legacy source and a separately enrolled mounted destination.
+- [ ] Test upgrade from previous version (existing `/config` volume) and verify the
+      deployed mount and database identity are preserved. Run the supported and refused
+      topology checks on native AMD64 and ARM64.
+      The immutable staging receipt requires those storage cases on both
+      architectures in addition to the existing restart, browser, asset and
+      scan gates.
+- [ ] Call out breaking deployment requirements before selecting a stable
+      version. The SQLite directory-mount requirement changes the startup
+      contract for previous writable-layer Docker installs. Require explicit
+      maintainer version disposition and pre-upgrade preservation guidance
+      before including it in a maintenance patch.
 
 ### 5. Functional Smoke Test
 

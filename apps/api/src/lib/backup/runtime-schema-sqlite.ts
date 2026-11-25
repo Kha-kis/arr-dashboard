@@ -383,14 +383,16 @@ function readSqliteRuntimeSchemaProjection(
 /** Explicit cold/schema writer; never called by ordinary client construction. */
 export async function synchronizeSqliteRuntimeSchema(
 	databaseUrl: string,
+	requireDockerSqliteMount = false,
 ): Promise<RuntimeSchemaStartupSettings> {
 	return timeSqliteStartupPhaseAsync("total", () =>
-		synchronizeSqliteRuntimeSchemaPhases(databaseUrl),
+		synchronizeSqliteRuntimeSchemaPhases(databaseUrl, requireDockerSqliteMount),
 	);
 }
 
 async function synchronizeSqliteRuntimeSchemaPhases(
 	databaseUrl: string,
+	requireDockerSqliteMount: boolean,
 ): Promise<RuntimeSchemaStartupSettings> {
 	const { registry, targets, indexes } = timeSqliteStartupPhase("schema-registry", () => {
 		const registry = loadRuntimeSchemaRegistry("sqlite");
@@ -405,6 +407,7 @@ async function synchronizeSqliteRuntimeSchemaPhases(
 		{ runtimeEpoch: randomUUID() },
 		{
 			requirePreparedForeignKeySchema: true,
+			requireDockerSqliteMount,
 			preflight(main) {
 				const catalog = timeSqliteStartupPhase("catalog-preflight", () =>
 					readSqliteRuntimeSchemaPlanningCatalog(main, targets.tables, indexes),

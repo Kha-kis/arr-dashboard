@@ -572,16 +572,22 @@ case_trash_scheduler_stop() {
         return 1
     fi
 
-    tmpfs_config="/config:rw,noexec,nosuid,nodev,mode=0755,size=268435456"
+    trash_config="$WORK/trash-config"
+    mkdir -p "$trash_config"
+    if [ "$ROOTLESS" = true ]; then
+        docker run --rm --network none --entrypoint chown \
+            --mount "type=bind,src=$trash_config,dst=/fixture" "$IMAGE" 1000:1000 /fixture
+    fi
     set -- docker create --pull=never --name "${WORK##*/}-trash" --network none \
+        --mount "type=bind,src=$trash_config,dst=/config" \
         --mount "type=bind,src=$trash_fixture,dst=/test-trash-shutdown-fixture.cjs,readonly" \
         -e 'NODE_OPTIONS=--max-old-space-size=768 --require=/test-trash-shutdown-fixture.cjs' \
         -e TRASH_UPDATE_SCHEDULER_ENABLED=true -e GITHUB_TOKEN= \
         -e DISABLE_QUI_CACHE_PREWARM=true -e HEAP_AUTO_SNAPSHOT=0
     if [ "$ROOTLESS" = true ]; then
-        set -- "$@" --user 1000:1000 --tmpfs "$tmpfs_config,uid=1000,gid=1000"
+        set -- "$@" --user 1000:1000
     else
-        set -- "$@" -e PUID=12345 -e PGID=12345 --tmpfs "$tmpfs_config"
+        set -- "$@" -e PUID=12345 -e PGID=12345
     fi
 
     # Use the exact ID for every assertion and for the runner's cleanup.

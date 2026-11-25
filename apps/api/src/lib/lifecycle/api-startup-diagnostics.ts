@@ -57,6 +57,7 @@ const NAME_CATEGORIES = {
 	RestoreRuntimeAdmissionError: "runtime-admission",
 	RestoreRuntimeStateError: "runtime-state",
 	SqliteRestoreStorageUnavailableError: "storage-identity",
+	SqliteDockerMountRequiredError: "sqlite-mount-required",
 	SqliteRestoreRuntimeEnrollmentError: "storage-identity",
 	RestoreRuntimeOwnershipError: "storage-ownership",
 	SqliteRestoreRuntimeOwnershipError: "storage-ownership",
@@ -132,6 +133,12 @@ export function getApiStartupDiagnostic(stage: unknown, error: unknown): ApiStar
 export function writeApiStartupDiagnostic(diagnostic: ApiStartupDiagnostic): void {
 	try {
 		writeSync(2, `Failed to start API server\n${JSON.stringify({ level: 50, ...diagnostic })}\n`);
+		if (diagnostic.errorCategory === "sqlite-mount-required") {
+			writeSync(
+				2,
+				"Docker SQLite requires a separate writable local directory mount. Retain this mount across replacements. Preserve any existing container and appdata before changing mounts. See docs/SQLITE-STORAGE.md.\n",
+			);
+		}
 	} catch {
 		/* Diagnostic delivery cannot replace the failure shutdown. */
 	}

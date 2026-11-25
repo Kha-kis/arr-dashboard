@@ -7,9 +7,17 @@ for digest in "$CANDIDATE_DIGEST" "$CANDIDATE_MANIFEST_DIGEST" "$CONFIG_DIGEST";
 test "$(docker image inspect --format '{{.Architecture}}' "$CANDIDATE_IMAGE")" = "$ARCH"
 mkdir -p "$RUNNER_TEMP/release"
 cid=""
-cleanup() { if [[ -n "$cid" ]]; then docker rm -fv "$cid" >/dev/null 2>&1 || true; fi; }
+volume=""
+cleanup() {
+  if [[ -n "$cid" ]]; then docker rm -f "$cid" >/dev/null 2>&1 || true; fi
+  if [[ -n "$volume" ]]; then docker volume rm "$volume" >/dev/null 2>&1 || true; fi
+}
 trap cleanup EXIT
-cid="$(docker run -d --label "arr-release-qualification=$RUN_ID" -p 127.0.0.1:3000:3000 -p 127.0.0.1:3001:3001 "$CANDIDATE_IMAGE")"
+volume="$(docker volume create --label "arr-release-qualification=$RUN_ID" \
+  "arr-native-$RUN_ID-$ARCH-$(cat /proc/sys/kernel/random/uuid)")"
+cid="$(docker run -d --label "arr-release-qualification=$RUN_ID" \
+  --mount "type=volume,src=$volume,dst=/config" \
+  -p 127.0.0.1:3000:3000 -p 127.0.0.1:3001:3001 "$CANDIDATE_IMAGE")"
 wait_ready() {
   for _ in $(seq 1 180); do
     if docker exec "$cid" node -e 'Promise.all([fetch("http://127.0.0.1:3001/health").then(async r=>{const j=await r.json();return r.ok&&j.status==="ok"&&j.commit===process.argv[1]&&j.version===process.argv[2]}),fetch("http://127.0.0.1:3000/login").then(r=>r.ok)]).then(x=>process.exit(x.every(Boolean)?0:1)).catch(()=>process.exit(1))' "$SOURCE_SHA" "$VERSION" >/dev/null 2>&1; then return 0; fi
@@ -67,7 +75,11 @@ for(const [i,t] of cases.entries()){assert.equal(t.expectedStatus,"passed",`case
 NODE
 docker stop --time 120 "$cid" >/dev/null
 test "$(docker inspect --format '{{.State.Status}} {{.State.ExitCode}} {{.State.OOMKilled}}' "$cid")" = "exited 0 false"
-docker rm -v "$cid" >/dev/null
+docker rm "$cid" >/dev/null
 cid=""
-jq -n --arg arch "$ARCH" --arg index "$CANDIDATE_DIGEST" --arg digest "$CANDIDATE_MANIFEST_DIGEST" --arg config "$CONFIG_DIGEST" --arg source "$SOURCE_SHA" --arg tree "$SOURCE_TREE" --arg version "$VERSION" --arg date "$BUILD_DATE" --arg web "$WEB_HASH" --arg sqlite "$SQLITE_HASH" --arg pg "$POSTGRES_HASH" '{architecture:$arch,indexDigest:$index,manifestDigest:$digest,configDigest:$config,source:$source,tree:$tree,version:$version,buildDate:$date,assets:{web:$web,sqlite:$sqlite,postgresql:$pg},runtime:{healthy:true,cleanStop:true,restart:true,browserCases:15}}' > "$RUNNER_TEMP/release-receipt.json"
+docker volume rm "$volume" >/dev/null
+volume=""
+storage_receipt="$RUNNER_TEMP/release/sqlite-storage.json"
+python3 -B scripts/release_sqlite_storage.py "$CANDIDATE_IMAGE" "$ARCH" "$storage_receipt"
+jq -n --slurpfile storage "$storage_receipt" --arg arch "$ARCH" --arg index "$CANDIDATE_DIGEST" --arg digest "$CANDIDATE_MANIFEST_DIGEST" --arg config "$CONFIG_DIGEST" --arg source "$SOURCE_SHA" --arg tree "$SOURCE_TREE" --arg version "$VERSION" --arg date "$BUILD_DATE" --arg web "$WEB_HASH" --arg sqlite "$SQLITE_HASH" --arg pg "$POSTGRES_HASH" '{architecture:$arch,indexDigest:$index,manifestDigest:$digest,configDigest:$config,source:$source,tree:$tree,version:$version,buildDate:$date,assets:{web:$web,sqlite:$sqlite,postgresql:$pg},runtime:{healthy:true,cleanStop:true,restart:true,browserCases:15},sqliteStorage:$storage[0]}' > "$RUNNER_TEMP/release-receipt.json"
 echo "CONFIG_DIGEST=$CONFIG_DIGEST" >> "$GITHUB_ENV"
