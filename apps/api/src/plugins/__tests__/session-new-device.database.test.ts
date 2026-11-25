@@ -12,6 +12,11 @@ import { NotificationService } from "../../lib/notifications/notification-servic
 import { RuleEngine } from "../../lib/notifications/rule-engine.js";
 import { PlexClient } from "../../lib/plex/plex-client.js";
 import schedulerRegistryPlugin from "../scheduler-registry.js";
+import {
+	buildFailedSessionSnapshot,
+	buildJellyfinSessionSnapshot,
+	buildPlexSessionSnapshot,
+} from "../lib/session-snapshot-measurements.js";
 import sessionSnapshotSchedulerPlugin from "../session-snapshot-scheduler.js";
 
 const MINUTE = 60_000;
@@ -255,6 +260,106 @@ describe("actual scheduler new-device baseline and native outbox", () => {
 			await native.run(() => native.prisma.sessionSnapshot.count({ where: { instanceId } })),
 		).toBe(2);
 	});
+	it("keeps the history cap for meaningful rows while excluding verified idle across two providers", async () => {
+		await native.run(async () => {
+			const jellyfin = await native.prisma.serviceInstance.findUniqueOrThrow({
+				where: { id: instanceId },
+			});
+			const key = native.encryptor.encrypt("synthetic-plex-key");
+			const plex = await native.prisma.serviceInstance.create({
+				data: {
+					userId: native.userId,
+					service: "PLEX",
+					label: "Synthetic Plex idle",
+					baseUrl: "https://example.invalid/plex-idle",
+					encryptedApiKey: key.value,
+					encryptionIv: key.iv,
+					enabled: true,
+				},
+			});
+			const idle = [
+				{
+					instanceId,
+					...buildJellyfinSessionSnapshot([], "JELLYFIN", {
+						connectionGeneration: jellyfin.connectionGeneration,
+						identityGeneration: jellyfin.identityGeneration,
+					}),
+				},
+				{
+					instanceId: plex.id,
+					...buildPlexSessionSnapshot([], {
+						connectionGeneration: plex.connectionGeneration,
+						identityGeneration: plex.identityGeneration,
+					}),
+				},
+			];
+			for (let offset = 0; offset < 10_020; offset += 334) {
+				await native.prisma.sessionSnapshot.createMany({
+					data: Array.from({ length: 334 }, (_, index) => ({
+						...idle[index % 2]!,
+						id: `idle-${String(offset + index).padStart(6, "0")}`,
+						capturedAt: new realDate(now - MINUTE),
+					})),
+				});
+			}
+		});
+		await boot();
+		await tick();
+		expect((await events()).map(({ eventType }) => eventType)).toEqual(["JELLYFIN_NEW_DEVICE"]);
+		await app!.close();
+		app = undefined;
+		await native.restart();
+		await boot();
+		await tick(5);
+		expect((await events()).map(({ eventType }) => eventType)).toEqual(["JELLYFIN_NEW_DEVICE"]);
+	}, 90_000);
+
+	it.each(["failed", "legacy", "invalid"] as const)(
+		"keeps empty %s history incomplete instead of treating it as confirmed idle",
+		async (state) => {
+			await native.run(async () => {
+				const instance = await native.prisma.serviceInstance.findUniqueOrThrow({
+					where: { id: instanceId },
+				});
+				const failed = buildFailedSessionSnapshot("JELLYFIN", {
+					connectionGeneration: instance.connectionGeneration,
+					identityGeneration: instance.identityGeneration,
+				});
+				await native.prisma.sessionSnapshot.create({
+					data: {
+						instanceId,
+						...failed,
+						measurementJson:
+							state === "failed" ? failed.measurementJson : state === "legacy" ? null : "{}",
+						capturedAt: new realDate(now - MINUTE),
+					},
+				});
+			});
+			await boot();
+			await tick();
+			expect(await events()).toEqual([]);
+		},
+	);
+
+	it("uses the same Jellyfin fallback during live captures, rebuilds and restarts", async () => {
+		sessions = [{ ...sessions[0]!, client: " ", deviceName: "  First fallback  " }];
+		await boot();
+		await tick();
+		expect((await events()).map(({ eventType }) => eventType)).toEqual(["JELLYFIN_NEW_DEVICE"]);
+		await app!.close();
+		app = undefined;
+		await native.restart();
+		await boot();
+		await tick(5);
+		expect((await events()).map(({ eventType }) => eventType)).toEqual(["JELLYFIN_NEW_DEVICE"]);
+		sessions = [{ ...sessions[0]!, deviceName: "Second fallback" }];
+		await tick(6 * 60 + 1);
+		expect((await events()).map(({ eventType }) => eventType)).toEqual([
+			"JELLYFIN_NEW_DEVICE",
+			"JELLYFIN_NEW_DEVICE",
+		]);
+	});
+
 	it("loads existing history before capture and retains it across a native restart", async () => {
 		await history(JSON.stringify([{ platform: "Wholphin" }]));
 		await boot();
@@ -271,8 +376,17 @@ describe("actual scheduler new-device baseline and native outbox", () => {
 		expect((await events()).map((event) => event.eventType)).toEqual(["JELLYFIN_NEW_DEVICE"]);
 	});
 	it("shares a complete empty historical baseline across mixed Plex and Jellyfin captures", async () => {
-		await history("[]");
 		await native.run(async () => {
+			const instance = await native.prisma.serviceInstance.findUniqueOrThrow({
+				where: { id: instanceId },
+			});
+			const idle = buildJellyfinSessionSnapshot([], "JELLYFIN", {
+				connectionGeneration: instance.connectionGeneration,
+				identityGeneration: instance.identityGeneration,
+			});
+			await native.prisma.sessionSnapshot.create({
+				data: { instanceId, ...idle, capturedAt: new realDate(now - MINUTE) },
+			});
 			const key = native.encryptor.encrypt("synthetic-plex-key");
 			await native.prisma.serviceInstance.create({
 				data: {
@@ -328,7 +442,7 @@ describe("actual scheduler new-device baseline and native outbox", () => {
 		sessions = [{ ...sessions[0]!, client: "New synthetic client" }];
 		await tick(6 * 60 + 1);
 		expect(read).toHaveBeenCalledTimes(2);
-		expect(read.mock.calls[1]![0]).toEqual({
+		expect(read.mock.calls[1]![0]).toMatchObject({
 			where: { capturedAt: { gte: new realDate(now - 30 * 24 * 60 * MINUTE) } },
 			select: { id: true, sessionsJson: true },
 			orderBy: { id: "asc" },

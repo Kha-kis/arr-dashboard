@@ -81,6 +81,7 @@ async function waitForNative(observe: () => boolean) {
 type Phase =
 	| "plexLookup"
 	| "mediaLookup"
+	| "historyScopes"
 	| "platformRead"
 	| "plexProvider"
 	| "mediaProvider"
@@ -199,6 +200,7 @@ async function boot(
 	const counts: Record<Phase, number> = {
 		plexLookup: 0,
 		mediaLookup: 0,
+		historyScopes: 0,
 		platformRead: 0,
 		plexProvider: 0,
 		mediaProvider: 0,
@@ -364,8 +366,31 @@ async function boot(
 	const lookup = prisma.serviceInstance.findMany.bind(prisma.serviceInstance);
 	const lookupDelegate: { findMany: AwaitOnly<typeof prisma.serviceInstance.findMany> } =
 		prisma.serviceInstance;
+	let historyScopeIds: string[] = [];
 	vi.spyOn(lookupDelegate, "findMany").mockImplementation(
 		protect(async (args) => {
+			if (args?.select) {
+				expect(args).toEqual({
+					where: { enabled: true, service: { in: ["PLEX", "JELLYFIN", "EMBY"] } },
+					select: { id: true, service: true, connectionGeneration: true, identityGeneration: true },
+					orderBy: { id: "asc" },
+					take: 24,
+				});
+				return observe("historyScopes", async () => {
+					const rows = await lookup(args);
+					historyScopeIds = rows.map((row) => row.id);
+					for (const row of rows) {
+						const expected = instances.find(({ id }) => id === row.id);
+						expect(expected).toBeDefined();
+						expect(row).toMatchObject({
+							service: expected?.service,
+							connectionGeneration: expected?.connectionGeneration,
+							identityGeneration: expected?.identityGeneration,
+						});
+					}
+					return rows;
+				});
+			}
 			const phase = args?.where?.service === "PLEX" ? "plexLookup" : "mediaLookup";
 			expect(args).toEqual({
 				where:
@@ -402,10 +427,30 @@ async function boot(
 		prisma.sessionSnapshot;
 	vi.spyOn(snapshotReadDelegate, "findMany").mockImplementation(
 		protect((args) => {
-			expect(args?.where).toEqual({
-				capturedAt: { gte: new Date(virtualNow() - 30 * CLEANUP_MS) },
+			expect(args?.where?.capturedAt).toEqual({ gte: new Date(virtualNow() - 30 * CLEANUP_MS) });
+			if (historyScopeIds.length === 0) {
+				expect(Object.keys(args?.where ?? {})).toEqual(["capturedAt"]);
+			} else {
+				expect(args?.where?.OR).toEqual([
+					{ measurementJson: null },
+					{
+						NOT: {
+							OR: historyScopeIds.map((instanceId) => ({
+								instanceId,
+								concurrentStreams: 0,
+								sessionsJson: "[]",
+								measurementJson: expect.stringContaining('"status":"idle"'),
+							})),
+						},
+					},
+				]);
+			}
+			expect(args?.select).toEqual({
+				id: true,
+				sessionsJson: true,
+				concurrentStreams: true,
+				measurementJson: true,
 			});
-			expect(args?.select).toEqual({ id: true, sessionsJson: true });
 			expect(args?.orderBy).toEqual({ id: "asc" });
 			expect(args?.take).toBe(500);
 			if (args?.cursor) expect(args.skip).toBe(1);
@@ -1289,6 +1334,7 @@ describe("Session snapshot scheduler lifetime", () => {
 		for (const phase of [
 			"plexLookup",
 			"mediaLookup",
+			"historyScopes",
 			"platformRead",
 			"plexProvider",
 			"mediaProvider",
@@ -1305,12 +1351,15 @@ describe("Session snapshot scheduler lifetime", () => {
 							reject,
 							call:
 								origin === "interval" &&
-								(phase === "plexLookup" || phase === "mediaLookup" || phase === "platformRead")
+								(phase === "plexLookup" ||
+									phase === "mediaLookup" ||
+									phase === "platformRead" ||
+									phase === "historyScopes")
 									? 2
 									: 1,
 						},
 					});
-					await start(f, origin, phase === "platformRead");
+					await start(f, origin, phase === "platformRead" || phase === "historyScopes");
 					await f.entered;
 					if (origin === "interval" && phase === "platformRead")
 						expect(f.counts.platformRead).toBe(2);
@@ -1325,6 +1374,7 @@ describe("Session snapshot scheduler lifetime", () => {
 					const admitted = {
 						plexProvider: f.counts.plexProvider,
 						mediaProvider: f.counts.mediaProvider,
+						historyScopes: f.counts.historyScopes,
 						platformRead: f.counts.platformRead,
 						snapshotWrite: f.counts.snapshotWrite,
 						subscription: f.counts.subscription,
