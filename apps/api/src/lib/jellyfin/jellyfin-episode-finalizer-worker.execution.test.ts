@@ -611,11 +611,19 @@ describe("Jellyfin episode finalizer worker execution", () => {
 	});
 
 	it("cleans terminal staging only after a proven-invalid run is settled", async () => {
-		mocks.prepare.mockResolvedValueOnce({ kind: "invalid", authority: { runId: payload.runId } });
+		mocks.prepare.mockResolvedValueOnce({
+			kind: "invalid",
+			authority: { runId: payload.runId },
+			guardReason: "run-completeness",
+		});
 
 		const result = await executeJellyfinEpisodeFinalization(payload);
 
-		expect(result).toEqual({ status: "not-published", reason: "invalidated" });
+		expect(result).toEqual({
+			status: "not-published",
+			reason: "invalidated",
+			guardReason: "run-completeness",
+		});
 		expect(mocks.settleInvalid).toHaveBeenCalledOnce();
 		expect(mocks.cleanup).toHaveBeenCalledOnce();
 		expect(mocks.cleanup).toHaveBeenCalledWith(

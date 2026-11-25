@@ -15,7 +15,10 @@ import {
 	sanitizeFinalizerLoopDiagnostics,
 	startFinalizerLoopObservation,
 } from "./finalizer-loop-observation.js";
-import type { JellyfinEpisodeFinalizationTiming } from "./jellyfin-episode-refresh-repository.js";
+import type {
+	JellyfinEpisodeFinalizationTiming,
+	JellyfinEpisodeFinalizerGuardReason,
+} from "./jellyfin-episode-refresh-repository.js";
 import {
 	type NativeWatchPreparationTiming,
 	sanitizeNativeWatchPreparationTiming,
@@ -86,6 +89,7 @@ export type JellyfinEpisodeFinalizationWorkerResult =
 	| {
 			status: "not-published";
 			reason?: "run-not-ready" | "lease-busy" | "lease-lost" | "invalidated" | "commit-rejected";
+			guardReason?: JellyfinEpisodeFinalizerGuardReason;
 	  }
 	| ({
 			status: "failed";
@@ -400,8 +404,39 @@ function sanitizeWorkerResult(value: unknown): JellyfinEpisodeFinalizationWorker
 			case "lease-busy":
 			case "lease-lost":
 			case "invalidated":
-			case "commit-rejected":
-				return { status: "not-published", reason: result.reason };
+			case "commit-rejected": {
+				const guardReason = Object.getOwnPropertyDescriptor(value, "guardReason")?.value;
+				const validGuardReasons: readonly JellyfinEpisodeFinalizerGuardReason[] = [
+					"input-binding",
+					"service-identity",
+					"run-authority",
+					"run-completeness",
+					"replay-state",
+					"catalog-authority",
+					"scope-plan",
+					"page-coverage",
+					"parent-snapshot",
+					"stage-capacity",
+					"staged-evidence",
+					"source-identity-conflict",
+					"scope-user-binding",
+					"attempt-binding",
+					"parent-publication",
+					"parent-age",
+					"prepared-generation",
+					"preparation-lease",
+					"settlement-authority",
+					"settlement-run-state",
+				];
+				return {
+					status: "not-published",
+					reason: result.reason,
+					...(typeof guardReason === "string" &&
+					validGuardReasons.includes(guardReason as JellyfinEpisodeFinalizerGuardReason)
+						? { guardReason: guardReason as JellyfinEpisodeFinalizerGuardReason }
+						: {}),
+				};
+			}
 			default:
 				return { status: "not-published" };
 		}

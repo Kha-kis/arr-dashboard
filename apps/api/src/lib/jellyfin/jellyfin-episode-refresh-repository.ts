@@ -114,6 +114,39 @@ const JELLYFIN_EPISODE_STAGE_INSERT_ROWS = 500;
 const JELLYFIN_EPISODE_REPLAY_RUN_BUDGET_MS = 30 * 60_000;
 const JELLYFIN_EPISODE_REPLAY_LEASE_MS = 2 * 60_000;
 const JELLYFIN_EPISODE_REPLAY_PASSES = ["collect-replay", "verify-replay"];
+export type JellyfinEpisodeFinalizerGuardReason =
+	| "input-binding"
+	| "service-identity"
+	| "run-authority"
+	| "run-completeness"
+	| "replay-state"
+	| "catalog-authority"
+	| "scope-plan"
+	| "page-coverage"
+	| "parent-snapshot"
+	| "stage-capacity"
+	| "staged-evidence"
+	| "source-identity-conflict"
+	| "scope-user-binding"
+	| "attempt-binding"
+	| "parent-publication"
+	| "parent-age"
+	| "prepared-generation"
+	| "preparation-lease"
+	| "settlement-authority"
+	| "settlement-run-state";
+
+function reportFinalizerGuardRefusal(
+	report: ((reason: JellyfinEpisodeFinalizerGuardReason) => void) | undefined,
+	reason: JellyfinEpisodeFinalizerGuardReason,
+) {
+	try {
+		report?.(reason);
+	} catch {
+		// Optional diagnostics must not affect a guarded publication decision.
+	}
+}
+
 const STAGE_INSERT_DRIVER_CODES = new Map([
 	["DatabaseNotReachable", "P1001"],
 	["SocketTimeout", "P1008"],
@@ -347,9 +380,14 @@ type PreparedRunAuthority = {
 };
 
 export type PreparedJellyfinEpisodeRun =
-	| { kind: "not-published" }
+	| { kind: "not-published"; guardReason?: JellyfinEpisodeFinalizerGuardReason }
 	| { kind: "replay-pending" }
-	| { kind: "invalid"; authority: PreparedRunAuthority; unitFingerprint: string }
+	| {
+			kind: "invalid";
+			authority: PreparedRunAuthority;
+			unitFingerprint: string;
+			guardReason: JellyfinEpisodeFinalizerGuardReason;
+	  }
 	| {
 			kind: "replay-rejected";
 			authority: PreparedRunAuthority;
@@ -1309,7 +1347,10 @@ async function evaluateJellyfinEpisodeRun(
 		// never be allowed to invalidate another owner's unpublished work.
 		if (!instance || !run)
 			return mode === "prepare"
-				? ({ kind: "not-published" } as const)
+				? {
+						kind: "not-published" as const,
+						guardReason: !instance ? ("service-identity" as const) : ("run-authority" as const),
+					}
 				: { published: false, itemCount: 0 };
 		const rejectionSnapshot = () => ({
 			unitFingerprint: finalizationUnitFingerprint(run.units),
@@ -1328,8 +1369,9 @@ async function evaluateJellyfinEpisodeRun(
 				identityGeneration: run.identityGeneration,
 			},
 		});
-		const invalidate = async () => {
-			if (mode === "prepare") return { kind: "invalid" as const, ...rejectionSnapshot() };
+		const invalidate = async (guardReason: JellyfinEpisodeFinalizerGuardReason) => {
+			if (mode === "prepare")
+				return { kind: "invalid" as const, ...rejectionSnapshot(), guardReason };
 			await tx.jellyfinEpisodeObservationExclusion.deleteMany({ where: { runId: input.runId } });
 			await tx.jellyfinEpisodeObservationStage.deleteMany({ where: { runId: input.runId } });
 			await tx.providerObservationUnit.updateMany({
@@ -1342,8 +1384,10 @@ async function evaluateJellyfinEpisodeRun(
 			});
 			return { published: false, itemCount: 0 };
 		};
-		const unavailableDependency = async () =>
-			mode === "prepare" ? ({ kind: "not-published" } as const) : await invalidate();
+		const unavailableDependency = async (guardReason: JellyfinEpisodeFinalizerGuardReason) =>
+			mode === "prepare"
+				? { kind: "not-published" as const, guardReason }
+				: await invalidate(guardReason);
 		if (
 			(instance.service !== "JELLYFIN" && instance.service !== "EMBY") ||
 			instance.connectionGeneration !== run.connectionGeneration ||
@@ -1353,8 +1397,8 @@ async function evaluateJellyfinEpisodeRun(
 			run.units.length !== run.totalUnits ||
 			run.units.some((unit) => unit.state !== "complete")
 		)
-			return await invalidate();
-		if (!input.scopes || !input.attempt) return await invalidate();
+			return await invalidate("run-completeness");
+		if (!input.scopes || !input.attempt) return await invalidate("input-binding");
 
 		const status = await tx.cacheRefreshStatus.findUnique({
 			where: { instanceId_cacheType: { instanceId: instance.id, cacheType: "jellyfin_episode" } },
@@ -1368,7 +1412,7 @@ async function evaluateJellyfinEpisodeRun(
 			// A newer marker may own the same plan-bound run; a stale caller must not
 			// invalidate its staged work, but cannot publish because its exact CAS lost.
 			return mode === "prepare"
-				? ({ kind: "not-published" } as const)
+				? { kind: "not-published" as const, guardReason: "attempt-binding" as const }
 				: { published: false, itemCount: 0 };
 		const replaySelection = settledJellyfinReplaySelection(run.units);
 		const active = replaySelection === null ? findActiveReplayUnit(run.units) : null;
@@ -1395,11 +1439,11 @@ async function evaluateJellyfinEpisodeRun(
 				!run.parentGenerationId?.startsWith(JELLYFIN_EPISODE_PARENT_V3_KEY_PREFIX))
 		)
 			return mode === "prepare"
-				? ({ kind: "not-published" } as const)
+				? { kind: "not-published" as const, guardReason: "replay-state" as const }
 				: { published: false, itemCount: 0 };
 		const runParentGenerationId = run.parentGenerationId;
 		if (typeof runParentGenerationId !== "string" || runParentGenerationId.trim() === "")
-			return await invalidate();
+			return await invalidate("run-authority");
 		const isV2Run = runParentGenerationId.startsWith(JELLYFIN_EPISODE_PARENT_KEY_PREFIX);
 		const isV3Run = runParentGenerationId.startsWith(JELLYFIN_EPISODE_PARENT_V3_KEY_PREFIX);
 		const rejectReplay = async (unitIds: readonly string[]) => {
@@ -1415,7 +1459,7 @@ async function evaluateJellyfinEpisodeRun(
 				.sort(
 					(left, right) => (right.replay?.completedMs ?? 0) - (left.replay?.completedMs ?? 0),
 				)[0];
-			if (!selected) return await invalidate();
+			if (!selected) return await invalidate("replay-state");
 			const rejection = {
 				kind: "replay-rejected" as const,
 				...rejectionSnapshot(),
@@ -1450,7 +1494,7 @@ async function evaluateJellyfinEpisodeRun(
 			pageSize === null ||
 			((isV2Run || isV3Run) && (!originalParent || (isV3Run && !originalCatalog)))
 		)
-			return await invalidate();
+			return await invalidate("catalog-authority");
 		let plan: ReturnType<typeof buildJellyfinEpisodeScopePlan>;
 		try {
 			// Exact payload equality below proves every unit retains the same
@@ -1466,7 +1510,7 @@ async function evaluateJellyfinEpisodeRun(
 				pageSize,
 			);
 		} catch {
-			return await invalidate();
+			return await invalidate("scope-plan");
 		}
 		if (
 			run.targetDigest !== plan.targetDigest ||
@@ -1487,7 +1531,7 @@ async function evaluateJellyfinEpisodeRun(
 				);
 			})
 		)
-			return await invalidate();
+			return await invalidate("scope-plan");
 		if (
 			pageSize === 2_000 &&
 			run.units.some(
@@ -1499,7 +1543,7 @@ async function evaluateJellyfinEpisodeRun(
 					),
 			)
 		)
-			return await invalidate();
+			return await invalidate("page-coverage");
 		const parentStatus = await tx.cacheRefreshStatus.findUnique({
 			where: { instanceId_cacheType: { instanceId: instance.id, cacheType: "jellyfin" } },
 		});
@@ -1529,7 +1573,7 @@ async function evaluateJellyfinEpisodeRun(
 			parent.metadata.identityGeneration !== run.identityGeneration ||
 			!hasJellyfinEpisodeParentReceipt(parent.metadata.coverageReceipt)
 		)
-			return await unavailableDependency();
+			return await unavailableDependency("parent-publication");
 		const stageLoadStartedAt = performance.now();
 		const evidenceUnits = run.units.map((unit) => {
 			const replay = replaySelection.get(unit.id);
@@ -1560,7 +1604,7 @@ async function evaluateJellyfinEpisodeRun(
 		for (const unit of evidenceUnits) {
 			expectedStageRows += unit.observedRawCount;
 			if (expectedStageRows > MAX_JELLYFIN_FINALIZER_STAGE_ROWS)
-				return await unavailableDependency();
+				return await unavailableDependency("stage-capacity");
 		}
 		const stages: JellyfinEpisodeObservationStage[] = [];
 		let stageCursor:
@@ -1582,7 +1626,7 @@ async function evaluateJellyfinEpisodeRun(
 				LIMIT ${JELLYFIN_FINALIZER_STAGE_READ_PAGE_SIZE}
 			`);
 			if (stages.length + page.length > MAX_JELLYFIN_FINALIZER_STAGE_ROWS)
-				return await unavailableDependency();
+				return await unavailableDependency("stage-capacity");
 			for (const row of page) {
 				const pass =
 					row.pass === "collect-replay"
@@ -1639,7 +1683,7 @@ async function evaluateJellyfinEpisodeRun(
 				LIMIT ${JELLYFIN_FINALIZER_STAGE_READ_PAGE_SIZE}
 			`);
 			if (stages.length + exclusions.length + page.length > MAX_JELLYFIN_FINALIZER_STAGE_ROWS)
-				return await unavailableDependency();
+				return await unavailableDependency("stage-capacity");
 			exclusions.push(...page);
 			if (page.length < JELLYFIN_FINALIZER_STAGE_READ_PAGE_SIZE) break;
 			const last = page[page.length - 1]!;
@@ -1664,7 +1708,7 @@ async function evaluateJellyfinEpisodeRun(
 				);
 			})
 		)
-			return await invalidate();
+			return await invalidate("staged-evidence");
 		// An unavailable mapping in either pass/user cannot corroborate a positive
 		// observation for that identity. Other independently verified IDs remain usable.
 		const excludedIds = new Set<string>();
@@ -1722,7 +1766,7 @@ async function evaluateJellyfinEpisodeRun(
 			}) ||
 			invalidStageCardinality
 		)
-			return await invalidate();
+			return await invalidate("staged-evidence");
 		const parentRows = await tx.jellyfinCache.findMany({
 			where: {
 				instanceId: instance.id,
@@ -1763,7 +1807,7 @@ async function evaluateJellyfinEpisodeRun(
 				})),
 			) !== parent.metadata.contentFingerprint
 		)
-			return await unavailableDependency();
+			return await unavailableDependency("parent-snapshot");
 		const parentDependencyFingerprint = fingerprintJellyfinEpisodeParentDependency(
 			instance.id,
 			parent.metadata,
@@ -1772,7 +1816,7 @@ async function evaluateJellyfinEpisodeRun(
 				mediaType: row.mediaType as "movie" | "series",
 			})) as JellyfinLibraryRowFingerprintInput[],
 		);
-		if (!parentDependencyFingerprint) return await unavailableDependency();
+		if (!parentDependencyFingerprint) return await unavailableDependency("parent-snapshot");
 		if (
 			(isV2Run &&
 				runParentGenerationId !==
@@ -1787,7 +1831,7 @@ async function evaluateJellyfinEpisodeRun(
 					runParentGenerationId !== jellyfinEpisodeCatalogGenerationKey(originalCatalog))) ||
 			(!isV2Run && !isV3Run && parentStatus.generationId !== runParentGenerationId)
 		)
-			return await unavailableDependency();
+			return await unavailableDependency("parent-snapshot");
 		const currentCatalog = isV3Run
 			? (() => {
 					const currentScopes = jellyfinEpisodeCatalogScopesFromReceipt(
@@ -1860,7 +1904,8 @@ async function evaluateJellyfinEpisodeRun(
 			if (!isV3Run) {
 				const sourceCoordinate = `${row.seriesId}\u0000${row.seasonNumber}\u0000${row.episodeNumber}`;
 				const prior = sourceCoordinateByItemId.get(row.jellyfinId);
-				if (prior && prior.coordinate !== sourceCoordinate) return await invalidate();
+				if (prior && prior.coordinate !== sourceCoordinate)
+					return await invalidate("source-identity-conflict");
 				sourceCoordinateByItemId.set(row.jellyfinId, {
 					coordinate: sourceCoordinate,
 					unitId: row.unitId,
@@ -2017,7 +2062,7 @@ async function evaluateJellyfinEpisodeRun(
 			// for other mapped series in the same current inventory.
 			if (showTmdbId === undefined || showTmdbId === null) continue;
 			const name = userNames.get(row.userKeyDigest);
-			if (!name) return await invalidate();
+			if (!name) return await invalidate("scope-user-binding");
 			const key = `${showTmdbId}:${row.seasonNumber}:${row.episodeNumber}`;
 			const aggregate = aggregates.get(key) ?? {
 				showTmdbId,
@@ -2658,7 +2703,12 @@ async function readCurrentPreparedJellyfinEpisodeRun(
 	input: FinalizeJellyfinEpisodeRunInput,
 	prepared: ReadyJellyfinEpisodeRun,
 	now: Date,
+	reportRefusal?: (reason: JellyfinEpisodeFinalizerGuardReason) => void,
 ) {
+	const refuse = (reason: JellyfinEpisodeFinalizerGuardReason) => {
+		reportFinalizerGuardRefusal(reportRefusal, reason);
+		return null;
+	};
 	const authority = prepared.authority;
 	if (
 		input.userId !== authority.userId ||
@@ -2671,7 +2721,7 @@ async function readCurrentPreparedJellyfinEpisodeRun(
 		input.attempt.resultMarker !== prepared.attempt.resultMarker ||
 		!Number.isFinite(now.getTime())
 	)
-		return null;
+		return refuse("input-binding");
 	const instance = await tx.serviceInstance.findFirst({
 		where: {
 			id: authority.instanceId,
@@ -2700,9 +2750,9 @@ async function readCurrentPreparedJellyfinEpisodeRun(
 		},
 		include: { units: true },
 	});
+	if (!instance?.expectedIdentity?.trim()) return refuse("service-identity");
+	if (!run) return refuse("run-authority");
 	if (
-		!instance?.expectedIdentity?.trim() ||
-		!run ||
 		run.completedUnits !== authority.completedUnits ||
 		run.completedWork !== authority.completedWork ||
 		run.totalUnits !== authority.totalUnits ||
@@ -2714,7 +2764,7 @@ async function readCurrentPreparedJellyfinEpisodeRun(
 		settledJellyfinReplaySelection(run.units) === null ||
 		finalizationUnitFingerprint(run.units) !== prepared.unitFingerprint
 	)
-		return null;
+		return refuse("run-completeness");
 	const status = await tx.cacheRefreshStatus.findUnique({
 		where: {
 			instanceId_cacheType: { instanceId: authority.instanceId, cacheType: "jellyfin_episode" },
@@ -2729,13 +2779,12 @@ async function readCurrentPreparedJellyfinEpisodeRun(
 		status.connectionGeneration !== authority.connectionGeneration ||
 		status.identityGeneration !== authority.identityGeneration
 	)
-		return null;
+		return refuse("attempt-binding");
 	const parentStatus = await tx.cacheRefreshStatus.findUnique({
 		where: { instanceId_cacheType: { instanceId: authority.instanceId, cacheType: "jellyfin" } },
 	});
 	if (
-		!parentStatus ||
-		parentStatus.lastResult !== "success" ||
+		parentStatus?.lastResult !== "success" ||
 		parentStatus.lastAttemptResult !== "success" ||
 		parentStatus.generationId !== prepared.parentStatus.generationId ||
 		parentStatus.generationMetadata !== prepared.parentStatus.generationMetadata ||
@@ -2743,12 +2792,15 @@ async function readCurrentPreparedJellyfinEpisodeRun(
 		parentStatus.lastAttemptAt?.getTime() !== parentStatus.lastRefreshedAt?.getTime() ||
 		parentStatus.itemCount !== prepared.parentStatus.itemCount ||
 		parentStatus.connectionGeneration !== authority.connectionGeneration ||
-		parentStatus.identityGeneration !== authority.identityGeneration ||
+		parentStatus.identityGeneration !== authority.identityGeneration
+	)
+		return refuse("parent-publication");
+	if (
 		now.getTime() - prepared.parentStatus.lastRefreshedAt.getTime() >
 			JELLYFIN_EPISODE_PARENT_MUTATION_AUTHORITY_MAX_AGE_MS ||
 		prepared.parentStatus.lastRefreshedAt.getTime() > now.getTime()
 	)
-		return null;
+		return refuse("parent-age");
 	return { run, status };
 }
 
@@ -3269,18 +3321,29 @@ export async function commitPreparedJellyfinEpisodeRun(
 	tx: Prisma.TransactionClient,
 	input: FinalizeJellyfinEpisodeRunInput,
 	prepared: ReadyJellyfinEpisodeRun,
+	reportRefusal?: (reason: JellyfinEpisodeFinalizerGuardReason) => void,
 ): Promise<{ published: boolean; itemCount: number }> {
 	const rejected = { published: false, itemCount: 0 };
+	const refuse = (reason: JellyfinEpisodeFinalizerGuardReason) => {
+		reportFinalizerGuardRefusal(reportRefusal, reason);
+		return rejected;
+	};
 	const authority = prepared.authority;
 	const now = input.testHooks?.commitClock?.() ?? new Date();
-	const current = await readCurrentPreparedJellyfinEpisodeRun(tx, input, prepared, now);
+	const current = await readCurrentPreparedJellyfinEpisodeRun(
+		tx,
+		input,
+		prepared,
+		now,
+		reportRefusal,
+	);
 	if (!current) return rejected;
 	const { status } = current;
 	if (
 		authority.parentGenerationId?.startsWith(JELLYFIN_EPISODE_PARENT_V3_KEY_PREFIX) &&
 		!prepared.nativePublication
 	)
-		return rejected;
+		return refuse("prepared-generation");
 	const decodedPreparedMetadata = decodeJellyfinEpisodeGenerationMetadata(
 		prepared.generationMetadata,
 	);
@@ -3293,7 +3356,7 @@ export async function commitPreparedJellyfinEpisodeRun(
 		decodedPreparedMetadata.metadata.coverageReceipt.observedAt !==
 			prepared.observedAt.toISOString()
 	)
-		return rejected;
+		return refuse("prepared-generation");
 	const preparation = prepared.episodePreparationToken
 		? await tx.jellyfinEpisodePreparation.findFirst({
 				where: {
@@ -3314,7 +3377,7 @@ export async function commitPreparedJellyfinEpisodeRun(
 		preparation.contentFingerprint !== prepared.contentFingerprint ||
 		preparation.observedAt?.getTime() !== prepared.observedAt.getTime()
 	)
-		return rejected;
+		return refuse("preparation-lease");
 	await input.testHooks?.beforePublish?.(tx);
 	const statusUpdated = await tx.cacheRefreshStatus.updateMany({
 		where: {
@@ -3392,7 +3455,12 @@ export async function settleJellyfinEpisodeFinalizationRejection(
 	tx: Prisma.TransactionClient,
 	input: FinalizeJellyfinEpisodeRunInput,
 	prepared: Extract<PreparedJellyfinEpisodeRun, { kind: "invalid" | "replay-rejected" }>,
+	reportRefusal?: (reason: JellyfinEpisodeFinalizerGuardReason) => void,
 ): Promise<boolean> {
+	const refuse = (reason: JellyfinEpisodeFinalizerGuardReason) => {
+		reportFinalizerGuardRefusal(reportRefusal, reason);
+		return false;
+	};
 	const authority = prepared.authority;
 	if (
 		input.userId !== authority.userId ||
@@ -3400,7 +3468,7 @@ export async function settleJellyfinEpisodeFinalizationRejection(
 		input.runId !== authority.runId ||
 		!input.attempt
 	)
-		return false;
+		return refuse("input-binding");
 	const instance = await tx.serviceInstance.findFirst({
 		where: {
 			id: authority.instanceId,
@@ -3418,14 +3486,15 @@ export async function settleJellyfinEpisodeFinalizationRejection(
 		},
 		select: { lastAttemptAt: true, lastAttemptResult: true },
 	});
+	if (!instance) return refuse("service-identity");
 	if (
-		!instance ||
 		status?.lastAttemptAt?.getTime() !== input.attempt.attemptedAt.getTime() ||
 		status.lastAttemptResult !== input.attempt.resultMarker
 	)
-		return false;
+		return refuse("attempt-binding");
 	const units = await tx.providerObservationUnit.findMany({ where: { runId: authority.runId } });
-	if (finalizationUnitFingerprint(units) !== prepared.unitFingerprint) return false;
+	if (finalizationUnitFingerprint(units) !== prepared.unitFingerprint)
+		return refuse("run-completeness");
 	const where = {
 		id: authority.runId,
 		instanceId: authority.instanceId,
@@ -3447,9 +3516,9 @@ export async function settleJellyfinEpisodeFinalizationRejection(
 		const verify = units.find((unit) => unit.id === prepared.verifyUnitId);
 		const replay = decodeJellyfinEpisodeReplayState(verify?.jellyfinReplayState);
 		if (verify?.phase !== "verify" || verify.state !== "complete" || replay?.state !== "selected")
-			return false;
+			return refuse("settlement-run-state");
 		const run = await tx.providerObservationRun.findFirst({ where, select: { id: true } });
-		if (!run) return false;
+		if (!run) return refuse("settlement-authority");
 		await updateJellyfinEpisodeReplay(tx, verify, {
 			version: 1,
 			collectUnitId: replay.collectUnitId,
@@ -3467,7 +3536,7 @@ export async function settleJellyfinEpisodeFinalizationRejection(
 			nextAttemptAt: null,
 		},
 	});
-	if (invalidated.count !== 1) return false;
+	if (invalidated.count !== 1) return refuse("settlement-authority");
 	await tx.providerObservationUnit.updateMany({
 		where: { runId: authority.runId, state: { not: "invalidated" } },
 		data: { state: "invalidated", claimToken: null, nextAttemptAt: null },

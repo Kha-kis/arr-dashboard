@@ -31,6 +31,7 @@ import {
 import {
 	commitPreparedJellyfinEpisodeRun,
 	type JellyfinEpisodeFinalizationTiming,
+	type JellyfinEpisodeFinalizerGuardReason,
 	prepareJellyfinEpisodeRun,
 	readCompletedJellyfinEpisodePublication,
 	reserveJellyfinEpisodeScopeReplay,
@@ -165,6 +166,7 @@ async function finalizeAdmitted(
 		let commitMs = 0;
 		let nonPublicationReason: "run-not-ready" | "lease-busy" | "lease-lost" | "commit-rejected" =
 			"commit-rejected";
+		let guardReason: JellyfinEpisodeFinalizerGuardReason | undefined;
 		const finalizationStartedAt = performance.now();
 		failureStage = "identity-before";
 		const finalized = await withGuardedProviderPublication(
@@ -189,7 +191,10 @@ async function finalizeAdmitted(
 				});
 				checkCancellation();
 				if (prepared.kind !== "ready") {
-					if (prepared.kind === "not-published") nonPublicationReason = "run-not-ready";
+					if (prepared.kind === "not-published") {
+						nonPublicationReason = "run-not-ready";
+						if (prepared.guardReason) guardReason = prepared.guardReason;
+					}
 					return prepared;
 				}
 				if (prepared.replayEligible) return prepared;
@@ -308,10 +313,14 @@ async function finalizeAdmitted(
 				if (prepared.kind === "not-published")
 					return { published: false, itemCount: 0, invalidated: false };
 				if (prepared.kind === "invalid" || prepared.kind === "replay-rejected") {
+					if (prepared.kind === "invalid") guardReason = prepared.guardReason;
 					const settled = await settleJellyfinEpisodeFinalizationRejection(
 						transaction,
 						input,
 						prepared,
+						(reason) => {
+							guardReason = reason;
+						},
 					);
 					if (!settled) nonPublicationReason = "lease-lost";
 					return {
@@ -331,7 +340,14 @@ async function finalizeAdmitted(
 					return { published: false, itemCount: 0, invalidated: false, replayReserved };
 				}
 				const commitStartedAt = performance.now();
-				const committed = await commitPreparedJellyfinEpisodeRun(transaction, input, prepared);
+				const committed = await commitPreparedJellyfinEpisodeRun(
+					transaction,
+					input,
+					prepared,
+					(reason) => {
+						guardReason = reason;
+					},
+				);
 				commitMs = elapsed(commitStartedAt);
 				return {
 					...committed,
@@ -374,6 +390,7 @@ async function finalizeAdmitted(
 			return {
 				status: "not-published",
 				reason: finalized.invalidated ? "invalidated" : nonPublicationReason,
+				...(guardReason ? { guardReason } : {}),
 			};
 		}
 

@@ -1716,6 +1716,7 @@ export function createJellyfinEpisodeWorkItemRunner(
 									{
 										category: "jellyfin-episode-finalizer-not-published",
 										reason: workerResult.reason ?? "unknown",
+										...(workerResult.guardReason ? { guardReason: workerResult.guardReason } : {}),
 										workerWaitMs,
 									},
 									"Jellyfin episode finalizer did not publish",

@@ -1526,7 +1526,11 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 			};
 			await refreshOwnedJellyfinEpisodeCache(context);
 			await refreshOwnedJellyfinEpisodeCache(context);
-			finalizerWorker.run.mockResolvedValueOnce({ status: "not-published", reason });
+			finalizerWorker.run.mockResolvedValueOnce({
+				status: "not-published",
+				reason,
+				guardReason: "parent-age",
+			});
 
 			const result = await refreshOwnedJellyfinEpisodeCache(context);
 
@@ -1537,6 +1541,7 @@ describe("refreshOwnedJellyfinEpisodeCache durable page runner", () => {
 				expect.objectContaining({
 					category: "jellyfin-episode-finalizer-not-published",
 					reason,
+					guardReason: "parent-age",
 				}),
 				"Jellyfin episode finalizer did not publish",
 			);
