@@ -187,6 +187,70 @@ describe("authenticated cached Library poster delivery", () => {
 		},
 	);
 
+	it.each(["forms", "ordinary", "api-redirect"] as const)(
+		"uses the fixed authenticated Radarr artwork route with a URL base in %s mode",
+		async (mode) => {
+			const requests: Array<{ path: string | undefined; authenticated: boolean }> = [];
+			const poster = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
+			const server = createServer((request, response) => {
+				const authenticated = request.headers["x-api-key"] === "synthetic-key";
+				requests.push({ path: request.url, authenticated });
+				if (request.url === "/arr/MediaCover/42/poster.jpg" && authenticated) {
+					if (mode === "forms") response.writeHead(302, { location: "/arr/login" }).end();
+					else response.writeHead(200, { "content-type": "image/jpeg" }).end(poster);
+					return;
+				}
+				if (request.url !== "/arr/api/v3/mediacover/42/poster-500.jpg" || !authenticated) {
+					response.writeHead(404).end();
+					return;
+				}
+				if (mode === "api-redirect") {
+					response.writeHead(302, { location: "/arr/unrelated" }).end();
+					return;
+				}
+				response.writeHead(200, { "content-type": "image/jpeg" }).end(poster);
+			});
+			try {
+				await new Promise<void>((resolve, reject) => {
+					server.once("error", reject);
+					server.listen(0, "127.0.0.1", resolve);
+				});
+				const address = server.address();
+				if (!address || typeof address === "string")
+					throw new Error("Fixture listener unavailable");
+				const encryptor = new Encryptor("42".repeat(32));
+				const key = encryptor.encrypt("synthetic-key");
+				app.arrClientFactory = new ArrClientFactory(encryptor);
+				findFirst.mockResolvedValueOnce({
+					instanceId: instance.id,
+					arrItemId: 42,
+					itemType: "movie",
+					data: '{"poster":"https://synthetic.test/unrelated-cover.png"}',
+					instance: {
+						...instance,
+						baseUrl: `http://127.0.0.1:${address.port}/arr/`,
+						encryptedApiKey: key.value,
+						encryptionIv: key.iv,
+					},
+				});
+				const response = await inject();
+				expect(response.statusCode).toBe(mode === "api-redirect" ? 503 : 200);
+				if (mode !== "api-redirect") {
+					expect(response.rawPayload).toEqual(poster);
+					expect(response.headers["cache-control"]).toBe("private, max-age=300");
+				} else {
+					expect(response.headers["cache-control"]).toBe("no-store");
+				}
+				expect(requests).toEqual([
+					{ path: "/arr/api/v3/mediacover/42/poster-500.jpg", authenticated: true },
+				]);
+			} finally {
+				server.closeAllConnections();
+				if (server.listening) await new Promise<void>((resolve) => server.close(() => resolve()));
+			}
+		},
+	);
+
 	it("delivers the owned cache row's fixed media-cover target after releasing the DB lane", async () => {
 		const response = await inject();
 		expect(response.statusCode).toBe(200);
@@ -195,11 +259,15 @@ describe("authenticated cached Library poster delivery", () => {
 		expect(response.headers["cache-control"]).toBe("private, max-age=300");
 		expect(response.headers["x-content-type-options"]).toBe("nosniff");
 		expect(response.headers.vary).toBe("Cookie");
-		expect(rawRequest).toHaveBeenCalledExactlyOnceWith(instance, "/MediaCover/42/poster.jpg", {
-			method: "GET",
-			timeout: 5000,
-			redirect: "error",
-		});
+		expect(rawRequest).toHaveBeenCalledExactlyOnceWith(
+			instance,
+			"/api/v3/mediacover/42/poster-500.jpg",
+			{
+				method: "GET",
+				timeout: 5000,
+				redirect: "error",
+			},
+		);
 		expect(findFirst).toHaveBeenCalledExactlyOnceWith({
 			where: {
 				instanceId: "instance-1",
