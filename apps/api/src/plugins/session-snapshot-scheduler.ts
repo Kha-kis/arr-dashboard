@@ -30,6 +30,7 @@ import {
 	buildFailedSessionSnapshot,
 	buildJellyfinSessionSnapshot,
 	buildPlexSessionSnapshot,
+	parseSessionSnapshotMeasurement,
 } from "./lib/session-snapshot-measurements.js";
 
 const INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
@@ -41,6 +42,14 @@ const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000; // Daily
 const CONCURRENT_PEAK_THRESHOLD = 5;
 const TRANSCODE_HEAVY_RATIO = 0.7;
 const NEW_DEVICE_LOOKBACK_DAYS = 30;
+
+// Keep the size of the exclusion predicate bounded. Additional scopes still count toward the scan.
+const MAX_IDLE_EXCLUSION_SCOPES = 24;
+
+function notificationDeviceLabel(platform: unknown, fallback?: unknown): string | undefined {
+	const primary = typeof platform === "string" ? platform.trim() : "";
+	return primary || (typeof fallback === "string" ? fallback.trim() || undefined : undefined);
+}
 
 const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 	async (app: FastifyInstance) => {
@@ -113,6 +122,40 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 					const platformCutoff = new Date(
 						Date.now() - NEW_DEVICE_LOOKBACK_DAYS * 24 * 60 * 60 * 1000,
 					);
+					const sources = await app.prisma.serviceInstance.findMany({
+						where: { enabled: true, service: { in: ["PLEX", "JELLYFIN", "EMBY"] } },
+						select: {
+							id: true,
+							service: true,
+							connectionGeneration: true,
+							identityGeneration: true,
+						},
+						orderBy: { id: "asc" },
+						take: MAX_IDLE_EXCLUSION_SCOPES,
+					});
+					if (admissionClosed) return baseline;
+					// Exact current-producer receipts exclude only successful empty captures.
+					// Retain NULL and every unrecognized receipt in the bounded history scan.
+					const confirmedIdle = sources.map((source) => {
+						const scope = {
+							connectionGeneration: source.connectionGeneration,
+							identityGeneration: source.identityGeneration,
+						};
+						const idle =
+							source.service === "PLEX"
+								? buildPlexSessionSnapshot([], scope)
+								: buildJellyfinSessionSnapshot(
+										[],
+										source.service === "EMBY" ? "EMBY" : "JELLYFIN",
+										scope,
+									);
+						return {
+							instanceId: source.id,
+							concurrentStreams: idle.concurrentStreams,
+							sessionsJson: idle.sessionsJson,
+							measurementJson: idle.measurementJson,
+						};
+					});
 					const PLATFORM_BATCH_SIZE = 500;
 					let cursor: string | undefined;
 					let exhausted = false;
@@ -121,8 +164,18 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 					// without exhaustion establishes positives, never absence.
 					for (let batchCount = 0; batchCount < 20; batchCount++) {
 						const batch = await app.prisma.sessionSnapshot.findMany({
-							where: { capturedAt: { gte: platformCutoff } },
-							select: { id: true, sessionsJson: true },
+							where: {
+								capturedAt: { gte: platformCutoff },
+								...(confirmedIdle.length > 0
+									? { OR: [{ measurementJson: null }, { NOT: { OR: confirmedIdle } }] }
+									: {}),
+							},
+							select: {
+								id: true,
+								sessionsJson: true,
+								concurrentStreams: true,
+								measurementJson: true,
+							},
 							orderBy: { id: "asc" },
 							take: PLATFORM_BATCH_SIZE,
 							...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
@@ -132,17 +185,39 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 							try {
 								const sessions: unknown = JSON.parse(snap.sessionsJson);
 								if (!Array.isArray(sessions)) throw new Error("Invalid session history");
+								const parsed = parseSessionSnapshotMeasurement(snap.measurementJson);
+								const measurement = parsed.status === "verified" ? parsed.measurement : undefined;
+								if (
+									measurement?.status === "idle" &&
+									sessions.length === 0 &&
+									snap.concurrentStreams === 0
+								) {
+									continue;
+								}
+								if (
+									parsed.status === "invalid" ||
+									sessions.length === 0 ||
+									(measurement &&
+										(measurement.status !== "active" ||
+											measurement.observedSessions !== sessions.length))
+								) {
+									complete = false;
+								}
 								for (const session of sessions) {
-									if (
-										!session ||
-										typeof session !== "object" ||
-										typeof session.platform !== "string" ||
-										!session.platform.trim()
-									) {
+									if (!session || typeof session !== "object") {
 										complete = false;
 										continue;
 									}
-									platforms.add(session.platform);
+									const useStoredDevice =
+										measurement?.status === "active" &&
+										measurement.deviceLabelAxis === "client" &&
+										session.provider === measurement.provider;
+									const platform = notificationDeviceLabel(
+										session.platform,
+										useStoredDevice ? session.player : undefined,
+									);
+									if (platform) platforms.add(platform);
+									else complete = false;
 								}
 							} catch {
 								complete = false;
@@ -345,7 +420,8 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 							data: { instanceId: instance.id, ...snapshot },
 						});
 						for (const session of sessions) {
-							if (session.player.platform) tickPlatforms.add(session.player.platform);
+							const platform = notificationDeviceLabel(session.player.platform);
+							if (platform) tickPlatforms.add(platform);
 						}
 						tickTotalConcurrent += sessions.length;
 						tickTotalTranscode += snapshot.transcodeCount;
@@ -526,7 +602,7 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 							data: { instanceId: instance.id, ...snapshot },
 						});
 						for (const session of sessions) {
-							const platform = session.client?.trim() || session.deviceName?.trim();
+							const platform = notificationDeviceLabel(session.client, session.deviceName);
 							if (platform) tickPlatforms.add(platform);
 						}
 						tickTotalConcurrent += sessions.length;
