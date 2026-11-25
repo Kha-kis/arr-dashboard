@@ -431,7 +431,7 @@ describe("real cached-route fanout composition", { timeout: 30_000 }, () => {
 									baseUrl: "http://synthetic.invalid",
 								});
 								expect(options).toEqual({ method: "GET", timeout: 5000, redirect: "error" });
-								const match = /^\/MediaCover\/([1-9]\d*)\/poster\.jpg$/.exec(path);
+								const match = /^\/api\/v3\/mediacover\/([1-9]\d*)\/poster-500\.jpg$/.exec(path);
 								expect(match).not.toBeNull();
 								const itemId = Number(match?.[1]);
 								expect(itemId).toBeGreaterThanOrEqual(1);

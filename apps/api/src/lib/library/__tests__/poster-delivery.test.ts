@@ -19,21 +19,21 @@ describe("Library poster cache-key projection", () => {
 		).toBeUndefined();
 	});
 
-	it.each(["movie", "series", "artist", "author"] as const)(
+	it.each(["series", "artist", "author"] as const)(
 		"builds a fixed %s root cover path",
 		(itemType) => {
 			expect(libraryPosterPath(itemType, 42, "{}")).toBe("/MediaCover/42/poster.jpg");
 		},
 	);
 
-	it.each(["movie", "series"] as const)(
-		"keeps %s JPEG even when remote artwork has a different suffix",
-		(itemType) => {
-			expect(
-				libraryPosterPath(itemType, 42, JSON.stringify({ poster: "https://synthetic.test/x.png" })),
-			).toBe("/MediaCover/42/poster.jpg");
-		},
-	);
+	it.each([
+		["movie", "/api/v3/mediacover/42/poster-500.jpg"],
+		["series", "/MediaCover/42/poster.jpg"],
+	] as const)("keeps %s JPEG even when remote artwork has a different suffix", (itemType, path) => {
+		expect(
+			libraryPosterPath(itemType, 42, JSON.stringify({ poster: "https://synthetic.test/x.png" })),
+		).toBe(path);
+	});
 
 	it.each(["artist", "author"] as const)(
 		"retains only recognized raster suffixes for %s",

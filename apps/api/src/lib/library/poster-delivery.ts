@@ -34,8 +34,11 @@ export function libraryPosterPath(
 	itemId: number,
 	data: string,
 ): string {
+	// Radarr Forms authentication protects the web cover path with a login redirect.
+	if (itemType === "movie") return `/api/v3/mediacover/${itemId}/poster-500.jpg`;
+
 	let extension = "jpg";
-	// Radarr/Sonarr always save posters as JPEG. Lidarr/Readarr retain the
+	// Sonarr saves posters as JPEG. Lidarr/Readarr retain the
 	// source cover's extension; only a known raster suffix may affect this path.
 	if (itemType === "artist" || itemType === "author") {
 		try {

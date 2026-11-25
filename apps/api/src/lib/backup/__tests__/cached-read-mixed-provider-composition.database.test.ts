@@ -1201,7 +1201,7 @@ describe("real mixed-provider cached-read scale composition", { timeout: 300_000
 									enabled: true,
 								});
 								expect(options).toEqual({ method: "GET", timeout: 5000, redirect: "error" });
-								const match = /^\/MediaCover\/([1-9]\d*)\/poster\.jpg$/.exec(path);
+								const match = /^\/api\/v3\/mediacover\/([1-9]\d*)\/poster-500\.jpg$/.exec(path);
 								if (!match) throw new Error("Unexpected synthetic poster path");
 								const id = Number(match[1]);
 								expect(selectedPosterIds.has(id)).toBe(true);
