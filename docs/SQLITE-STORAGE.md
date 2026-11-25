@@ -18,6 +18,12 @@ Alternatively, set a local bind directory as the source for `/config`, as shown 
 
 The startup check uses the database's resolved location and Linux mount information. The database needs a directory mount on eligible writable local storage such as ext4, XFS, Btrfs or local ZFS. The container check cannot determine whether a Docker volume is named or whether it will be retained. The operator must configure and retain the mount. A file-only mount, tmpfs or the container root filesystem is unsuitable. A NAS-local dataset must also provide effective ownership, native locks and stable identity. Passing the check alone does not establish NAS compatibility. Native SQLite and Docker PostgreSQL keep their existing storage policies.
 
+## Unraid pool paths
+
+Unraid user-share paths under `/mnt/user` are exposed through FUSE (`fuse.shfs`). The Docker SQLite mount check excludes that filesystem layer even when a local pool backs it. A rejection at the `database-file` phase can report `sqlite-mount-required`. In [one v2.25.1 report](https://github.com/Kha-kis/arr-dashboard/issues/913#issuecomment-7165409411), the same image started on a direct local pool path.
+
+For a fresh install, choose an eligible direct pool directory and verify its effective permissions. For existing data, keep the original container, database, sidecars, coordination files, configuration, secrets and backups available. Moving a bound database to a different mount can invalidate its storage identity. Follow the verified backup and Restore route below when the mount needs to change. See the [Unraid deployment guide](https://github.com/Kha-kis/arr-dashboard/wiki/Unraid-Deployment).
+
 ## Before updating an existing Docker installation
 
 This is a breaking deployment requirement for Docker SQLite installations
