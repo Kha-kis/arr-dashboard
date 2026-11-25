@@ -3,25 +3,32 @@
 All notable changes to Arr Dashboard will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) with any compatibility exceptions documented in the affected release.
 
 ## [Unreleased]
 
-## [2.25.1] — Quality-order and diagnostic maintenance
+## [2.25.1] — Startup recovery and maintenance
+
+### Breaking deployment requirement
+
+Docker SQLite now requires an explicit persistent directory mount for the database. This maintenance release carries a maintainer-approved compatibility exception for installations that used the container’s writable layer. Reuse an existing suitable mount and its original database, sidecars, permissions, and secrets. See the [Docker SQLite storage and migration guide](docs/SQLITE-STORAGE.md).
 
 ### Fixes
 
 - Preserve TRaSH quality order when editing or deploying a saved quality profile. Review previously affected priorities before redeploying. Saved templates and existing provider profiles require operator review.
 - Report why a Jellyfin library or episode refresh stopped. Episode-read logs now distinguish HTTP refusals, malformed responses and invalid page data. The Dashboard names the episode watch-cache warning and keeps it separate from the episode refresh retry. Jellyfin episode refresh now skips the Playlists view, which can return playlist folders to an episode query. Normal movie, TV and mixed libraries remain eligible. Unexpected rows in a supported library still stop an incomplete refresh.
 - Report the first failing SQLite startup or migration-preparation stage and allowlisted error codes while retaining ownership, migration and rollback safeguards.
+- Record and resume interrupted SQLite enrollment only when the application can verify the recorded storage objects and obtain exclusive ownership. Startup preserves the existing refusal for foreign, ambiguous, or partially attributed state. The startup log can identify the reason for a cold-enrollment refusal.
 
 ### Upgrade guidance
 
-Keep a verified backup of the database, configuration and secrets before updating. Stop the application for a consistent offline SQLite appdata copy. Use one Arr Dashboard instance per database. Let normal startup run its migrations before resuming operation. If startup refuses the upgrade, preserve the original data and capture the first named startup phase and safe error code. If rollback is necessary, use a compatible pre-upgrade backup with the previous image. See the [v2.25.0 migration and upgrade notes](https://github.com/Kha-kis/arr-dashboard/releases/tag/v2.25.0).
+Pause automatic container updates and pin your current image if you use a floating Docker tag. Confirm database placement and keep verified backups of configuration and secrets before replacement. Keep the original writable-layer container if you have one. From a healthy source, create and verify an encrypted application backup, restore it into a separately enrolled persistent destination, and verify sign-in, credentials and configuration before moving traffic. If the source cannot start, preserve it and use an applicable verified backup if available. Keep coordination files intact.
+
+Use one Arr Dashboard instance per database and let startup apply its migrations. If startup refuses the upgrade, preserve the original data and capture the first named phase and safe error code. For rollback, use the previous image with a compatible pre-upgrade backup. [Startup advisory](https://github.com/Kha-kis/arr-dashboard/releases/tag/v2.25.0#sqlite-startup-advisory) · [Backup coverage](docs/BACKUPS.md)
 
 ### Known limits
 
-The Playlists scope defect reported in #889 is covered. Recovery on the original server remains to be confirmed. The separate Jellyfin parent-admission failure in #790 and the reporter-specific SQLite startup failures in #913 and #934 remain under investigation. Plex-to-Radarr Label Sync on v2.25.0 still needs reporter confirmation for #914. Initial TRaSH override import and first-deploy partial-success behavior remain separate.
+The Playlists scope defect reported in #889 is covered. Recovery on the original server remains to be confirmed. The Jellyfin parent-admission failure in #790 and the Unraid, TrueNAS, and QNAP startup reports in #913, #934, and #914 remain separate investigations. An installation with ambiguous legacy SQLite coordination state and no applicable backup has no verified general offline recovery path. The original Plex-to-Radarr Label Sync report in #914 also remains open. Initial TRaSH override import and first-deploy partial-success behavior remain separate.
 
 Thanks to the issue reporters and contributors for the reproduction steps, provider observations and startup traces.
 

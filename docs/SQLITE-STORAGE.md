@@ -22,7 +22,7 @@ The startup check uses the database's resolved location and Linux mount informat
 
 This is a breaking deployment requirement for Docker SQLite installations
 that previously started with their database in the writable layer. Prepare the
-transition while the old container is still available.
+transition while the old container is still available. Pause automatic container updates and pin the current image before using an update policy that follows `latest`, `2`, or `2.25`. [v2.25.0 startup advisory](https://github.com/Kha-kis/arr-dashboard/releases/tag/v2.25.0#sqlite-startup-advisory)
 
 1. Confirm the old container's configured database provider and container-side path, and use `docker inspect --format '{{json .Mounts}}' <container>` locally to check where that path resolves. The default SQLite path is `/config/prod.db`. A custom path or symlink may resolve elsewhere. Keep the old deployment definition and container/image identity private. If there is a suitable existing mount, preserve and reuse it unchanged. A new identity error still requires review.
 2. If the database is in the writable layer, preserve the original container, configuration, secrets and any existing backups before pulling and recreating the service. This includes stopping automated replacement until the transition is complete. Mounting a volume over the old path hides the original files. Removing the original container can remove its writable layer.
