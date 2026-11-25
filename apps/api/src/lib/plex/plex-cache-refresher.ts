@@ -214,7 +214,13 @@ export interface PlexPublicationContext {
 export interface PlexCacheRefreshResult {
 	/** Collection-local only: watch values did not reach a fixed point. */
 	unsettledWatch?: boolean;
-	nativeInventoryStatus?: "scheduled" | "coalesced" | "current" | "failed" | "superseded";
+	nativeInventoryStatus?:
+		| "scheduled"
+		| "coalesced"
+		| "current"
+		| "deferred"
+		| "failed"
+		| "superseded";
 	upserted: number;
 	errors: number;
 	errorMessages: string[];

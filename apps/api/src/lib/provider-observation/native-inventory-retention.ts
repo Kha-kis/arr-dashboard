@@ -17,6 +17,8 @@ const candidateSelect = {
 	identityGeneration: true,
 	createdAt: true,
 	updatedAt: true,
+	nextAttemptAt: true,
+	lastFailureCategory: true,
 	instance: {
 		select: { userId: true, service: true, connectionGeneration: true, identityGeneration: true },
 	},
@@ -102,15 +104,48 @@ function validate(cutoff: Date, limit: number, maximum: number): void {
 	}
 }
 
+const settledFailureCategories = [
+	"coverage-incomplete",
+	"provider-unavailable",
+	"deadline-exceeded",
+	"database-retryable",
+	"budget-exhausted",
+];
+const collectiblePass = { state: "collecting" } as const;
+const settledPass = { state: { in: ["collecting", "complete"] } };
+
 function eligible(cutoff: Date): Prisma.ProviderNativeInventoryRunWhereInput {
 	return {
-		state: { in: ["published", "incomplete", "superseded"] },
 		activeSlotKey: null,
 		claimToken: null,
 		leaseUntil: null,
-		updatedAt: { lte: cutoff },
 		passes: { none: { publishedSnapshots: { some: {} } } },
+		OR: [
+			{ state: { in: ["published", "incomplete", "superseded"] }, updatedAt: { lte: cutoff } },
+			{ state: "superseded", passes: { some: settledPass } },
+			{
+				state: "incomplete",
+				lastFailureCategory: { in: settledFailureCategories },
+				OR: [
+					{ workKey: { in: ["library", "paired"] }, passes: { some: settledPass } },
+					{ workKey: "episode", passes: { some: collectiblePass } },
+				],
+			},
+		],
 	};
+}
+
+/** Terminal runs have lost their exact work slot and cannot be claimed again. */
+function abandonedPass(candidate: Candidate): Prisma.ProviderNativeInventoryPassWhereInput | null {
+	if (candidate.state === "superseded") return settledPass;
+	if (
+		candidate.state !== "incomplete" ||
+		!candidate.lastFailureCategory ||
+		!settledFailureCategories.includes(candidate.lastFailureCategory)
+	)
+		return null;
+	// A complete episode pass can still supply positive-only Jellyfin display evidence.
+	return candidate.workKey === "episode" ? collectiblePass : settledPass;
 }
 
 function bound(candidate: Candidate, cutoff: Date): Prisma.ProviderNativeInventoryRunWhereInput {
@@ -139,27 +174,27 @@ function domains(candidate: Candidate): string[] {
 	return candidate.workKey === "paired" ? ["library", "episode"] : [candidate.workKey];
 }
 
-async function protectedRun(tx: Transaction, candidate: Candidate, cutoff: Date): Promise<boolean> {
-	// SQLite legacy spellings can sort unlike UTC instants. SQL narrows the
-	// ledger window; decoded timestamps are the final age authority.
-	if (
-		!Number.isFinite(candidate.updatedAt.getTime()) ||
-		!Number.isFinite(candidate.createdAt.getTime()) ||
-		candidate.updatedAt > cutoff
-	)
-		return true;
-	if (
-		!candidate.instance.userId.trim() ||
-		!["PLEX", "JELLYFIN", "EMBY"].includes(candidate.instance.service) ||
-		![
+function validRetentionBinding(candidate: Candidate): boolean {
+	return (
+		Number.isFinite(candidate.updatedAt.getTime()) &&
+		Number.isFinite(candidate.createdAt.getTime()) &&
+		candidate.instance.userId.trim().length > 0 &&
+		["PLEX", "JELLYFIN", "EMBY"].includes(candidate.instance.service) &&
+		["library", "episode", "paired"].includes(candidate.workKey) &&
+		[
 			candidate.connectionGeneration,
 			candidate.identityGeneration,
 			candidate.instance.connectionGeneration,
 			candidate.instance.identityGeneration,
 		].every((value) => Number.isSafeInteger(value) && value >= 0)
-	)
-		return true;
-	if (!["library", "episode", "paired"].includes(candidate.workKey)) return true;
+	);
+}
+
+async function protectedRun(tx: Transaction, candidate: Candidate, cutoff: Date): Promise<boolean> {
+	// SQLite legacy spellings can sort unlike UTC instants. SQL narrows the
+	// ledger window; decoded timestamps are the final age authority.
+	if (candidate.updatedAt > cutoff) return true;
+
 	const binding = {
 		instanceId: candidate.instanceId,
 		connectionGeneration: candidate.connectionGeneration,
@@ -194,11 +229,33 @@ async function protectedRun(tx: Transaction, candidate: Candidate, cutoff: Date)
 }
 
 async function keepAttemptMetadata(
-	db: Pick<PrismaClient, "providerNativeInventorySnapshot">,
+	db: Pick<PrismaClient, "providerNativeInventorySnapshot" | "providerNativeInventoryRun">,
 	candidate: Candidate,
 	options?: { requireNoPasses: boolean },
 ): Promise<boolean> {
 	if (candidate.state === "published") return false;
+	if (candidate.state === "incomplete" && candidate.nextAttemptAt) {
+		const latestTerminal = await db.providerNativeInventoryRun.findFirst({
+			where: {
+				instanceId: candidate.instanceId,
+				workKey: candidate.workKey,
+				connectionGeneration: candidate.connectionGeneration,
+				identityGeneration: candidate.identityGeneration,
+				state: { in: ["published", "incomplete", "superseded"] },
+			},
+			orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+			select: { id: true },
+		});
+		if (
+			latestTerminal?.id === candidate.id &&
+			(!options?.requireNoPasses ||
+				(await db.providerNativeInventoryRun.findFirst({
+					where: { id: candidate.id, passes: { none: {} } },
+					select: { id: true },
+				})))
+		)
+			return true;
+	}
 	// The reader's newer-unpublished-run check uses this metadata to keep an
 	// older published head last-known. Staging can go, but that fact must remain.
 	return !!(await db.providerNativeInventorySnapshot.findFirst({
@@ -246,7 +303,17 @@ export async function previewNativeInventoryRetention(
 		async (tx) => {
 			let candidateCount = 0;
 			for (const candidate of await candidates(tx, cutoff, limit, null)) {
-				if (!(await protectedRun(tx, candidate, cutoff))) candidateCount++;
+				if (!validRetentionBinding(candidate)) continue;
+				const abandoned = abandonedPass(candidate);
+				if (
+					!(await protectedRun(tx, candidate, cutoff)) ||
+					(abandoned &&
+						(await tx.providerNativeInventoryPass.findFirst({
+							where: { runId: candidate.id, ...abandoned },
+							select: { id: true },
+						})))
+				)
+					candidateCount++;
 			}
 			return { candidateCount };
 		},
@@ -325,7 +392,18 @@ export async function pruneNativeInventoryRetentionSlice(
 						!fresh ||
 						fresh.createdAt.getTime() !== candidate.createdAt.getTime() ||
 						fresh.updatedAt.getTime() !== candidate.updatedAt.getTime() ||
-						(await protectedRun(tx, fresh, cutoff))
+						!validRetentionBinding(fresh)
+					)
+						return { rows: 0, runs: 0, remaining: false };
+					const abandoned = abandonedPass(fresh);
+					const protectedBeforeWrite = await protectedRun(tx, fresh, cutoff);
+					if (
+						protectedBeforeWrite &&
+						(!abandoned ||
+							!(await tx.providerNativeInventoryPass.findFirst({
+								where: { runId: fresh.id, ...abandoned },
+								select: { id: true },
+							})))
 					)
 						return { rows: 0, runs: 0, remaining: false };
 					// A true database self-assignment takes the writer fence without
@@ -342,19 +420,23 @@ export async function pruneNativeInventoryRetentionSlice(
 						AND "activeSlotKey" IS NULL AND "claimToken" IS NULL AND "leaseUntil" IS NULL
 						`;
 					boundary.operation = "protected-check";
-					if (lock !== 1 || (await protectedRun(tx, fresh, cutoff)))
-						return { rows: 0, runs: 0, remaining: false };
+					if (lock !== 1) return { rows: 0, runs: 0, remaining: false };
+					const retainRun = await protectedRun(tx, fresh, cutoff);
+					if (retainRun && !abandoned) return { rows: 0, runs: 0, remaining: false };
+					const passWhere = { runId: candidate.id, ...(retainRun ? abandoned : {}) };
 					if (options.signal?.aborted) throw CANCELLED;
 					let rows = 0,
 						runs = 0;
 					const room = () => rowLimit - total.deletedRows - rows;
 					boundary.operation = "pass-read";
 					const pass = await tx.providerNativeInventoryPass.findFirst({
-						where: { runId: candidate.id },
+						where: passWhere,
+						orderBy: { ordinal: "asc" },
 						select: { id: true },
 					});
 					if (pass) {
-						const childWhere = { passId: pass.id, pass: { run: guard } };
+						const passGuard = { id: pass.id, ...(retainRun ? abandoned : {}), run: guard };
+						const childWhere = { passId: pass.id, pass: passGuard };
 						const drain = async (
 							selectOperation: NativeInventoryRetentionOperation,
 							deleteOperation: NativeInventoryRetentionOperation,
@@ -382,7 +464,7 @@ export async function pruneNativeInventoryRetentionSlice(
 								}),
 							(ids) =>
 								tx.providerNativeInventoryStageItem.deleteMany({
-									where: { id: { in: ids }, pass: { id: pass.id, run: guard } },
+									where: { id: { in: ids }, pass: passGuard },
 								}),
 						);
 						await drain(
@@ -397,7 +479,7 @@ export async function pruneNativeInventoryRetentionSlice(
 								}),
 							(ids) =>
 								tx.providerNativeInventorySeenItem.deleteMany({
-									where: { id: { in: ids }, pass: { id: pass.id, run: guard } },
+									where: { id: { in: ids }, pass: passGuard },
 								}),
 						);
 						await drain(
@@ -420,6 +502,7 @@ export async function pruneNativeInventoryRetentionSlice(
 								await tx.providerNativeInventoryPass.deleteMany({
 									where: {
 										id: pass.id,
+										...(retainRun ? abandoned : {}),
 										run: guard,
 										items: { none: {} },
 										seenItems: { none: {} },
@@ -431,7 +514,7 @@ export async function pruneNativeInventoryRetentionSlice(
 						}
 					}
 					boundary.operation = "attempt-metadata";
-					const metadataRequired = await keepAttemptMetadata(tx, fresh);
+					const metadataRequired = retainRun || (await keepAttemptMetadata(tx, fresh));
 					if (room() > 0 && !metadataRequired) {
 						boundary.operation = "run-delete";
 						runs = (
@@ -444,7 +527,7 @@ export async function pruneNativeInventoryRetentionSlice(
 					if (options.signal?.aborted) throw CANCELLED;
 					boundary.operation = "remaining-pass-read";
 					const remainingPass = await tx.providerNativeInventoryPass.findFirst({
-						where: { runId: candidate.id },
+						where: passWhere,
 						select: { id: true },
 					});
 					return { rows, runs, remaining: !!remainingPass || (!metadataRequired && runs === 0) };

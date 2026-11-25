@@ -401,3 +401,16 @@ describe("native retention scheduler admission", () => {
 		);
 	});
 });
+
+it("waits a minute before scanning again after an idle completed sweep", async () => {
+	const target = app();
+	const state: { cursor: null; nextSweepAt?: number } = { cursor: null };
+	const clock = vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-11-25T12:00:00Z"));
+	await runNativeInventoryRetentionTick(target as never, { retentionState: state });
+	clock.mockReturnValue(Date.parse("2026-11-25T12:00:05Z"));
+	await runNativeInventoryRetentionTick(target as never, { retentionState: state });
+	expect(mocks.prune).toHaveBeenCalledTimes(1);
+	clock.mockReturnValue(Date.parse("2026-11-25T12:01:00Z"));
+	await runNativeInventoryRetentionTick(target as never, { retentionState: state });
+	expect(mocks.prune).toHaveBeenCalledTimes(2);
+});
