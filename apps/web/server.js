@@ -42,27 +42,43 @@ try {
 	process.exit(1);
 }
 
-// Patch rewrites to use runtime API_HOST
-if (nextConfig._originalRewrites) {
-	const patchRewrites = (rewrites) => {
-		if (!rewrites) return rewrites;
-		return rewrites.map((rewrite) => {
-			if (rewrite.destination?.includes("localhost:3001")) {
-				return {
-					...rewrite,
-					destination: rewrite.destination.replace("http://localhost:3001", apiHost),
-				};
-			}
-			return rewrite;
+// Keep Next's compiled route matchers and proxy implementation. Only replace
+// the two application-owned destinations, leaving other rewrites untouched.
+function patchBackendRewrites(groups) {
+	const expected = new Map([
+		["/api/:path*", "http://localhost:3001/api/:path*"],
+		["/auth/:path*", "http://localhost:3001/auth/:path*"],
+	]);
+	const patched = {};
+	for (const key of ["beforeFiles", "afterFiles", "fallback"]) {
+		patched[key] = groups[key].map((route) => {
+			if (expected.get(route.source) !== route.destination) return route;
+			expected.delete(route.source);
+			return {
+				...route,
+				destination: apiHost + route.destination.slice("http://localhost:3001".length),
+			};
 		});
-	};
-
-	nextConfig._originalRewrites.beforeFiles = patchRewrites(
-		nextConfig._originalRewrites.beforeFiles,
-	);
-	nextConfig._originalRewrites.afterFiles = patchRewrites(nextConfig._originalRewrites.afterFiles);
-	nextConfig._originalRewrites.fallback = patchRewrites(nextConfig._originalRewrites.fallback);
+	}
+	if (expected.size !== 0) throw new Error("Packaged API or authentication rewrite is unavailable");
+	return patched;
 }
+
+if (nextConfig._originalRewrites) {
+	nextConfig._originalRewrites = patchBackendRewrites(nextConfig._originalRewrites);
+}
+
+// In the pinned Next.js production server, the request router uses the
+// packaged routes manifest, independently of the standalone configuration.
+const routerModule = require.resolve("next/dist/server/lib/router-utils/filesystem");
+const router = require(routerModule);
+require.cache[routerModule].exports = {
+	...router,
+	async setupFsCheck(options) {
+		const filesystem = await router.setupFsCheck(options);
+		return { ...filesystem, rewrites: patchBackendRewrites(filesystem.rewrites) };
+	},
+};
 
 // Remove any basePath from config - app always runs at "/"
 nextConfig.basePath = undefined;
