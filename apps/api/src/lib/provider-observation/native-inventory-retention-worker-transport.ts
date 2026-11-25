@@ -10,13 +10,14 @@ import type {
 import {
 	isNativeInventoryRetentionFailureCode,
 	isNativeInventoryRetentionFailurePhase,
-	nativeInventoryRetentionDiagnosticsFrom,
-	nativeInventoryRetentionFailureCode,
-	parseNativeInventoryRetentionBoundary,
 	type NativeInventoryRetentionFailureDiagnostics,
 	type NativeInventoryRetentionTransportFailure,
 	NativeInventoryRetentionWorkerError,
+	nativeInventoryRetentionDiagnosticsFrom,
+	nativeInventoryRetentionFailureCode,
+	parseNativeInventoryRetentionBoundary,
 } from "./native-inventory-retention-diagnostics.js";
+
 export { NativeInventoryRetentionWorkerError } from "./native-inventory-retention-diagnostics.js";
 
 export type NativeInventoryRetentionWorkerPayload = {
@@ -33,7 +34,7 @@ export type NativeInventoryRetentionWorkerResult =
 	| { status: "failed" }
 	| ({ status: "failed" } & Pick<
 			NativeInventoryRetentionFailureDiagnostics,
-			"failurePhase" | "failureCode" | "retentionBoundary"
+			"failurePhase" | "failureCode" | "retentionBoundary" | "elapsedMs" | "outcome"
 	  >);
 type WorkerLike = {
 	stdout?: { resume(): unknown } | null;
@@ -124,18 +125,31 @@ export function parseNativeInventoryRetentionWorkerResult(
 		return value.status === "failed" ? { status: "failed" } : { status: "cancelled" };
 	if (
 		value.status === "failed" &&
-		(Object.keys(value).length === 3 || Object.keys(value).length === 4) &&
+		Object.keys(value).length >= 3 &&
+		Object.keys(value).length <= 6 &&
 		isNativeInventoryRetentionFailurePhase(value.failurePhase) &&
 		isNativeInventoryRetentionFailureCode(value.failureCode)
 	) {
+		const allowed = new Set([
+			"status",
+			"failurePhase",
+			"failureCode",
+			"retentionBoundary",
+			"elapsedMs",
+			"outcome",
+		]);
+		if (Object.keys(value).some((key) => !allowed.has(key))) return null;
 		const boundary = parseNativeInventoryRetentionBoundary(value.retentionBoundary);
-		if (Object.keys(value).length === 4 && !boundary) return null;
-		if (Object.keys(value).length === 3 && Object.hasOwn(value, "retentionBoundary")) return null;
+		if (Object.hasOwn(value, "retentionBoundary") && !boundary) return null;
+		if (Object.hasOwn(value, "elapsedMs") && !bounded(value.elapsedMs, 60_000)) return null;
+		if (Object.hasOwn(value, "outcome") && value.outcome !== "failed") return null;
 		return {
 			status: "failed",
 			failurePhase: value.failurePhase,
 			failureCode: value.failureCode,
 			...(boundary ? { retentionBoundary: boundary } : {}),
+			...(Object.hasOwn(value, "elapsedMs") ? { elapsedMs: value.elapsedMs as number } : {}),
+			...(Object.hasOwn(value, "outcome") ? { outcome: "failed" as const } : {}),
 		};
 	}
 	if (

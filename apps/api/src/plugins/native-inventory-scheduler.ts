@@ -7,13 +7,20 @@ import {
 	schedulePeriodicNativeInventoryWork,
 } from "../lib/provider-observation/native-inventory-job-orchestration.js";
 import {
-	pruneNativeInventoryRetentionSlice,
 	type NativeInventoryRetentionCursor,
 	type NativeInventoryRetentionSlice,
+	pruneNativeInventoryRetentionSlice,
 } from "../lib/provider-observation/native-inventory-retention.js";
-import { runNativeInventoryRetentionWorker } from "../lib/provider-observation/native-inventory-retention-worker-transport.js";
 import { nativeInventoryRetentionDiagnosticsFrom } from "../lib/provider-observation/native-inventory-retention-diagnostics.js";
+import { runNativeInventoryRetentionWorker } from "../lib/provider-observation/native-inventory-retention-worker-transport.js";
 import { JOB_ID } from "../lib/scheduler-registry/job-definitions.js";
+
+export class NativeInventoryRetentionTickError extends Error {
+	constructor() {
+		super("Native inventory retention failed");
+		this.name = "NativeInventoryRetentionTickError";
+	}
+}
 
 const STARTUP_DELAY_MS = 30_000;
 const INTERVAL_MS = 30_000;
@@ -132,7 +139,7 @@ export async function runNativeInventoryRetentionTick(
 		);
 		// The registry exposes error messages in job status. Retain an honest
 		// failure without publishing database/provider details or an error cause.
-		throw new Error("Native inventory retention failed");
+		throw new NativeInventoryRetentionTickError();
 	}
 }
 
@@ -179,11 +186,12 @@ const nativeInventorySchedulerPlugin = fastifyPlugin(
 				.track(JOB_ID.nativeInventoryRetention, async () =>
 					runNativeInventoryRetentionTick(app, { signal: shutdown.signal, retentionState }),
 				)
-				.catch(() => {
-					app.log.error(
-						{ category: "native-inventory-retention-tick-failed" },
-						"Native inventory retention tick failed",
-					);
+				.catch((error: unknown) => {
+					if (!(error instanceof NativeInventoryRetentionTickError))
+						app.log.error(
+							{ category: "native-inventory-retention-tick-failed" },
+							"Native inventory retention tick failed",
+						);
 				})
 				.finally(() => {
 					retentionRunning = null;

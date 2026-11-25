@@ -1,7 +1,9 @@
 export type NativeInventoryRetentionFailurePhase =
 	| "runtime-open"
 	| "client-create"
+	| "runtime-admission"
 	| "retention"
+	| "runtime-release"
 	| "runtime-close"
 	| "unknown";
 export type NativeInventoryRetentionFailureCode =
@@ -29,6 +31,8 @@ export type NativeInventoryRetentionFailureDiagnostics = {
 	failureCode: NativeInventoryRetentionFailureCode;
 	transportFailure?: NativeInventoryRetentionTransportFailure;
 	retentionBoundary?: NativeInventoryRetentionBoundary;
+	elapsedMs?: number;
+	outcome?: "failed";
 };
 
 const RETENTION_OPERATIONS = [
@@ -55,6 +59,7 @@ export type NativeInventoryRetentionBoundary = {
 	operation: NativeInventoryRetentionOperation;
 	transactionEntered: boolean;
 	nativeCode: "SQLITE_BUSY" | "SQLITE_BUSY_SNAPSHOT" | "SQLITE_LOCKED" | "unknown";
+	retryObserved: boolean;
 };
 const retentionBoundaries = new WeakMap<object, NativeInventoryRetentionBoundary>();
 
@@ -74,6 +79,7 @@ export function rememberNativeInventoryRetentionBoundary(
 	error: unknown,
 	operation: NativeInventoryRetentionOperation,
 	transactionEntered: boolean,
+	retryObserved = false,
 ): void {
 	if (typeof error !== "object" || error === null) return;
 	const nativeCode = ownData(
@@ -89,6 +95,7 @@ export function rememberNativeInventoryRetentionBoundary(
 			nativeCode === "SQLITE_LOCKED"
 				? nativeCode
 				: "unknown",
+		retryObserved,
 	});
 }
 
@@ -105,19 +112,25 @@ export function parseNativeInventoryRetentionBoundary(
 			return undefined;
 		const keys = Reflect.ownKeys(value);
 		if (
-			keys.length !== 3 ||
+			keys.length !== 4 ||
 			!keys.every(
-				(key) => key === "operation" || key === "transactionEntered" || key === "nativeCode",
+				(key) =>
+					key === "operation" ||
+					key === "transactionEntered" ||
+					key === "nativeCode" ||
+					key === "retryObserved",
 			)
 		)
 			return undefined;
 		const rawOperation = ownData(value, "operation"),
 			transactionEntered = ownData(value, "transactionEntered"),
-			nativeCode = ownData(value, "nativeCode");
+			nativeCode = ownData(value, "nativeCode"),
+			retryObserved = ownData(value, "retryObserved");
 		const operation = RETENTION_OPERATIONS.find((name) => name === rawOperation);
 		if (
 			!operation ||
 			typeof transactionEntered !== "boolean" ||
+			typeof retryObserved !== "boolean" ||
 			!(
 				nativeCode === "SQLITE_BUSY" ||
 				nativeCode === "SQLITE_BUSY_SNAPSHOT" ||
@@ -126,7 +139,12 @@ export function parseNativeInventoryRetentionBoundary(
 			)
 		)
 			return undefined;
-		return { operation, transactionEntered, nativeCode };
+		return {
+			operation,
+			transactionEntered,
+			nativeCode,
+			retryObserved,
+		};
 	} catch {
 		return undefined;
 	}
@@ -137,7 +155,9 @@ export function isNativeInventoryRetentionFailurePhase(
 	return (
 		value === "runtime-open" ||
 		value === "client-create" ||
+		value === "runtime-admission" ||
 		value === "retention" ||
+		value === "runtime-release" ||
 		value === "runtime-close" ||
 		value === "unknown"
 	);
@@ -184,6 +204,8 @@ export function nativeInventoryRetentionDiagnosticsFrom(
 	const phase = ownData(value, "failurePhase");
 	const code = ownData(value, "failureCode");
 	const transport = ownData(value, "transportFailure");
+	const elapsedMs = ownData(value, "elapsedMs");
+	const outcome = ownData(value, "outcome");
 	const retentionBoundary =
 		typeof value === "object" && value !== null
 			? parseNativeInventoryRetentionBoundary(
@@ -195,6 +217,13 @@ export function nativeInventoryRetentionDiagnosticsFrom(
 		failureCode: isNativeInventoryRetentionFailureCode(code) ? code : "unknown",
 		...(isTransportFailure(transport) ? { transportFailure: transport } : {}),
 		...(retentionBoundary ? { retentionBoundary } : {}),
+		...(typeof elapsedMs === "number" &&
+		Number.isSafeInteger(elapsedMs) &&
+		elapsedMs >= 0 &&
+		elapsedMs <= 60_000
+			? { elapsedMs }
+			: {}),
+		...(outcome === "failed" ? { outcome } : {}),
 	};
 }
 
@@ -203,6 +232,8 @@ export class NativeInventoryRetentionWorkerError extends Error {
 	readonly failureCode: NativeInventoryRetentionFailureCode;
 	readonly transportFailure?: NativeInventoryRetentionTransportFailure;
 	readonly retentionBoundary?: NativeInventoryRetentionBoundary;
+	readonly elapsedMs?: number;
+	readonly outcome?: "failed";
 	constructor(diagnostics?: NativeInventoryRetentionFailureDiagnostics) {
 		super("Native inventory retention worker failed");
 		this.name = "NativeInventoryRetentionWorkerError";
@@ -211,5 +242,7 @@ export class NativeInventoryRetentionWorkerError extends Error {
 		this.failureCode = fields.failureCode;
 		if (fields.transportFailure) this.transportFailure = fields.transportFailure;
 		if (fields.retentionBoundary) this.retentionBoundary = fields.retentionBoundary;
+		if (fields.elapsedMs !== undefined) this.elapsedMs = fields.elapsedMs;
+		if (fields.outcome) this.outcome = fields.outcome;
 	}
 }

@@ -21,6 +21,10 @@ import {
 	MAX_CLEAN_DURATION_MS,
 	SCHEDULER_TICK_MS,
 } from "./constants.js";
+import {
+	queueCleanerSqliteDiagnosticsFrom,
+	runQueueCleanerSqliteTransaction,
+} from "./sqlite-contention-diagnostics.js";
 
 const log = loggers.scheduler;
 
@@ -624,11 +628,12 @@ class QueueCleanerScheduler {
 	}
 
 	private async runCleanWork(instanceId: string): Promise<void> {
-		if (!this.app) return;
+		const app = this.app;
+		if (!app) return;
 
 		const startTime = Date.now();
 
-		const config = await this.app.prisma.queueCleanerConfig.findUnique({
+		const config = await app.prisma.queueCleanerConfig.findUnique({
 			where: { instanceId },
 			include: { instance: true },
 		});
@@ -641,7 +646,7 @@ class QueueCleanerScheduler {
 			// Create a skipped log entry so it appears in the Activity tab
 			// This makes the failure visible to users, not just in server logs
 			try {
-				await this.app.prisma.queueCleanerLog.create({
+				await app.prisma.queueCleanerLog.create({
 					data: {
 						instanceId,
 						status: "skipped",
@@ -661,7 +666,7 @@ class QueueCleanerScheduler {
 		}
 
 		// Create log entry
-		const logEntry = await this.app.prisma.queueCleanerLog.create({
+		const logEntry = await app.prisma.queueCleanerLog.create({
 			data: {
 				instanceId,
 				status: "running",
@@ -672,7 +677,7 @@ class QueueCleanerScheduler {
 		try {
 			const execution = this.trackWork(
 				withIndependentCleanupOperationGuard(() =>
-					executeQueueCleaner(this.app!, config.instance, config),
+					executeQueueCleaner(app, config.instance, config),
 				),
 			);
 			this.activeCleanerExecutions.set(instanceId, execution);
@@ -693,41 +698,47 @@ class QueueCleanerScheduler {
 			const completedAt = new Date();
 
 			// Update log and config state in a transaction for consistency
-			await this.app.prisma.$transaction(async (tx) => {
-				// Update log with results
-				await tx.queueCleanerLog.update({
-					where: { id: logEntry.id },
-					data: {
-						itemsCleaned: result.itemsCleaned,
-						itemsSkipped: result.itemsSkipped,
-						itemsWarned: result.itemsWarned,
-						isDryRun: result.isDryRun,
-						cleanedItems:
-							result.cleanedItems.length > 0 ? JSON.stringify(result.cleanedItems) : null,
-						skippedItems:
-							result.skippedItems.length > 0 ? JSON.stringify(result.skippedItems) : null,
-						warnedItems: result.warnedItems.length > 0 ? JSON.stringify(result.warnedItems) : null,
-						status: result.status,
-						message: result.message,
-						durationMs,
-						completedAt,
-					},
-				});
+			await runQueueCleanerSqliteTransaction(
+				app.config?.DATABASE_URL,
+				"run-result-commit",
+				(callback) => app.prisma.$transaction(callback),
+				async (tx) => {
+					// Update log with results
+					await tx.queueCleanerLog.update({
+						where: { id: logEntry.id },
+						data: {
+							itemsCleaned: result.itemsCleaned,
+							itemsSkipped: result.itemsSkipped,
+							itemsWarned: result.itemsWarned,
+							isDryRun: result.isDryRun,
+							cleanedItems:
+								result.cleanedItems.length > 0 ? JSON.stringify(result.cleanedItems) : null,
+							skippedItems:
+								result.skippedItems.length > 0 ? JSON.stringify(result.skippedItems) : null,
+							warnedItems:
+								result.warnedItems.length > 0 ? JSON.stringify(result.warnedItems) : null,
+							status: result.status,
+							message: result.message,
+							durationMs,
+							completedAt,
+						},
+					});
 
-				// Update config state
-				await tx.queueCleanerConfig.update({
-					where: { instanceId },
-					data: {
-						lastRunAt: completedAt,
-						lastRunItemsCleaned: result.itemsCleaned,
-						lastRunItemsSkipped: result.itemsSkipped,
-					},
-				});
-			});
+					// Update config state
+					await tx.queueCleanerConfig.update({
+						where: { instanceId },
+						data: {
+							lastRunAt: completedAt,
+							lastRunItemsCleaned: result.itemsCleaned,
+							lastRunItemsSkipped: result.itemsSkipped,
+						},
+					});
+				},
+			);
 
 			// Best-effort notifications remain inside the operation lease.
 			if (result.itemsCleaned > 0 && !result.isDryRun) {
-				await this.app.notificationService
+				await app.notificationService
 					?.notify(
 						{
 							eventType: "QUEUE_ITEMS_REMOVED",
@@ -760,7 +771,7 @@ class QueueCleanerScheduler {
 					});
 			}
 			if (result.itemsWarned > 0) {
-				await this.app.notificationService
+				await app.notificationService
 					?.notify(
 						{
 							eventType: "QUEUE_STRIKES_ISSUED",
@@ -791,8 +802,11 @@ class QueueCleanerScheduler {
 		} catch (error) {
 			const durationMs = Date.now() - startTime;
 			const message = getErrorMessage(error, "Unknown error");
+			const contentionDiagnostics = queueCleanerSqliteDiagnosticsFrom(error);
+			if (contentionDiagnostics)
+				log.error(contentionDiagnostics, "Queue Cleaner SQLite transaction failed");
 
-			await this.app.prisma.queueCleanerLog.update({
+			await app.prisma.queueCleanerLog.update({
 				where: { id: logEntry.id },
 				data: {
 					status: "error",
@@ -802,10 +816,11 @@ class QueueCleanerScheduler {
 				},
 			});
 
-			log.error({ err: error, instanceLabel: config.instance.label }, "Queue cleaner error");
+			if (!contentionDiagnostics)
+				log.error({ err: error, instanceLabel: config.instance.label }, "Queue cleaner error");
 
 			// Best-effort failure notification remains inside the operation lease.
-			await this.app?.notificationService
+			await app.notificationService
 				?.notify(
 					{
 						eventType: "QUEUE_CLEANER_FAILED",

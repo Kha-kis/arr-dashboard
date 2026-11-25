@@ -16,9 +16,41 @@ const boundary = {
 	operation: "transaction-start",
 	transactionEntered: false,
 	nativeCode: "SQLITE_BUSY",
+	retryObserved: false,
 };
 
 describe("bounded retention failure boundary", () => {
+	it("retains observed retry state and bounded elapsed time across worker transport", () => {
+		const error = { code: "P1008" };
+		rememberNativeInventoryRetentionBoundary(error, "transaction-start", false, true);
+		expect(nativeInventoryRetentionDiagnosticsFrom(error)).toEqual({
+			failurePhase: "unknown",
+			failureCode: "unknown",
+			retentionBoundary: {
+				operation: "transaction-start",
+				transactionEntered: false,
+				nativeCode: "unknown",
+				retryObserved: true,
+			},
+		});
+		const transported = parseNativeInventoryRetentionWorkerResult(
+			{
+				status: "failed",
+				failurePhase: "runtime-admission",
+				failureCode: "P1008",
+				elapsedMs: 1_200,
+				outcome: "failed",
+			},
+			input,
+		);
+		expect(transported).toMatchObject({
+			status: "failed",
+			failurePhase: "runtime-admission",
+			failureCode: "P1008",
+			elapsedMs: 1_200,
+		});
+	});
+
 	// Break caught: returning the WeakMap's stored object lets a caller poison
 	// later evidence with a private value that escaped the closed projector.
 	it("retains bounded local evidence when a caller mutates an earlier projection", () => {
@@ -52,6 +84,7 @@ describe("bounded retention failure boundary", () => {
 			retentionBoundary: {
 				operation: "run-recheck",
 				transactionEntered: true,
+				retryObserved: false,
 				nativeCode: "unknown",
 			},
 		});
