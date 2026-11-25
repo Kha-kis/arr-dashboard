@@ -37,9 +37,11 @@ import { applySqliteStartupCacheHint } from "./runtime-sqlite-startup-cache.js";
 
 export class SqliteRestoreRuntimeEnrollmentError extends Error {
 	readonly statusCode = 503;
-	constructor() {
+	declare readonly storageBinding?: SqliteStorageBindingDiagnostic;
+	constructor(storageBinding?: SqliteStorageBindingDiagnostic) {
 		super("SQLite Restore runtime enrollment is unavailable");
 		this.name = "SqliteRestoreRuntimeEnrollmentError";
+		if (storageBinding) Object.defineProperty(this, "storageBinding", { value: storageBinding });
 	}
 }
 export type SqliteRestoreRuntimeEnrollment = Readonly<{
@@ -63,6 +65,29 @@ const COLUMNS = [
 	"operationsInode",
 ] as const;
 type Binding = Record<(typeof COLUMNS)[number], string | number>;
+type SqliteStorageObject = "database" | "directory" | "coordination" | "owner" | "operations";
+type SqliteStorageClassification =
+	| "match"
+	| "device-mismatch"
+	| "inode-mismatch"
+	| "device-and-inode-mismatch"
+	| "missing"
+	| "invalid"
+	| "unknown";
+type SqliteStorageBindingDiagnostic = Readonly<{
+	header: "valid" | "invalid";
+	objects: readonly Readonly<{
+		object: SqliteStorageObject;
+		classification: SqliteStorageClassification;
+	}>[];
+}>;
+const STORAGE_OBJECTS = [
+	{ object: "database", device: "databaseDevice", inode: "databaseInode" },
+	{ object: "directory", device: "directoryDevice", inode: "directoryInode" },
+	{ object: "coordination", device: "coordinationDevice", inode: "coordinationInode" },
+	{ object: "owner", device: "ownerDevice", inode: "ownerInode" },
+	{ object: "operations", device: "operationsDevice", inode: "operationsInode" },
+] as const;
 
 const RUNTIME_COLUMNS = [
 	"id",
@@ -151,28 +176,103 @@ export function parseSqliteRestoreRuntimeRecord(
 	return prior;
 }
 
-function captureBinding(storage: SqliteRestoreStorage): Binding {
+function bindingHeaderIsValid(binding: Binding): boolean {
+	return binding.id === 1 && binding.protocolVersion === 1;
+}
+
+export function classifySqliteBindingObject(
+	storedDevice: unknown,
+	storedInode: unknown,
+	currentDevice: unknown,
+	currentInode: unknown,
+): SqliteStorageClassification {
+	const validIdentity = (value: unknown) =>
+		typeof value === "string" && /^(0|[1-9]\d*)$/.test(value);
+	if (!validIdentity(storedDevice) || !validIdentity(storedInode)) return "invalid";
+	if (typeof currentDevice !== "string" || typeof currentInode !== "string") return "unknown";
+	const deviceMismatch = storedDevice !== currentDevice;
+	const inodeMismatch = storedInode !== currentInode;
+	if (deviceMismatch && inodeMismatch) return "device-and-inode-mismatch";
+	if (deviceMismatch) return "device-mismatch";
+	if (inodeMismatch) return "inode-mismatch";
+	return "match";
+}
+
+function compareBinding(binding: Binding, current: Binding): SqliteStorageBindingDiagnostic {
+	return {
+		header: bindingHeaderIsValid(binding) ? "valid" : "invalid",
+		objects: STORAGE_OBJECTS.map(({ object, device, inode }) => ({
+			object,
+			classification: classifySqliteBindingObject(
+				binding[device],
+				binding[inode],
+				current[device],
+				current[inode],
+			),
+		})),
+	};
+}
+
+/** Pure diagnostic projection; never supplies authority to accept a binding. */
+export function classifySqliteUnavailableStorageObject(
+	errorCode: unknown,
+): SqliteStorageClassification {
+	if (errorCode === "ENOENT") return "missing";
+	if (errorCode === "ENOTDIR") return "invalid";
+	return "unknown";
+}
+
+function captureBinding(storage: SqliteRestoreStorage, diagnosticBinding?: Binding): Binding {
 	storage.assertUnchanged();
 	const result: Binding = { id: 1, protocolVersion: 1 } as Binding;
-	for (const [prefix, path] of [
+	const paths = [
 		["database", storage.databasePath],
 		["directory", storage.directoryPath],
 		["coordination", storage.coordinationDirectoryPath],
 		["owner", join(storage.coordinationDirectoryPath, "owner.sqlite3")],
 		["operations", join(storage.coordinationDirectoryPath, "operations.sqlite3")],
-	] as const) {
-		const stat = lstatSync(path, { bigint: true });
-		result[`${prefix}Device`] = String(stat.dev);
-		result[`${prefix}Inode`] = String(stat.ino);
+	] as const;
+	for (const [prefix, path] of paths) {
+		try {
+			const stat = lstatSync(path, { bigint: true });
+			result[`${prefix}Device`] = String(stat.dev);
+			result[`${prefix}Inode`] = String(stat.ino);
+		} catch (error) {
+			if (diagnosticBinding && typeof error === "object" && error !== null) {
+				const code = Object.getOwnPropertyDescriptor(error, "code");
+				const errorCode = code && "value" in code ? code.value : undefined;
+				const observed = compareBinding(diagnosticBinding, result);
+				const objects = observed.objects.map((entry) =>
+					entry.object === prefix
+						? { ...entry, classification: classifySqliteUnavailableStorageObject(errorCode) }
+						: entry,
+				);
+				try {
+					Object.defineProperty(error, "storageBinding", {
+						value: { ...observed, objects },
+						configurable: true,
+					});
+				} catch {
+					// Diagnostics never replace the original native error.
+				}
+			}
+			throw error;
+		}
 	}
 	storage.assertUnchanged();
 	return result;
 }
 
-function assertBinding(storage: SqliteRestoreStorage, binding: Binding): void {
-	const current = captureBinding(storage);
+function assertBinding(
+	storage: SqliteRestoreStorage,
+	binding: Binding,
+	includeDiagnostic = false,
+): void {
+	const current = captureBinding(storage, includeDiagnostic ? binding : undefined);
 	if (COLUMNS.some((field) => binding[field] !== current[field])) {
-		throw new SqliteRestoreRuntimeEnrollmentError();
+		throw new SqliteRestoreRuntimeEnrollmentError(
+			includeDiagnostic ? compareBinding(binding, current) : undefined,
+		);
 	}
 }
 
@@ -465,7 +565,7 @@ export async function provisionSqliteRestoreRuntimeSchema<Plan>(
 			binding = timeSqliteStartupPhase("storage-binding-validation", () => {
 				if (bindings.length !== 1 || journals.length !== 1) throw new RuntimeSchemaStartupError();
 				const persisted = bindings[0]!;
-				assertBinding(storage, persisted);
+				assertBinding(storage, persisted, true);
 				return persisted;
 			});
 			timeSqliteStartupPhase("startup-journal-validation", () =>

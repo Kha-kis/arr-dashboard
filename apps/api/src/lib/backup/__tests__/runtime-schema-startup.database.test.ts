@@ -21,6 +21,10 @@ import Database from "better-sqlite3";
 import { Client } from "pg";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { acquireSqliteRestoreRuntimeOwnership } from "../restore-runtime-sqlite.js";
+import {
+	classifySqliteBindingObject,
+	classifySqliteUnavailableStorageObject,
+} from "../restore-runtime-sqlite-enrollment.js";
 import * as postgres from "../runtime-schema-postgres.js";
 import {
 	loadRuntimeSchemaRegistry,
@@ -175,6 +179,29 @@ function validateSqliteCliDiagnostics(
 	]);
 	return { ...result, stderr: error };
 }
+
+describe("SQLite binding diagnostic classifications", () => {
+	it.each([
+		["device match", "42", "7", "42", "7", "match"],
+		["device mismatch", "42", "7", "43", "7", "device-mismatch"],
+		["inode mismatch", "42", "7", "42", "8", "inode-mismatch"],
+		["both mismatch", "42", "7", "43", "8", "device-and-inode-mismatch"],
+		["invalid stored identity", "invalid", "7", "42", "7", "invalid"],
+		["unknown live identity", "42", "7", undefined, "7", "unknown"],
+	])("%s", (_name, storedDevice, storedInode, currentDevice, currentInode, expected) => {
+		expect(
+			classifySqliteBindingObject(storedDevice, storedInode, currentDevice, currentInode),
+		).toBe(expected);
+	});
+	it.each([
+		["missing", "ENOENT", "missing"],
+		["invalid path component", "ENOTDIR", "invalid"],
+		["unclassified observation", "EIO", "unknown"],
+		["missing code", undefined, "unknown"],
+	])("%s", (_name, code, expected) => {
+		expect(classifySqliteUnavailableStorageObject(code)).toBe(expected);
+	});
+});
 
 describe.skipIf(process.platform !== "linux")("native SQLite schema startup writer", () => {
 	let directory: string;
@@ -421,10 +448,143 @@ describe.skipIf(process.platform !== "linux")("native SQLite schema startup writ
 				phase,
 				outcome: "failed",
 				errorCategory,
-				...(scenario === "unanchored coordination" ? { refusal: "coordination-path" } : {}),
+				...(scenario === "unanchored coordination"
+					? { refusal: "coordination-path" }
+					: {
+							storageBinding: {
+								header: "valid",
+								objects: [
+									{ object: "database", classification: "inode-mismatch" },
+									{ object: "directory", classification: "match" },
+									{ object: "coordination", classification: "match" },
+									{ object: "owner", classification: "match" },
+									{ object: "operations", classification: "match" },
+								],
+							},
+						}),
 				code: null,
 			});
 			expect(diagnostics.at(-1)).toMatchObject({ phase: "total", outcome: "failed" });
+			expect(readFileSync(path)).toEqual(before);
+		},
+		startupCliTestTimeoutMs,
+	);
+	it(
+		"classifies all five stored device mismatches while preserving inode values and refusing startup",
+		async () => {
+			await synchronize();
+			database((db) =>
+				db.exec(`UPDATE SqliteRestoreStorageBinding SET
+				databaseDevice=CASE WHEN databaseDevice='0' THEN '1' ELSE '0' END,
+				directoryDevice=CASE WHEN directoryDevice='0' THEN '1' ELSE '0' END,
+				coordinationDevice=CASE WHEN coordinationDevice='0' THEN '1' ELSE '0' END,
+				ownerDevice=CASE WHEN ownerDevice='0' THEN '1' ELSE '0' END,
+				operationsDevice=CASE WHEN operationsDevice='0' THEN '1' ELSE '0' END`),
+			);
+			const before = readFileSync(path);
+			const result = await runStartupCli(url);
+			expect(result).toMatchObject({ code: 1, signal: null, stdout: "" });
+			expect(result.stderr.endsWith(cliUnavailable.stderr)).toBe(true);
+			const logText = result.stderr.slice(0, -cliUnavailable.stderr.length);
+			expect(logText).not.toContain(path);
+			const events = logText
+				.trimEnd()
+				.split("\n")
+				.map((line) => JSON.parse(line) as Record<string, unknown>);
+			expect(events.at(-2)).toEqual({
+				level: 30,
+				category: "sqlite-startup-phase",
+				elapsedMs: expect.any(Number),
+				phase: "storage-binding-validation",
+				outcome: "failed",
+				errorCategory: "storage-identity",
+				code: null,
+				storageBinding: {
+					header: "valid",
+					objects: [
+						{ object: "database", classification: "device-mismatch" },
+						{ object: "directory", classification: "device-mismatch" },
+						{ object: "coordination", classification: "device-mismatch" },
+						{ object: "owner", classification: "device-mismatch" },
+						{ object: "operations", classification: "device-mismatch" },
+					],
+				},
+			});
+			expect(events.some((event) => event.phase === "schema-apply")).toBe(false);
+			expect(readFileSync(path)).toEqual(before);
+		},
+		startupCliTestTimeoutMs,
+	);
+	it(
+		"classifies a missing coordination object and leaves later objects unknown",
+		async () => {
+			await synchronize();
+			const retired = join(directory, "retired-coordination");
+			renameSync(`${path}.arr-restore-runtime`, retired);
+			const before = readFileSync(path);
+			const result = await runStartupCli(url);
+			expect(result).toMatchObject({ code: 1, signal: null, stdout: "" });
+			const logText = result.stderr.slice(0, -cliUnavailable.stderr.length);
+			expect(logText).not.toContain(directory);
+			const events = logText
+				.trimEnd()
+				.split("\n")
+				.map((line) => JSON.parse(line) as Record<string, unknown>);
+			expect(events.at(-2)).toMatchObject({
+				phase: "storage-binding-validation",
+				outcome: "failed",
+				errorCategory: "filesystem",
+				code: "ENOENT",
+				storageBinding: {
+					header: "valid",
+					objects: [
+						{ object: "database", classification: "match" },
+						{ object: "directory", classification: "match" },
+						{ object: "coordination", classification: "missing" },
+						{ object: "owner", classification: "unknown" },
+						{ object: "operations", classification: "unknown" },
+					],
+				},
+			});
+			expect(events.some((event) => event.phase === "schema-apply")).toBe(false);
+			expect(readFileSync(path)).toEqual(before);
+		},
+		startupCliTestTimeoutMs,
+	);
+	it(
+		"marks malformed binding identity and header fields invalid without exposing values",
+		async () => {
+			await synchronize();
+			database((db) =>
+				db.exec(
+					"UPDATE SqliteRestoreStorageBinding SET protocolVersion=2, databaseInode='private-binding-value'",
+				),
+			);
+			const before = readFileSync(path);
+			const result = await runStartupCli(url);
+			expect(result).toMatchObject({ code: 1, signal: null, stdout: "" });
+			const logText = result.stderr.slice(0, -cliUnavailable.stderr.length);
+			expect(logText).not.toContain("private-binding-value");
+			expect(logText).not.toContain(directory);
+			const events = logText
+				.trimEnd()
+				.split("\n")
+				.map((line) => JSON.parse(line) as Record<string, unknown>);
+			expect(events.at(-2)).toMatchObject({
+				phase: "storage-binding-validation",
+				errorCategory: "storage-identity",
+				code: null,
+				storageBinding: {
+					header: "invalid",
+					objects: [
+						{ object: "database", classification: "invalid" },
+						{ object: "directory", classification: "match" },
+						{ object: "coordination", classification: "match" },
+						{ object: "owner", classification: "match" },
+						{ object: "operations", classification: "match" },
+					],
+				},
+			});
 			expect(readFileSync(path)).toEqual(before);
 		},
 		startupCliTestTimeoutMs,
