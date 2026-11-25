@@ -1,5 +1,6 @@
 import { lstatSync, readFileSync, realpathSync, statfsSync } from "node:fs";
 import { dirname, posix, resolve } from "node:path";
+import { RuntimeSchemaStartupError } from "./runtime-schema-startup.js";
 
 const ELIGIBLE_FILESYSTEMS = new Set([
 	0xef53n,
@@ -9,6 +10,20 @@ const ELIGIBLE_FILESYSTEMS = new Set([
 	0x794c7630n,
 	0x2fc12fc1n, // Local Linux ZFS; native ownership and operation locks remain separate gates.
 ]);
+
+const PERSISTENT_DOCKER_FILESYSTEMS = new Map([
+	["ext4", 0xef53n],
+	["xfs", 0x58465342n],
+	["btrfs", 0x9123683en],
+	["zfs", 0x2fc12fc1n],
+]);
+
+export class SqliteDockerMountRequiredError extends RuntimeSchemaStartupError {
+	constructor() {
+		super("sqlite-mount-required");
+		this.name = "SqliteDockerMountRequiredError";
+	}
+}
 
 export class SqliteRestoreStorageUnavailableError extends Error {
 	readonly statusCode = 503;
@@ -54,11 +69,39 @@ export function isEligibleSqliteRestoreMount(
 	return true;
 }
 
+/** A separate mount boundary is not proof of operator retention or storage continuity. */
+export function hasSeparateDockerSqliteMount(
+	databasePath: string,
+	mountInfo: string,
+	filesystemType: bigint,
+	platform: string,
+): boolean {
+	return classifySqliteRestoreMount(databasePath, mountInfo, filesystemType, platform, true);
+}
+
+export function assertDockerSqliteMount(databasePath: string): void {
+	try {
+		if (
+			hasSeparateDockerSqliteMount(
+				databasePath,
+				readFileSync("/proc/self/mountinfo", "utf8"),
+				statfsSync(dirname(databasePath), { bigint: true }).type,
+				process.platform,
+			)
+		)
+			return;
+	} catch {
+		// Use the same fixed guidance if the mount cannot be verified.
+	}
+	throw new SqliteDockerMountRequiredError();
+}
+
 function classifySqliteRestoreMount(
 	databasePath: string,
 	mountInfo: string,
 	filesystemType: bigint,
 	platform: string,
+	requireSeparate = false,
 ): boolean {
 	if (
 		platform !== "linux" ||
@@ -74,6 +117,8 @@ function classifySqliteRestoreMount(
 	if (lines.length > 10000) return false;
 	const seenIds = new Set<string>();
 	let hasContainingMount = false;
+	const containingPaths = new Set<string>();
+	let closestMount: { path: string; writableLocal: boolean } | undefined;
 	for (const line of lines) {
 		const halves = line.split(" - ");
 		if (halves.length !== 2) return false;
@@ -99,9 +144,24 @@ function classifySqliteRestoreMount(
 		if (databasePath.startsWith(mountPath === "/" ? "/" : `${mountPath}/`)) {
 			if (!root.startsWith("/")) return false;
 			hasContainingMount = true;
+			if (requireSeparate) {
+				// A stacked ancestor can hide a deeper mount. Refuse ambiguous topology.
+				if (containingPaths.has(mountPath)) return false;
+				containingPaths.add(mountPath);
+				if (!closestMount || closestMount.path.length < mountPath.length) {
+					closestMount = {
+						path: mountPath,
+						writableLocal:
+							mountPath !== "/" &&
+							fields[5]!.split(",").includes("rw") &&
+							tail[2]!.split(",").includes("rw") &&
+							PERSISTENT_DOCKER_FILESYSTEMS.get(tail[0]!) === filesystemType,
+					};
+				}
+			}
 		}
 	}
-	return hasContainingMount;
+	return requireSeparate ? closestMount?.writableLocal === true : hasContainingMount;
 }
 
 function decodeMountPath(value: string): string | undefined {

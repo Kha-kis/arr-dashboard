@@ -9,6 +9,7 @@ const state = vi.hoisted(() => ({
 	diagnostics: [] as unknown[],
 	stderr: [] as string[],
 	environment: {} as Record<string, unknown>,
+	mountChecks: [] as boolean[],
 	listenGate: Promise.resolve(),
 	initFails: false,
 	listenFails: false,
@@ -47,7 +48,8 @@ vi.mock("node:fs", async (importOriginal) => {
 	};
 });
 vi.mock("../../backup/runtime-schema-startup.js", () => ({
-	synchronizeRuntimeSchema: async () => {
+	synchronizeRuntimeSchema: async (_url: string, requireMount: boolean) => {
+		state.mountChecks.push(requireMount);
 		state.events.push("native-validation");
 		if (state.initFails) throw Error("synthetic validation failure");
 		return state.settings;
@@ -113,6 +115,8 @@ async function boot() {
 beforeEach(() => {
 	vi.resetModules();
 	state.events.length = 0;
+	state.mountChecks.length = 0;
+	vi.stubEnv("ARR_DOCKER_SQLITE_MOUNT_CHECK", undefined);
 	state.messages.length = 0;
 	state.exits.length = 0;
 	state.diagnostics.length = 0;
@@ -237,7 +241,14 @@ it("uses resolved combined database ports and address rather than image defaults
 	expect(state.environment.API_HOST).toBe("127.0.0.1");
 	expect(state.events.filter((x) => x === "native-validation")).toHaveLength(1);
 });
+it.each(["initial", "restart"])("requires the Docker mount check during %s", async (phase) => {
+	vi.stubEnv("ARR_DOCKER_SQLITE_MOUNT_CHECK", "1");
+	vi.stubEnv("ARR_COMBINED_STARTUP_PHASE", phase);
+	await boot();
+	expect(state.mountChecks).toEqual([true]);
+});
 it("preserves standalone environment precedence and sends no handoff", async () => {
+	vi.stubEnv("ARR_DOCKER_SQLITE_MOUNT_CHECK", "1");
 	vi.stubEnv("ARR_COMBINED_STARTUP_NONCE", undefined);
 	vi.stubEnv("ARR_COMBINED_STARTUP_PHASE", undefined);
 	vi.stubEnv("LAUNCHER_MANAGED", "false");
@@ -245,6 +256,7 @@ it("preserves standalone environment precedence and sends no handoff", async () 
 	expect(state.environment.API_PORT).toBe(3001);
 	expect(state.environment.API_HOST).toBe("0.0.0.0");
 	expect(state.messages).toEqual([]);
+	expect(state.mountChecks).toEqual([false]);
 	expect(state.events.filter((x) => x === "native-validation")).toHaveLength(1);
 });
 it("revalidates a replacement child but keeps its captured per-container bindings", async () => {

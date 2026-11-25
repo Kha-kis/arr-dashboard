@@ -343,6 +343,8 @@ case "$DATABASE_URL" in
     *) echo "ERROR: Unsupported database provider; services were not started" >&2; exit 1 ;;
 esac
 echo "  - Detected database provider: $DB_PROVIDER"
+# The packaged Docker entrypoint selects the mount policy on every API child.
+export ARR_DOCKER_SQLITE_MOUNT_CHECK=1
 
 # The provider is an allowlisted value, never an operator-supplied code path.
 # Validate matching schema, compiled client, assets and manifest before any DB

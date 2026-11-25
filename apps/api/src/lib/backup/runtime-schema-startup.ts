@@ -12,7 +12,8 @@ export class RuntimeSchemaStartupError extends Error {
 			| "startup-unavailable"
 			| "commit-unknown"
 			| "format-migration-required"
-			| "closure-unverified" = "startup-unavailable",
+			| "closure-unverified"
+			| "sqlite-mount-required" = "startup-unavailable",
 	) {
 		super("Database schema startup is unavailable.");
 		this.name = "RuntimeSchemaStartupError";
@@ -22,6 +23,7 @@ export class RuntimeSchemaStartupError extends Error {
 /** Pre-launch provider dispatch; never infer SQLite from an unknown URL scheme. */
 export async function synchronizeRuntimeSchema(
 	databaseUrl: string,
+	requireDockerSqliteMount = false,
 ): Promise<RuntimeSchemaStartupSettings> {
 	if (typeof databaseUrl !== "string") throw new RuntimeSchemaStartupError();
 	if (/^postgres(ql)?:\/\//i.test(databaseUrl))
@@ -29,7 +31,10 @@ export async function synchronizeRuntimeSchema(
 			databaseUrl,
 		);
 	if (databaseUrl.startsWith("file:"))
-		return (await import("./runtime-schema-sqlite.js")).synchronizeSqliteRuntimeSchema(databaseUrl);
+		return (await import("./runtime-schema-sqlite.js")).synchronizeSqliteRuntimeSchema(
+			databaseUrl,
+			requireDockerSqliteMount,
+		);
 	throw new RuntimeSchemaStartupError();
 }
 

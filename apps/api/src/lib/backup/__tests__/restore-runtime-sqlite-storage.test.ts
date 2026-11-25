@@ -20,6 +20,7 @@ import Database from "better-sqlite3";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRecoverableSqliteAdapter } from "../../sqlite-adapter.js";
 import {
+	hasSeparateDockerSqliteMount,
 	isEligibleSqliteRestoreMount,
 	resolveSqliteRestoreStorage,
 	SqliteRestoreStorageUnavailableError,
@@ -27,6 +28,41 @@ import {
 
 const ROOT_MOUNT = "18 0 0:27 / / rw,relatime - overlay overlay rw\n";
 const LOCAL_TYPE = 0x794c7630n;
+
+describe("managed Docker SQLite persistence", () => {
+	const ext4Type = 0xef53n;
+	const mounted = `${ROOT_MOUNT}21 18 8:1 /host/appdata /config rw,relatime - ext4 /dev/sda rw\n`;
+	const path = "/config/nested/main.db";
+	const check = (evidence: string, target = path, type = ext4Type) =>
+		hasSeparateDockerSqliteMount(target, evidence, type, "linux");
+
+	it("requires a separate writable directory mount for the effective path", () => {
+		expect(check(mounted)).toBe(true);
+		expect(check(ROOT_MOUNT)).toBe(false);
+		expect(check(mounted, "/config-old/nested/main.db")).toBe(false);
+		expect(check(mounted.replace("/config rw,relatime", "/config ro,relatime"))).toBe(false);
+		expect(check(mounted.replace("/dev/sda rw", "/dev/sda ro"))).toBe(false);
+		expect(check(mounted, path, 0x794c7630n)).toBe(false);
+	});
+
+	it("selects the deepest canonical mount and refuses exact file binds", () => {
+		const shadow = `${mounted}22 21 0:8 / /config/nested rw - tmpfs tmpfs rw\n`;
+		expect(check(shadow, path, 0x01021994n)).toBe(false);
+		expect(
+			check(`${mounted}22 21 8:1 /source /config/nested/main.db rw - ext4 /dev/sda rw\n`),
+		).toBe(false);
+		expect(check(`${mounted}22 21 8:1 /source /config rw - ext4 /dev/sda rw\n`)).toBe(false);
+		expect(check(`${mounted}23 22 8:1 /source /config/nested rw - ext4 /dev/sda rw\n`)).toBe(true);
+	});
+
+	it("accepts escaped names for local directory mounts and refuses unreadable evidence", () => {
+		expect(check(mounted.replace("/config ", String.raw`/app\040data `), "/app data/main.db")).toBe(
+			true,
+		);
+		expect(check(`${mounted}malformed\n`)).toBe(false);
+		expect(check(mounted, "/config/../main.db")).toBe(false);
+	});
+});
 
 describe("SQLite Restore trusted mount eligibility", () => {
 	it("does not rescan unchanged mount evidence at repeated storage fences", () => {

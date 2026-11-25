@@ -377,7 +377,7 @@ database process open; removing the setting later merely preserves WAL mode.
 
 ### PostgreSQL Database
 
-By default, Arr Dashboard uses SQLite stored at `/config/prod.db`. For larger deployments:
+By default, Arr Dashboard uses SQLite stored at `/config/prod.db`. Docker SQLite requires an explicitly configured persistent directory. Before upgrading a container with no SQLite mount, follow the [SQLite storage transition guide](docs/SQLITE-STORAGE.md). For larger deployments:
 
 ```bash
 docker run -d \
