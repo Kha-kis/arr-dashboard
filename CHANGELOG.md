@@ -7,6 +7,25 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [2.25.2] — Inventory maintenance and Docker listener fixes
+
+### Before you upgrade
+
+Docker SQLite still requires an explicitly configured persistent database directory. For a routine upgrade, verify an applicable encrypted backup, stop the old writer, and keep the same verified mount, ownership, configuration, and installation secrets. If you still use the container writable layer, pause automatic updates and keep the original container available. Use the verified backup and Restore procedure before replacing it with a separately enrolled persistent installation. See the [Docker SQLite storage and migration guide](docs/SQLITE-STORAGE.md) and the [v2.25.0 startup advisory](https://github.com/Kha-kis/arr-dashboard/releases/tag/v2.25.0#sqlite-startup-advisory).
+
+### Fixes
+
+- Retire abandoned Plex and Jellyfin native inventory staging data in bounded batches. SQLite can reuse the freed pages within the existing database file. The cleanup preserves active and resumable work and the last published inventory. Repeated changes during inventory collection progressively delay retries to reduce contention.
+- Apply explicit Docker listener environment settings before saved listener settings. An unset or empty override keeps the saved setting in effect. The built-in default applies when no saved setting is available. The packaged Web proxy, health probe and supervisor use the selected listener across restarts. For valid IPv6 link-local binds, the socket keeps its required interface scope. Startup diagnostics report the source of the effective settings.
+
+### Known limitations
+
+- Reusing database pages does not guarantee a smaller database file. Reporter-specific background job failures and database contention still require separate verification.
+- On Linux a scoped IPv6 wildcard such as `::%lo` still binds all interfaces. Use `::1` for IPv6 loopback-only access. An automatically assigned Docker link-local address can change across a restart.
+- Docker SQLite rejects Unraid FUSE user shares at the storage check. A direct local pool path worked in one reported installation. Existing bound data needs a verified continuity or recovery procedure before a mount change. Other NAS startup reports remain open.
+
+Thanks to [Quigongentoo](https://github.com/Quigongentoo) for the inventory staging report and [stavros-k](https://github.com/stavros-k) for isolating persistent listener precedence. See [#944](https://github.com/Kha-kis/arr-dashboard/pull/944) and [#945](https://github.com/Kha-kis/arr-dashboard/pull/945).
+
 ## [2.25.1] — Startup recovery and maintenance
 
 ### Breaking deployment requirement
@@ -1914,6 +1933,7 @@ Major dependency updates:
 ---
 
 [Unreleased]: https://github.com/Kha-kis/arr-dashboard/compare/v2.25.1...HEAD
+[2.25.2]: https://github.com/Kha-kis/arr-dashboard/compare/v2.25.1...v2.25.2
 [2.25.1]: https://github.com/Kha-kis/arr-dashboard/compare/v2.25.0...v2.25.1
 [2.25.0]: https://github.com/Kha-kis/arr-dashboard/compare/v2.24.1...v2.25.0
 [2.9.0]: https://github.com/Kha-kis/arr-dashboard/compare/v2.8.5...v2.9.0
