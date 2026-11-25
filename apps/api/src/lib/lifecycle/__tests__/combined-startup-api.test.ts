@@ -262,8 +262,23 @@ it("uses saved combined listeners when the image supplies no overrides", async (
 it.each(["initial", "restart"])("requires the Docker mount check during %s", async (phase) => {
 	vi.stubEnv("ARR_DOCKER_SQLITE_MOUNT_CHECK", "1");
 	vi.stubEnv("ARR_COMBINED_STARTUP_PHASE", phase);
+	if (phase === "restart") {
+		vi.stubEnv("ARR_COMBINED_LISTENER_OVERRIDES", "000");
+		vi.stubEnv("API_PORT", "3011");
+		vi.stubEnv("PORT", "3010");
+		vi.stubEnv("HOST", "127.0.0.1");
+	}
 	await boot();
 	expect(state.mountChecks).toEqual([true]);
+	expect(state.events).toEqual([
+		"native-validation",
+		"owner",
+		"owned-settings",
+		"listen",
+		"listening",
+		"handoff",
+	]);
+	expect(state.exits).toEqual([]);
 });
 it("uses explicit combined listeners even when the values equal former image defaults", async () => {
 	vi.stubEnv("API_PORT", "3001");
