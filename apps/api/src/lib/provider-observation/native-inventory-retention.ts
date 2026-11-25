@@ -56,7 +56,7 @@ function isBusyAdmission(error: unknown): boolean {
 async function retentionTransaction<T>(
 	prisma: PrismaClient,
 	operation: (tx: Transaction) => Promise<T>,
-	admission: { retryAvailable: boolean },
+	admission: { retryAvailable: boolean; retryObserved: boolean },
 	boundary: { operation: NativeInventoryRetentionOperation },
 	signal?: AbortSignal,
 ): Promise<T> {
@@ -78,12 +78,14 @@ async function retentionTransaction<T>(
 					error,
 					callbackEntered ? boundary.operation : "transaction-start",
 					callbackEntered,
+					admission.retryObserved,
 				);
 				throw error;
 			}
 			// The rejected admission has settled. Never replay an entered body;
 			// a fresh transaction below must re-resolve every existing safety fence.
 			admission.retryAvailable = false;
+			admission.retryObserved = true;
 			if (signal?.aborted) throw CANCELLED;
 			await delay(20);
 			if (signal?.aborted) throw CANCELLED;
@@ -357,7 +359,7 @@ export async function pruneNativeInventoryRetentionSlice(
 		},
 	);
 	// One extra admission for the whole slice, not once per scanned candidate.
-	const admission = { retryAvailable: true };
+	const admission = { retryAvailable: true, retryObserved: false };
 	total.hasMore = selected.length === scanLimit;
 	for (const candidate of selected) {
 		if (options.signal?.aborted) break;

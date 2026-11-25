@@ -75,9 +75,10 @@ describe("native retention follower execution", () => {
 				operation: "stage-delete",
 				transactionEntered: true,
 				nativeCode: "unknown",
+				retryObserved: false,
 			},
 		});
-		expect(await executeNativeInventoryRetentionSlice(payload)).toEqual({
+		expect(await executeNativeInventoryRetentionSlice(payload)).toMatchObject({
 			status: "failed",
 			failurePhase: "retention",
 			failureCode: "P1008",
@@ -85,6 +86,7 @@ describe("native retention follower execution", () => {
 				operation: "stage-delete",
 				transactionEntered: true,
 				nativeCode: "unknown",
+				retryObserved: false,
 			},
 		});
 		expect(mocks.close).toHaveBeenCalledOnce();
@@ -102,9 +104,15 @@ describe("native retention follower execution", () => {
 		try {
 			const message = once(worker, "message");
 			const exit = once(worker, "exit");
-			expect(await message).toEqual([
-				{ status: "failed", failurePhase: "runtime-open", failureCode: "unknown" },
-			]);
+			const [posted] = await message;
+			expect(posted).toMatchObject({
+				status: "failed",
+				failurePhase: "runtime-open",
+				failureCode: "unknown",
+				outcome: "failed",
+			});
+			expect(posted.elapsedMs).toBeGreaterThanOrEqual(0);
+			expect(posted.elapsedMs).toBeLessThanOrEqual(60_000);
 			expect(await exit).toEqual([0]);
 		} finally {
 			await worker.terminate();
@@ -188,7 +196,7 @@ describe("native retention follower execution", () => {
 	});
 	it("sanitizes database failures and still closes the follower", async () => {
 		mocks.prune.mockRejectedValueOnce(new Error("synthetic-private-database-error"));
-		expect(await executeNativeInventoryRetentionSlice(payload)).toEqual({
+		expect(await executeNativeInventoryRetentionSlice(payload)).toMatchObject({
 			status: "failed",
 			failurePhase: "retention",
 			failureCode: "unknown",
@@ -205,19 +213,61 @@ describe("native retention follower execution", () => {
 			if (phase === "runtime-open") mocks.open.mockRejectedValueOnce(error);
 			if (phase === "client-create") mocks.clientError = error;
 			if (phase === "retention") mocks.prune.mockRejectedValueOnce(error);
-			expect(await executeNativeInventoryRetentionSlice(payload)).toEqual({
+			expect(await executeNativeInventoryRetentionSlice(payload)).toMatchObject({
 				status: "failed",
 				failurePhase: phase,
 				failureCode: "P2028",
 			});
 		},
 	);
+	it("distinguishes Restore runtime admission refusal before retention callback entry", async () => {
+		mocks.open.mockResolvedValueOnce({
+			close: mocks.close,
+			runOperation: async () => {
+				throw { code: "P2028" };
+			},
+			runStarting: async () => {
+				throw { code: "P2028" };
+			},
+		});
+		expect(await executeNativeInventoryRetentionSlice(payload)).toMatchObject({
+			status: "failed",
+			failurePhase: "runtime-admission",
+			failureCode: "P2028",
+			elapsedMs: expect.any(Number),
+			outcome: "failed",
+		});
+		expect(mocks.prune).not.toHaveBeenCalled();
+	});
+
+	it("distinguishes runtime release failure after the retention callback completed", async () => {
+		mocks.open.mockResolvedValueOnce({
+			close: mocks.close,
+			runOperation: async (operation: () => Promise<unknown>) => {
+				mocks.running = true;
+				await operation();
+				throw { code: "P2028" };
+			},
+			runStarting: async (operation: () => Promise<unknown>) => {
+				mocks.starting = true;
+				await operation();
+				throw { code: "P2028" };
+			},
+		});
+		expect(await executeNativeInventoryRetentionSlice(payload)).toMatchObject({
+			status: "failed",
+			failurePhase: "runtime-release",
+			failureCode: "P2028",
+			outcome: "failed",
+		});
+		expect(mocks.prune).toHaveBeenCalledOnce();
+	});
 	it("does not read error getters or inherit a private error code", async () => {
 		const getter = vi.fn(() => {
 			throw new Error("synthetic-private-getter");
 		});
 		mocks.prune.mockRejectedValueOnce(Object.defineProperty({}, "code", { get: getter }));
-		expect(await executeNativeInventoryRetentionSlice(payload)).toEqual({
+		expect(await executeNativeInventoryRetentionSlice(payload)).toMatchObject({
 			status: "failed",
 			failurePhase: "retention",
 			failureCode: "unknown",
@@ -239,7 +289,7 @@ describe("native retention follower execution", () => {
 		"synthetic-private-code",
 	])("projects only known own error code %s", async (code) => {
 		mocks.prune.mockRejectedValueOnce({ code });
-		expect(await executeNativeInventoryRetentionSlice(payload)).toEqual({
+		expect(await executeNativeInventoryRetentionSlice(payload)).toMatchObject({
 			status: "failed",
 			failurePhase: "retention",
 			failureCode: code === "synthetic-private-code" ? "unknown" : code,

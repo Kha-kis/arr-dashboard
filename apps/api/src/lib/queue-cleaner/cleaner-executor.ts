@@ -59,6 +59,10 @@ import {
 	shouldSkipByTagFilter,
 } from "./rule-evaluators.js";
 import {
+	queueCleanerSqliteDiagnosticsFrom,
+	runQueueCleanerSqliteTransaction,
+} from "./sqlite-contention-diagnostics.js";
+import {
 	createTorrentFilePolicyEvaluator,
 	parseAllowedFileExtensions,
 	type TorrentFilePolicyResult,
@@ -919,96 +923,104 @@ async function executeQueueCleanerWithGuard(
 
 	if (config.strikeSystemEnabled && !config.dryRunMode) {
 		try {
-			const { toRemoveItems, warnedItems, pendingStrikeDeletions } = await app.prisma.$transaction(
-				async (tx) => {
-					const existingStrikes = await tx.queueCleanerStrike.findMany({
-						where: { instanceId: instance.id },
-					});
-					const strikeMap = new Map(existingStrikes.map((s) => [s.downloadId, s]));
+			const { toRemoveItems, warnedItems, pendingStrikeDeletions } =
+				await runQueueCleanerSqliteTransaction<{
+					toRemoveItems: CleanerResultItem[];
+					warnedItems: CleanerResultItem[];
+					pendingStrikeDeletions: Map<string, string>;
+				}>(
+					app.config?.DATABASE_URL,
+					"strike-state",
+					(callback) => app.prisma.$transaction(callback),
+					async (tx) => {
+						const existingStrikes = await tx.queueCleanerStrike.findMany({
+							where: { instanceId: instance.id },
+						});
+						const strikeMap = new Map(existingStrikes.map((s) => [s.downloadId, s]));
 
-					const txToRemove: CleanerResultItem[] = [];
-					const txWarned: CleanerResultItem[] = [];
-					const txPendingStrikeDeletions: Map<string, string> = new Map();
+						const txToRemove: CleanerResultItem[] = [];
+						const txWarned: CleanerResultItem[] = [];
+						const txPendingStrikeDeletions: Map<string, string> = new Map();
 
-					for (const item of matched) {
-						const itemIdStr = String(item.id);
-						const priorStrike = strikeMap.get(itemIdStr);
-						const source = queueItemMap.get(item.id)!;
-						const downloadFingerprint = queueItemFingerprint(source)!;
-						const existingStrike =
-							priorStrike?.downloadFingerprint === downloadFingerprint ? priorStrike : undefined;
-						const newStrikeCount = (existingStrike?.strikeCount ?? 0) + 1;
+						for (const item of matched) {
+							const itemIdStr = String(item.id);
+							const priorStrike = strikeMap.get(itemIdStr);
+							const source = queueItemMap.get(item.id)!;
+							const downloadFingerprint = queueItemFingerprint(source)!;
+							const existingStrike =
+								priorStrike?.downloadFingerprint === downloadFingerprint ? priorStrike : undefined;
+							const newStrikeCount = (existingStrike?.strikeCount ?? 0) + 1;
 
-						if (newStrikeCount >= config.maxStrikes) {
-							txToRemove.push({
-								...item,
-								reason: `${item.reason} (strike ${newStrikeCount}/${config.maxStrikes})`,
-								strikeCount: newStrikeCount,
-								maxStrikes: config.maxStrikes,
-							});
-
-							if (existingStrike) {
-								txPendingStrikeDeletions.set(itemIdStr, existingStrike.id);
-							}
-						} else {
-							if (priorStrike) {
-								await tx.queueCleanerStrike.update({
-									where: { id: priorStrike.id },
-									data: {
-										downloadFingerprint,
-										downloadHash: normalizeDownloadId(source.downloadId),
-										...(!existingStrike
-											? {
-													importAttempts: 0,
-													lastImportAttempt: null,
-													lastImportError: null,
-													firstStrikeAt: now,
-													downloadTitle: item.title,
-												}
-											: {}),
-										strikeCount: newStrikeCount,
-										lastRule: item.rule,
-										lastReason: item.reason,
-									},
+							if (newStrikeCount >= config.maxStrikes) {
+								txToRemove.push({
+									...item,
+									reason: `${item.reason} (strike ${newStrikeCount}/${config.maxStrikes})`,
+									strikeCount: newStrikeCount,
+									maxStrikes: config.maxStrikes,
 								});
+
+								if (existingStrike) {
+									txPendingStrikeDeletions.set(itemIdStr, existingStrike.id);
+								}
 							} else {
-								await tx.queueCleanerStrike.create({
-									data: {
-										instanceId: instance.id,
-										downloadId: itemIdStr,
-										downloadTitle: item.title,
-										downloadFingerprint,
-										downloadHash: normalizeDownloadId(source.downloadId),
-										strikeCount: 1,
-										lastRule: item.rule,
-										lastReason: item.reason,
-									},
+								if (priorStrike) {
+									await tx.queueCleanerStrike.update({
+										where: { id: priorStrike.id },
+										data: {
+											downloadFingerprint,
+											downloadHash: normalizeDownloadId(source.downloadId),
+											...(!existingStrike
+												? {
+														importAttempts: 0,
+														lastImportAttempt: null,
+														lastImportError: null,
+														firstStrikeAt: now,
+														downloadTitle: item.title,
+													}
+												: {}),
+											strikeCount: newStrikeCount,
+											lastRule: item.rule,
+											lastReason: item.reason,
+										},
+									});
+								} else {
+									await tx.queueCleanerStrike.create({
+										data: {
+											instanceId: instance.id,
+											downloadId: itemIdStr,
+											downloadTitle: item.title,
+											downloadFingerprint,
+											downloadHash: normalizeDownloadId(source.downloadId),
+											strikeCount: 1,
+											lastRule: item.rule,
+											lastReason: item.reason,
+										},
+									});
+								}
+
+								txWarned.push({
+									...item,
+									reason: `${item.reason} (strike ${newStrikeCount}/${config.maxStrikes})`,
+									strikeCount: newStrikeCount,
+									maxStrikes: config.maxStrikes,
 								});
 							}
+						}
 
-							txWarned.push({
-								...item,
-								reason: `${item.reason} (strike ${newStrikeCount}/${config.maxStrikes})`,
-								strikeCount: newStrikeCount,
-								maxStrikes: config.maxStrikes,
+						const strikesToDelete = existingStrikes.filter((s) => !queueItemIds.has(s.downloadId));
+						if (strikesToDelete.length > 0) {
+							await tx.queueCleanerStrike.deleteMany({
+								where: { id: { in: strikesToDelete.map((s) => s.id) } },
 							});
 						}
-					}
 
-					const strikesToDelete = existingStrikes.filter((s) => !queueItemIds.has(s.downloadId));
-					if (strikesToDelete.length > 0) {
-						await tx.queueCleanerStrike.deleteMany({
-							where: { id: { in: strikesToDelete.map((s) => s.id) } },
-						});
-					}
-
-					return {
-						toRemoveItems: txToRemove,
-						warnedItems: txWarned,
-						pendingStrikeDeletions: txPendingStrikeDeletions,
-					};
-				},
-			);
+						return {
+							toRemoveItems: txToRemove,
+							warnedItems: txWarned,
+							pendingStrikeDeletions: txPendingStrikeDeletions,
+						};
+					},
+				);
 
 			toRemove = toRemoveItems;
 			warned.push(...warnedItems);
@@ -1018,8 +1030,14 @@ async function executeQueueCleanerWithGuard(
 		} catch (error) {
 			const isPrismaError = error && typeof error === "object" && "code" in error;
 			const errorMessage = getErrorMessage(error, "Unknown error");
+			const diagnostics = queueCleanerSqliteDiagnosticsFrom(error);
 
-			if (isPrismaError) {
+			if (diagnostics) {
+				log.error(
+					diagnostics,
+					"Queue Cleaner SQLite transaction failed - aborting clean for safety",
+				);
+			} else if (isPrismaError) {
 				log.error(
 					{ err: error, instanceId: instance.id },
 					"Strike system database error - aborting clean for safety",

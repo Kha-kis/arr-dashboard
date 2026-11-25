@@ -96,6 +96,7 @@ describe("native retention worker lifetime and protocol", () => {
 				operation: "transaction-start",
 				transactionEntered: false,
 				nativeCode: "SQLITE_BUSY",
+				retryObserved: false,
 			},
 		});
 		await turn();
@@ -109,6 +110,7 @@ describe("native retention worker lifetime and protocol", () => {
 					operation: "transaction-start",
 					transactionEntered: false,
 					nativeCode: "SQLITE_BUSY",
+					retryObserved: false,
 				},
 			},
 		});

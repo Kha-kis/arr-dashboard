@@ -414,6 +414,7 @@ it("recovers the next retention tick after a guarded native inventory page write
 					operation: "transaction-start",
 					transactionEntered: false,
 					nativeCode: "SQLITE_BUSY",
+					retryObserved: false,
 				},
 			},
 		]);
@@ -576,6 +577,7 @@ describe("bounded native retention admission retry", () => {
 					operation: "transaction-start",
 					transactionEntered: false,
 					nativeCode: "SQLITE_BUSY",
+					retryObserved: true,
 				},
 			});
 			expect(observed.observed).toEqual({ attempts: 2, callbacks: 0 });
@@ -672,6 +674,7 @@ describe("bounded native retention admission retry", () => {
 					operation: "run-recheck",
 					transactionEntered: true,
 					nativeCode: "SQLITE_BUSY",
+					retryObserved: false,
 				},
 			});
 			expect(observed.observed).toEqual({ attempts: 1, callbacks: 1 });
