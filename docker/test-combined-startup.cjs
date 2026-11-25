@@ -222,6 +222,7 @@ for (const mode of ["normal", "failed-stop", "real-held-native"])
 			stdio: ["ignore", "pipe", "pipe"],
 		});
 		let output = "",
+			diagnostics = "",
 			signalled = false,
 			expired = false;
 		child.stdout.on("data", (bytes) => {
@@ -234,7 +235,9 @@ for (const mode of ["normal", "failed-stop", "real-held-native"])
 				child.kill("SIGTERM");
 			}
 		});
-		child.stderr.resume();
+		child.stderr.on("data", (bytes) => {
+			diagnostics += bytes;
+		});
 		const timer = setTimeout(() => {
 			expired = true;
 			child.kill("SIGKILL");
@@ -258,7 +261,7 @@ for (const mode of ["normal", "failed-stop", "real-held-native"])
 		} else assert(output.includes("TEST_API_CLOSED"));
 		assert.equal(output.includes("Services stopped gracefully"), mode === "normal");
 		assert(!output.includes("TEST_WEB_STARTED"));
-		assert(!output.includes("TEST_HEALTH_PORT:"));
+		assert(!diagnostics.includes("TEST_HEALTH_PORT:"));
 	});
 
 for (const scenario of [
