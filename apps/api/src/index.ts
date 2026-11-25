@@ -21,7 +21,9 @@ import {
 } from "./lib/lifecycle/api-startup-diagnostics.js";
 import {
 	type CombinedStartupMessage,
+	combinedListenerOverrideMask,
 	parseCombinedStartupMessage,
+	readCombinedListenerOverrides,
 	readCombinedStartupMode,
 	resolveCombinedStartupSettings,
 } from "./lib/lifecycle/combined-startup.js";
@@ -157,6 +159,13 @@ const start = async () => {
 		const combined = combinedMode
 			? resolveCombinedStartupSettings(schemaSettings, process.env, combinedMode.phase)
 			: null;
+		const combinedListenerOverrides = combinedMode
+			? readCombinedListenerOverrides(
+					combinedMode.phase === "initial"
+						? combinedListenerOverrideMask(process.env)
+						: process.env.ARR_COMBINED_LISTENER_OVERRIDES,
+				)
+			: undefined;
 		const portConfig = combined ?? getPortConfig(settings);
 		const securityConfig = getSecurityConfig(settings);
 		if (combined && combinedMode) {
@@ -181,6 +190,7 @@ const start = async () => {
 			process.env.COOKIE_SECURE = String(securityConfig.secureCookies);
 		startupStage = "server-build";
 		app = buildServer({
+			combinedListenerOverrides,
 			env: {
 				...validatedEnv,
 				...(combined ? { API_HOST: combined.listenAddress } : {}),

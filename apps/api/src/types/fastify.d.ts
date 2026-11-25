@@ -4,6 +4,7 @@ import type { ApiEnv } from "../config/env";
 import type { Encryptor } from "../lib/auth/encryption";
 import type { SessionService } from "../lib/auth/session";
 import type { ArrClientFactory } from "../lib/arr/client-factory";
+import type { CombinedListenerOverrides } from "../lib/lifecycle/combined-startup.js";
 import type { DeploymentExecutorService } from "../lib/trash-guides/deployment-executor";
 
 /**
@@ -15,6 +16,7 @@ type SessionUser = Pick<User, "id" | "username" | "mustChangePassword" | "create
 declare module "fastify" {
 	interface FastifyInstance {
 		config: ApiEnv;
+		combinedListenerOverrides?: CombinedListenerOverrides;
 		prisma: PrismaClientInstance;
 		dbProvider: "sqlite" | "postgresql";
 		encryptor: Encryptor;

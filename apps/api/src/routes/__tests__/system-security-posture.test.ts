@@ -81,6 +81,58 @@ afterAll(async () => {
 	await app?.close();
 });
 
+it("does not request a restart for a saved listener masked by a combined override", async () => {
+	vi.stubEnv("PORT", "38080");
+	try {
+		Object.assign(app, {
+			combinedListenerOverrides: { apiPort: false, webPort: true, listenAddress: false },
+		});
+		const settings = {
+			apiPort: Number(process.env.API_PORT) || 3001,
+			webPort: 3000,
+			listenAddress: process.env.HOST || process.env.HOSTNAME || "0.0.0.0",
+			trustProxy: true,
+			secureCookies: true,
+			updatedAt: new Date(),
+		};
+		mockPrisma.systemSettings.findUnique.mockResolvedValue(settings);
+		mockPrisma.systemSettings.upsert.mockResolvedValue(settings);
+		for (const method of ["GET", "PUT"] as const) {
+			const response = await injectAuthenticated(
+				method,
+				"/system/settings",
+				method === "PUT" ? { body: { webPort: 3000 } } : undefined,
+			);
+			expect(response.statusCode).toBe(200);
+			expect(response.json().data).toMatchObject({
+				webPort: 3000,
+				effectiveWebPort: 38080,
+				requiresRestart: false,
+			});
+		}
+	} finally {
+		vi.unstubAllEnvs();
+	}
+});
+
+it.each([3001, 38081])(
+	"refuses a partial update that would collide at web port %d",
+	async (webPort) => {
+		vi.stubEnv("API_PORT", "38081");
+		try {
+			Object.assign(app, {
+				combinedListenerOverrides: { apiPort: true, webPort: false, listenAddress: false },
+			});
+			mockPrisma.systemSettings.findUnique.mockResolvedValue({ apiPort: 3001, webPort: 3000 });
+			const response = await injectAuthenticated("PUT", "/system/settings", { body: { webPort } });
+			expect(response.statusCode).toBe(400);
+			expect(mockPrisma.systemSettings.upsert).not.toHaveBeenCalled();
+		} finally {
+			vi.unstubAllEnvs();
+		}
+	},
+);
+
 describe("PUT /system/settings", () => {
 	it("trims External URL, removes trailing slashes, and updates the live base URL", async () => {
 		const res = await injectAuthenticated("PUT", "/system/settings", {

@@ -77,6 +77,21 @@ function environmentPort(value: string | undefined, fallback: number): number {
 	return port(Number(value));
 }
 
+export type CombinedListenerOverrides = Readonly<Record<keyof CombinedStartupSettings, boolean>>;
+
+export function combinedListenerOverrideMask(env: Environment): string {
+	return [env.API_PORT, env.PORT, env.HOST].map((value) => (value ? "1" : "0")).join("");
+}
+
+export function readCombinedListenerOverrides(mask: string | undefined): CombinedListenerOverrides {
+	requireValue(typeof mask === "string" && /^[01]{3}$/.test(mask));
+	return Object.freeze({
+		apiPort: mask[0] === "1",
+		webPort: mask[1] === "1",
+		listenAddress: mask[2] === "1",
+	});
+}
+
 type ListenerSource = "env" | "database" | "default" | "supervisor";
 type CombinedStartupResolution = CombinedStartupSettings &
 	Readonly<{ source: Readonly<Record<keyof CombinedStartupSettings, ListenerSource>> }>;

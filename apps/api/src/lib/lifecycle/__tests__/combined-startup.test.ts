@@ -56,6 +56,22 @@ afterEach(() => {
 });
 
 describe("combined effective settings", () => {
+	it("preserves original override presence separately from resolved supervisor listeners", () => {
+		const resolver = implementation();
+		const mask = resolver.combinedListenerOverrideMask({
+			API_PORT: "38081",
+			PORT: "",
+			HOST: "127.0.0.1",
+		});
+		expect(resolver.readCombinedListenerOverrides(mask)).toEqual({
+			apiPort: true,
+			webPort: false,
+			listenAddress: true,
+		});
+		expect(() => resolver.readCombinedListenerOverrides("1101")).toThrow();
+		expect(() => resolver.readCombinedListenerOverrides(undefined)).toThrow();
+	});
+
 	it("uses explicit overrides even when a settings row contains default values", () => {
 		expect(
 			implementation().resolveCombinedStartupSettings(

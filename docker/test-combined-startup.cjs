@@ -52,7 +52,7 @@ setInterval(()=>{},1000);}\n`,
 );
 fixture(
 	"/app/runtime-health.cjs",
-	"process.stdout.write('TEST_HEALTH_PORT:'+process.argv[3]+'\\n');\n",
+	"if(process.argv[2]==='target')process.stdout.write('http://'+process.argv[4]+':'+process.argv[3]);else process.stdout.write('TEST_HEALTH_PORT:'+process.argv[3]+'\\n');\n",
 );
 fixture(
 	"/app/web/server.js",
@@ -170,7 +170,7 @@ test("combined shell delegates one startup to the API and publishes health/web o
 	assert(r.out.indexOf("TEST_LISTEN_READY") >= 0);
 	assert(r.out.indexOf("TEST_HEALTH_PORT:3010") > r.out.indexOf("TEST_LISTEN_READY"));
 	assert(r.out.indexOf("TEST_WEB_STARTED") > r.out.indexOf("TEST_HEALTH_PORT:3010"));
-	assert(r.out.includes("TEST_WEB_BINDING:3010:http://localhost:3011"));
+	assert(r.out.includes("TEST_WEB_BINDING:3010:http://127.0.0.1:3011"));
 	assert(r.out.includes("TEST_API_CLOSED"), "fatal web exit must physically stop the tracked API");
 	assert.equal(r.code, 1, "the deliberate web exit must remain a fatal supervisor outcome");
 });
