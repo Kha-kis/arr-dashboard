@@ -70,6 +70,14 @@ Before bumping any version numbers, decide *what* this release contains.
 - [ ] Test upgrade from previous version (existing `/config` volume) and verify the
       deployed mount and database identity are preserved. Run the supported and refused
       topology checks on native AMD64 and ARM64.
+      The immutable staging receipt requires those storage cases on both
+      architectures in addition to the existing restart, browser, asset and
+      scan gates.
+- [ ] Call out breaking deployment requirements before selecting a stable
+      version. The SQLite directory-mount requirement changes the startup
+      contract for previous writable-layer Docker installs. Require explicit
+      maintainer version disposition and pre-upgrade preservation guidance
+      before including it in a maintenance patch.
 
 ### 5. Functional Smoke Test
 

@@ -21,6 +21,19 @@ REGISTRIES = (
 )
 SOURCE_REPOSITORY = "github.com/kha-kis/arr-dashboard"
 HEX = re.compile(r"^[0-9a-f]{64}$")
+# Exact published v2.25.0 child manifests for the native upgrade fixture.
+SQLITE_STORAGE_BASELINE = {
+    "amd64": "sha256:13434469dd43b6622ce9cb408cd83315443bb3ae7176d501fb1f27081b186370",
+    "arm64": "sha256:38982ae25af50ec455ccbce05f02d79c755d542f8995cc7aaa3b916a1c1acdb0",
+}
+SQLITE_STORAGE_CASES = frozenset({
+    "freshWritableLayerRefused",
+    "legacyWritableLayerPreserved",
+    "legacyLogicalRestore",
+    "mountedUpgrade",
+    "nonRootBindRestart",
+})
+
 DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 ACCEPT = ", ".join(
     (
@@ -584,6 +597,16 @@ def _validate_receipt(
         or runtime.get("browserCases") != 15
     ):
         raise QualificationError(f"{arch} runtime receipt is incomplete")
+    storage = receipt.get("sqliteStorage")
+    if (
+        not isinstance(storage, dict)
+        or storage.get("baselineManifestDigest") != SQLITE_STORAGE_BASELINE.get(arch)
+        or not isinstance(storage.get("cases"), dict)
+        or storage["cases"].keys() != SQLITE_STORAGE_CASES
+        or any(passed is not True for passed in storage["cases"].values())
+    ):
+        raise QualificationError(f"{arch} SQLite storage receipt is incomplete")
+
 
 
 def verify_qualification(

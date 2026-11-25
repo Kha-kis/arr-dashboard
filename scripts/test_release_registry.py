@@ -41,6 +41,10 @@ def receipt(arch, native_index=INDEX_PLACEHOLDER):
             "nodePackages": True,
             "reportSha256": "4" * 64,
         },
+        "sqliteStorage": {
+            "baselineManifestDigest": rr.SQLITE_STORAGE_BASELINE[arch],
+            "cases": dict.fromkeys(rr.SQLITE_STORAGE_CASES, True),
+        },
         "runtime": {
             "healthy": True,
             "cleanStop": True,
@@ -380,6 +384,23 @@ class RegistryTests(unittest.TestCase):
         bad["runtime"]["browserCases"] = 14
         with self.assertRaises(rr.QualificationError):
             rr._validate_receipt(bad, "amd64", expected)
+
+    def test_storage_acceptance_is_mandatory_for_both_architectures(self):
+        expected = {
+            "source": SOURCE, "tree": TREE, "version": VERSION, "buildDate": BUILD_DATE
+        }
+        for arch in ("amd64", "arm64"):
+            for broken in ("absent", "case", "baseline"):
+                with self.subTest(architecture=arch, altered=broken):
+                    bad = receipt(arch)
+                    if broken == "absent":
+                        del bad["sqliteStorage"]
+                    if broken == "case":
+                        bad["sqliteStorage"]["cases"]["mountedUpgrade"] = False
+                    if broken == "baseline":
+                        bad["sqliteStorage"]["baselineManifestDigest"] = INDEX_PLACEHOLDER
+                    with self.assertRaisesRegex(rr.QualificationError, "SQLite storage"):
+                        rr._validate_receipt(bad, arch, expected)
 
     def test_staging_records_live_alias_baseline_and_refuses_existing_version(self):
         with TemporaryDirectory() as directory:
