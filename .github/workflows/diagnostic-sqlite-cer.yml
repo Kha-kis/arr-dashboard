@@ -1,0 +1,77 @@
+{
+  "name": "Diagnostic only - native SQLite enrollment checkpoint recovery",
+  "on": {
+    "push": {
+      "branches": [
+        "qa/sqlite-cer-native-a511418b"
+      ]
+    }
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "jobs": {
+    "native-cer": {
+      "runs-on": "${{ matrix.runner }}",
+      "timeout-minutes": 25,
+      "strategy": {
+        "fail-fast": false,
+        "matrix": {
+          "include": [
+            {
+              "runner": "ubuntu-latest",
+              "arch": "amd64",
+              "machine": "x86_64"
+            },
+            {
+              "runner": "ubuntu-24.04-arm",
+              "arch": "arm64",
+              "machine": "aarch64"
+            }
+          ]
+        }
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "with": {
+            "persist-credentials": false,
+            "fetch-depth": 2
+          }
+        },
+        {
+          "name": "Build from exact source without staging",
+          "shell": "bash",
+          "env": {
+            "MACHINE": "${{ matrix.machine }}",
+            "ARCH": "${{ matrix.arch }}"
+          },
+          "run": "test \"$(uname -m)\" = \"$MACHINE\"\ntest \"$(git rev-parse HEAD^)\" = \"a511418b93517bb627d84be018bd5c6db1fc6a84\"\ntest \"$(git rev-parse a511418b93517bb627d84be018bd5c6db1fc6a84^{tree})\" = \"efc75a589584da6293422e826c966be62a2d2dd5\"\ngit archive \"a511418b93517bb627d84be018bd5c6db1fc6a84\" | docker build --build-arg COMMIT_SHA=\"a511418b93517bb627d84be018bd5c6db1fc6a84\" -t arr-dashboard:cer-native-diagnostic -\ntest \"$(docker image inspect --format \"{{.Architecture}}\" arr-dashboard:cer-native-diagnostic)\" = \"$ARCH\"\ndocker image inspect arr-dashboard:cer-native-diagnostic --format \"{{.Id}} {{.Architecture}}\""
+        },
+        {
+          "name": "Check real restart with repeated durable checkpoints and preserved holds",
+          "shell": "bash",
+          "run": "mkdir -p \"$RUNNER_TEMP/cer\"\npython3 -B scripts/diagnostics/sqlite-cer-native-restart.py arr-dashboard:cer-native-diagnostic | tee \"$RUNNER_TEMP/cer/restarts.jsonl\""
+        },
+        {
+          "name": "Verify supported storage and legacy logical recovery remain intact",
+          "shell": "bash",
+          "env": {
+            "ARCH": "${{ matrix.arch }}"
+          },
+          "run": "python3 -B scripts/release_sqlite_storage.py arr-dashboard:cer-native-diagnostic \"$ARCH\" \"$RUNNER_TEMP/cer/storage.json\""
+        },
+        {
+          "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+          "if": "always()",
+          "with": {
+            "name": "sqlite-cer-native-${{ matrix.arch }}",
+            "path": "${{ runner.temp }}/cer/",
+            "if-no-files-found": "warn",
+            "retention-days": 14
+          }
+        }
+      ]
+    }
+  }
+}
