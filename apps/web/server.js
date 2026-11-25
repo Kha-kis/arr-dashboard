@@ -56,7 +56,7 @@ if (apiSocket) {
 		constructor(options) {
 			const target = options?.target;
 			if (target instanceof URL && target.origin === placeholder.origin) {
-				if (!/^\/(api|auth)\//.test(target.pathname))
+				if (!/^\/(?:api|auth)(?:\/|$)/.test(target.pathname))
 					throw new Error("Unexpected internal API rewrite");
 				super({
 					...options,
