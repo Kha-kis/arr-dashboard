@@ -1,16 +1,4 @@
-import {
-	chmodSync,
-	closeSync,
-	constants,
-	fstatSync,
-	lstatSync,
-	mkdirSync,
-	openSync,
-	readdirSync,
-	readlinkSync,
-	realpathSync,
-	statSync,
-} from "node:fs";
+import { closeSync, constants, fstatSync, lstatSync, openSync, realpathSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import Database from "better-sqlite3";
 import { SqliteDateCompatibilityError } from "../sqlite-datetime.js";
@@ -19,10 +7,18 @@ import {
 	type SqliteRestoreRuntimeOwnership,
 } from "./restore-runtime-sqlite.js";
 import {
+	hasSqliteEnrollmentIntent,
+	prepareSqliteEnrollment,
+	retireSqliteEnrollment,
+	startSqliteEnrollmentPublication,
+} from "./restore-runtime-sqlite-intent.js";
+import {
 	assertDockerSqliteMount,
+	assertSqliteOpenedDescriptor,
 	resolveSqliteRestoreStorage,
 	SqliteDockerMountRequiredError,
 	type SqliteRestoreStorage,
+	sqliteOpenedDescriptors,
 } from "./restore-runtime-sqlite-storage.js";
 import {
 	createInitialRestoreRuntimeRecord,
@@ -206,33 +202,6 @@ export function assertSqliteRestoreRuntimeStorageBinding(
 	assertBinding(storage, rows[0]!);
 }
 
-function createCoordination(storage: SqliteRestoreStorage): void {
-	// Never adopt even a complete orphan: another process could hold its files.
-	// Main writer serialization and this fresh private directory establish the
-	// known-new namespace; no raw database descriptor is opened or closed.
-	mkdirSync(storage.coordinationDirectoryPath, { mode: 0o700 });
-	for (const [name, table] of [
-		["owner.sqlite3", "RestoreOwnerCoordination"],
-		["operations.sqlite3", "RestoreOperationCoordination"],
-	] as const) {
-		const path = join(storage.coordinationDirectoryPath, name);
-		const db = new Database(path, { timeout: 0 });
-		try {
-			chmodSync(path, 0o600);
-			if (db.pragma("journal_mode = DELETE", { simple: true }) !== "delete") {
-				throw new SqliteRestoreRuntimeEnrollmentError();
-			}
-			db.pragma("synchronous = FULL");
-			db.exec(`BEGIN IMMEDIATE;
-				CREATE TABLE ${table} (id INTEGER PRIMARY KEY, protocolVersion INTEGER NOT NULL);
-				INSERT INTO ${table} VALUES (1, 1);
-				COMMIT`);
-		} finally {
-			db.close();
-		}
-	}
-}
-
 /**
  * Controlled cold bootstrap only: all old application actors must be stopped.
  * Returns exclusion, NOT a running epoch or permission for application work.
@@ -241,25 +210,50 @@ function createCoordination(storage: SqliteRestoreStorage): void {
 export async function enrollSqliteRestoreRuntimeStorage(
 	databaseUrl: string,
 	startup?: SqliteRestoreRuntimeStartup,
+	requireCompleted = false,
 ): Promise<SqliteRestoreRuntimeEnrollment> {
 	let main: Database.Database | undefined;
 	let ownership: SqliteRestoreRuntimeOwnership | undefined;
 	try {
 		const initial = startup === undefined ? undefined : initialStartupRecord(startup);
 		const storage = resolveSqliteRestoreStorage(databaseUrl);
+		const priorDescriptors = new Set(sqliteOpenedDescriptors(storage.databasePath));
 		main = new Database(storage.databasePath, { fileMustExist: true, timeout: 0 });
+		const nativeDescriptors = sqliteOpenedDescriptors(storage.databasePath).filter(
+			(descriptor) => !priorDescriptors.has(descriptor),
+		);
+		const descriptor = nativeDescriptors.length === 1 ? nativeDescriptors[0] : undefined;
+		const writer = main;
+		const fence = () => {
+			storage.assertUnchanged();
+			if (
+				!writer.open ||
+				writer.name !== storage.databasePath ||
+				!writer.inTransaction ||
+				(descriptor !== undefined
+					? !sqliteOpenedDescriptors(storage.databasePath).includes(descriptor)
+					: sqliteOpenedDescriptors(storage.databasePath).length === 0)
+			)
+				throw new SqliteRestoreRuntimeEnrollmentError();
+			storage.assertUnchanged();
+		};
 		main.pragma("synchronous = FULL");
 		main.exec("BEGIN IMMEDIATE");
-		storage.assertUnchanged();
+		fence();
+		if (hasSqliteEnrollmentIntent(main)) throw new SqliteRestoreRuntimeEnrollmentError();
 		const rows = main
 			.prepare(`SELECT ${COLUMNS.join(", ")} FROM SqliteRestoreStorageBinding LIMIT 2`)
 			.all() as Binding[];
 		let binding: Binding;
+		let enrollment: ReturnType<typeof prepareSqliteEnrollment> | undefined;
 		if (rows.length === 0) {
-			if (main.prepare("SELECT id FROM RestoreRuntimeControl LIMIT 1").get()) {
+			// A later bound connection can reuse SQLite's retained descriptor.
+			// Only new durable enrollment can require one newly observed handle.
+			if (requireCompleted || descriptor === undefined)
 				throw new SqliteRestoreRuntimeEnrollmentError();
-			}
-			createCoordination(storage);
+			writer.exec("ROLLBACK");
+			writer.exec("BEGIN EXCLUSIVE");
+			enrollment = prepareSqliteEnrollment(writer, storage, fence, false);
 			binding = captureBinding(storage);
 		} else {
 			if (rows.length !== 1) throw new SqliteRestoreRuntimeEnrollmentError();
@@ -273,7 +267,12 @@ export async function enrollSqliteRestoreRuntimeStorage(
 			throw new SqliteRestoreRuntimeEnrollmentError();
 		}
 		assertBinding(storage, binding);
-		if (rows.length === 0) {
+		if (enrollment) {
+			await ownership.assertOwned();
+			enrollment = startSqliteEnrollmentPublication(writer, storage, enrollment, fence);
+			await ownership.assertOwned();
+			assertBinding(storage, binding);
+			retireSqliteEnrollment(writer, enrollment);
 			main
 				.prepare(`INSERT INTO SqliteRestoreStorageBinding (${COLUMNS.join(", ")})
 				VALUES (${COLUMNS.map((field) => `@${field}`).join(", ")})`)
@@ -282,6 +281,7 @@ export async function enrollSqliteRestoreRuntimeStorage(
 		// First journal and original binding share this same actual main commit.
 		// Reconciliation also runs under the retained native owner/exclusion.
 		if (initial) writeStartingJournal(main, initial, rows.length === 0);
+		fence();
 		main.exec("COMMIT");
 		main.close();
 		main = undefined;
@@ -360,26 +360,7 @@ function createMissingSchemaFile(
 function assertMainDescriptor(storage: SqliteRestoreStorage, main: Database.Database): void {
 	storage.assertUnchanged();
 	if (!main.open || main.name !== storage.databasePath) throw new RuntimeSchemaStartupError();
-	const expected = lstatSync(storage.databasePath, { bigint: true });
-	let matches = 0;
-	for (const name of readdirSync("/proc/self/fd")) {
-		if (!/^\d+$/.test(name)) continue;
-		const descriptor = `/proc/self/fd/${name}`;
-		try {
-			const target = readlinkSync(descriptor);
-			if (target !== storage.databasePath && target !== `${storage.databasePath} (deleted)`)
-				continue;
-			const actual = statSync(descriptor, { bigint: true });
-			if (!actual.isFile() || actual.dev !== expected.dev || actual.ino !== expected.ino)
-				throw new RuntimeSchemaStartupError();
-			matches++;
-		} catch (error) {
-			if (error && typeof error === "object" && "code" in error && error.code === "ENOENT")
-				continue;
-			throw error;
-		}
-	}
-	if (matches !== 1) throw new RuntimeSchemaStartupError();
+	assertSqliteOpenedDescriptor(storage.databasePath);
 	storage.assertUnchanged();
 }
 
@@ -395,7 +376,7 @@ export type SqliteRuntimeSchemaProvisioning<Plan> = Readonly<{
 /**
  * Explicit pre-launch schema actor only. Its main descriptor owns the actual
  * transaction; original binding, startup journal, schema and receipt commit
- * together. This never admits ordinary application work or repairs an orphan.
+ * together. Checkpointed cold setup resumes only under positive native proof.
  */
 export async function provisionSqliteRestoreRuntimeSchema<Plan>(
 	databaseUrl: string,
@@ -449,7 +430,11 @@ export async function provisionSqliteRestoreRuntimeSchema<Plan>(
 		timeSqliteStartupPhase("exclusive-transaction-begin", () => writer.exec("BEGIN EXCLUSIVE"));
 		timeSqliteStartupPhase("descriptor-identity", () => assertMainDescriptor(storage, writer));
 		// Complete read-only plan before any coordination creation/application DDL.
-		const plan = operation.preflight(writer);
+		let plan = operation.preflight(writer);
+		const fence = () => {
+			if (!writer.inTransaction) throw new RuntimeSchemaStartupError();
+			assertMainDescriptor(storage, writer);
+		};
 		const exists = (table: string) =>
 			writer
 				.prepare("SELECT 1 FROM main.sqlite_schema WHERE type='table' AND name=?")
@@ -469,22 +454,14 @@ export async function provisionSqliteRestoreRuntimeSchema<Plan>(
 		});
 		const cold = bindings.length === 0;
 		let binding: Binding;
+		let enrollment: ReturnType<typeof prepareSqliteEnrollment> | undefined;
 		if (cold) {
-			timeSqliteStartupPhase("cold-enrollment-check", () => {
-				if (
-					journals.length ||
-					exists("ArrSchemaMigrationReceipt") ||
-					(exists("ArrRuntimeDataFormatReceipt") &&
-						writer.prepare("SELECT 1 FROM main.ArrRuntimeDataFormatReceipt LIMIT 1").get()) ||
-					!absent(storage.coordinationDirectoryPath)
-				)
-					throw new RuntimeSchemaStartupError();
-			});
-			binding = timeSqliteStartupPhase("coordination-enrollment", () => {
-				createCoordination(storage);
-				return captureBinding(storage);
-			});
+			enrollment = timeSqliteStartupPhase("cold-enrollment-check", () =>
+				prepareSqliteEnrollment(writer, storage, fence, true),
+			);
+			binding = captureBinding(storage);
 		} else {
+			if (hasSqliteEnrollmentIntent(writer)) throw new RuntimeSchemaStartupError();
 			binding = timeSqliteStartupPhase("storage-binding-validation", () => {
 				if (bindings.length !== 1 || journals.length !== 1) throw new RuntimeSchemaStartupError();
 				const persisted = bindings[0]!;
@@ -510,14 +487,24 @@ export async function provisionSqliteRestoreRuntimeSchema<Plan>(
 			assertBinding(storage, binding);
 		};
 		await timeSqliteStartupPhaseAsync("pre-apply-ownership", assertOwned);
+		if (enrollment) {
+			const current = enrollment;
+			enrollment = timeSqliteStartupPhase("coordination-enrollment", () =>
+				startSqliteEnrollmentPublication(writer, storage, current, fence),
+			);
+			await assertOwned();
+			plan = operation.preflight(writer);
+		}
 		await operation.apply(writer, plan, assertOwned);
 		await assertOwned();
-		if (cold)
+		if (enrollment) {
+			retireSqliteEnrollment(writer, enrollment);
 			writer
 				.prepare(
 					`INSERT INTO SqliteRestoreStorageBinding (${COLUMNS.join(", ")}) VALUES (${COLUMNS.map((field) => `@${field}`).join(", ")})`,
 				)
 				.run(binding);
+		}
 		writeStartingJournal(writer, initial, cold);
 		assertSqliteRestoreRuntimeStorageBinding(writer, storage);
 		const after = writer
@@ -553,7 +540,8 @@ export async function provisionSqliteRestoreRuntimeSchema<Plan>(
 		commitAcknowledged = true;
 	} catch (error) {
 		failure =
-			error instanceof SqliteDockerMountRequiredError
+			error instanceof SqliteDockerMountRequiredError ||
+			(error instanceof RuntimeSchemaStartupError && error.category === "commit-unknown")
 				? error
 				: new RuntimeSchemaStartupError(
 						commitStarted && !commitAcknowledged

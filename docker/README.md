@@ -134,6 +134,13 @@ provider recovery procedure for the pre-upgrade snapshot and its corresponding
 storage/coordination state, then start the prior image. Do not run old and new
 images together or reuse an inode-bound anchor after a database file replacement.
 
+A pending SQLite enrollment can resume only when startup can verify the
+authorized attempt and all existing coordinator objects. Preserve the original
+database and coordination files when startup refuses. A crash before a durable
+checkpoint or an uncertain publication can require reviewed recovery.
+Do not open a pending enrollment with v2.24.1 or an earlier image. Use the
+compatible pre-upgrade backup with the previous image for rollback, as above.
+
 ## Environment Variables
 
 ### Core

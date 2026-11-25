@@ -47,6 +47,7 @@ export async function recoverAdministratorPassword(
 			: input.databaseUrl;
 		runtime = await openRestoreRuntime({
 			databaseUrl,
+			requireCompletedSqliteEnrollment: true,
 			onUnavailable: () => {
 				lost = true;
 				stop();

@@ -449,10 +449,13 @@ async function sqliteBackend(
 	databaseUrl: string,
 	epoch: string,
 	onUnavailable: (reason?: RestoreRuntimeLossReason) => void,
+	requireCompleted: boolean,
 ): Promise<Backend> {
-	const { storage, ownership } = await enrollSqliteRestoreRuntimeStorage(databaseUrl, {
-		runtimeEpoch: epoch,
-	});
+	const { storage, ownership } = await enrollSqliteRestoreRuntimeStorage(
+		databaseUrl,
+		{ runtimeEpoch: epoch },
+		requireCompleted,
+	);
 	const connections = new Set<() => Promise<void>>();
 	let replacementExclusive = false;
 	const assertOwner = async () => {
@@ -745,6 +748,7 @@ async function assertCurrent(
 
 export async function openRestoreRuntime(options: {
 	databaseUrl: string;
+	requireCompletedSqliteEnrollment?: boolean;
 	onUnavailable?: (diagnostic: RestoreRuntimeLossDiagnostic) => void;
 }): Promise<Readonly<RestoreRuntime>> {
 	const databaseUrl = options.databaseUrl;
@@ -782,7 +786,12 @@ export async function openRestoreRuntime(options: {
 	try {
 		backend = /^postgres(ql)?:\/\//i.test(databaseUrl)
 			? await postgresBackend(databaseUrl, epoch, lose)
-			: await sqliteBackend(databaseUrl, epoch, lose);
+			: await sqliteBackend(
+					databaseUrl,
+					epoch,
+					lose,
+					options.requireCompletedSqliteEnrollment === true,
+				);
 	} catch {
 		throw new RestoreRuntimeAdmissionError();
 	}

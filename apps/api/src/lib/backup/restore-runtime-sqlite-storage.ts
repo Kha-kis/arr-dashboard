@@ -1,4 +1,12 @@
-import { lstatSync, readFileSync, realpathSync, statfsSync } from "node:fs";
+import {
+	lstatSync,
+	readdirSync,
+	readFileSync,
+	readlinkSync,
+	realpathSync,
+	statfsSync,
+	statSync,
+} from "node:fs";
 import { dirname, posix, resolve } from "node:path";
 import { RuntimeSchemaStartupError } from "./runtime-schema-startup.js";
 
@@ -276,4 +284,31 @@ export function resolveSqliteRestoreStorage(databaseUrl: string): SqliteRestoreS
 	} catch {
 		throw new SqliteRestoreStorageUnavailableError();
 	}
+}
+
+/** Validate the SQLite-owned descriptor through metadata only. */
+export function sqliteOpenedDescriptors(path: string): readonly string[] {
+	const expected = lstatSync(path, { bigint: true });
+	const matches: string[] = [];
+	for (const name of readdirSync("/proc/self/fd")) {
+		if (!/^\d+$/.test(name)) continue;
+		const descriptor = `/proc/self/fd/${name}`;
+		try {
+			const target = readlinkSync(descriptor);
+			if (target !== path && target !== `${path} (deleted)`) continue;
+			const actual = statSync(descriptor, { bigint: true });
+			if (!actual.isFile() || actual.dev !== expected.dev || actual.ino !== expected.ino)
+				throw new RuntimeSchemaStartupError();
+			matches.push(name);
+		} catch (error) {
+			if (error && typeof error === "object" && "code" in error && error.code === "ENOENT")
+				continue;
+			throw error;
+		}
+	}
+	return matches;
+}
+
+export function assertSqliteOpenedDescriptor(path: string): void {
+	if (sqliteOpenedDescriptors(path).length !== 1) throw new RuntimeSchemaStartupError();
 }

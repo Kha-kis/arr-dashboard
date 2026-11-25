@@ -1,5 +1,5 @@
 import { writeSync } from "node:fs";
-import { basename, dirname, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import Database from "better-sqlite3";
 import { acquireSqliteRestoreOperationLock } from "../../restore-runtime-sqlite.js";
 import { synchronizePostgresRuntimeSchema } from "../../runtime-schema-postgres.js";
@@ -24,7 +24,19 @@ process.once("message", async (input: unknown) => {
 			)
 				throw new Error();
 			const action = "action" in input ? input.action : null;
-			if (action === "hold-shared") {
+			if (action === "hold-partial-owner") {
+				const db = new Database(join(`${path}.arr-restore-runtime`, "owner.sqlite3"), {
+					fileMustExist: true,
+					timeout: 0,
+				});
+				try {
+					db.exec("BEGIN IMMEDIATE");
+					writeSync(1, '{"category":"native-checkpoint"}\n');
+					await new Promise<void>((done) => process.once("message", () => done()));
+				} finally {
+					db.close();
+				}
+			} else if (action === "hold-shared") {
 				const lock = await acquireSqliteRestoreOperationLock(input.databaseUrl);
 				try {
 					writeSync(1, '{"category":"native-checkpoint"}\n');
@@ -48,12 +60,20 @@ process.once("message", async (input: unknown) => {
 				// writer, alternate SQLite engine, or production fault-injection hook.
 				Database.prototype.exec = function (this: Database.Database, sql: string) {
 					const main = this.name === path;
-					if (main && action === "before-commit" && sql === "COMMIT") pause();
+					const applicationCommit =
+						main &&
+						sql === "COMMIT" &&
+						this.prepare(
+							"SELECT 1 FROM sqlite_schema WHERE name='ArrSchemaMigrationReceipt'",
+						).get();
+					if (applicationCommit && action === "before-commit") pause();
 					const result = original.call(this, sql);
 					if (
 						main &&
-						((action === "after-first-ddl" && sql.startsWith("CREATE TABLE ")) ||
-							(action === "after-commit" && sql === "COMMIT"))
+						((action === "after-first-ddl" &&
+							sql.startsWith("CREATE TABLE ") &&
+							!/^CREATE TABLE "(?:RestoreRuntimeControl|ArrSqliteEnrollmentIntent)"/.test(sql)) ||
+							(action === "after-commit" && applicationCommit))
 					)
 						pause();
 					return result;
