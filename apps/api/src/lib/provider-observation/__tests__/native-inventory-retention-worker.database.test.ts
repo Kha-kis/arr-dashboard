@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { chmodSync, lstatSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import { chmodSync, lstatSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -10,6 +10,7 @@ import { expect, it } from "vitest";
 import { runNativeInventoryRetentionTick } from "../../../plugins/native-inventory-scheduler.js";
 import { openRestoreRuntime, type RestoreRuntime } from "../../backup/restore-runtime-admission.js";
 import { createRuntimePrismaClient } from "../../backup/restore-runtime-client.js";
+import { synchronizeSqliteRuntimeSchema } from "../../backup/runtime-schema-sqlite.js";
 import {
 	createNativeInventoryRetentionWorker,
 	nativeInventoryRetentionWorkerUrl,
@@ -56,23 +57,15 @@ it.each(["source", "built"])(
 		const owned = lstatSync(directory, { bigint: true });
 		const path = join(directory, "fixture.db");
 		const databaseUrl = `file:${path}`;
-		const inspector = new Database(path);
-		chmodSync(path, 0o600);
+		let inspector: Database.Database | undefined;
 		let runtime: RestoreRuntime | undefined;
 		let client: ReturnType<typeof createRuntimePrismaClient> | undefined;
 		let timer: ReturnType<typeof setInterval> | undefined;
 		let losses = 0;
 		try {
+			await synchronizeSqliteRuntimeSchema(databaseUrl);
+			inspector = new Database(path);
 			inspector.pragma("journal_mode=WAL");
-			const schema = readFileSync(
-				new URL("../../../../prisma/runtime-schema/sqlite-v1.sql", import.meta.url),
-				"utf8",
-			);
-			// Registry source includes historical ALTER atoms as well as current CREATE
-			// atoms. A fresh disposable fixture needs only the current table/index set.
-			for (const atom of schema.split(/-- arr-schema-atom [^\n]+\n/)) {
-				if (/^\s*CREATE (?:UNIQUE )?(?:TABLE|INDEX)\b/.test(atom)) inspector.exec(atom);
-			}
 			runtime = await openRestoreRuntime({
 				databaseUrl,
 				onUnavailable: () => {
@@ -218,7 +211,7 @@ it.each(["source", "built"])(
 			if (timer) clearInterval(timer);
 			await client?.close();
 			await runtime?.close();
-			inspector.close();
+			inspector?.close();
 			removeOwnedFixture(directory, owned);
 		}
 	},

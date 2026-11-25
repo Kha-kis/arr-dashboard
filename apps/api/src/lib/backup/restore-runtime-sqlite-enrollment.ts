@@ -493,12 +493,14 @@ export async function provisionSqliteRestoreRuntimeSchema<Plan>(
 				startSqliteEnrollmentPublication(writer, storage, current, fence),
 			);
 			await assertOwned();
+			// Retire the intent before sealing the date checkpoint to this schema cookie.
+			// A failed publication still rolls back to the committed publishing hold.
+			retireSqliteEnrollment(writer, enrollment);
 			plan = operation.preflight(writer);
 		}
 		await operation.apply(writer, plan, assertOwned);
 		await assertOwned();
 		if (enrollment) {
-			retireSqliteEnrollment(writer, enrollment);
 			writer
 				.prepare(
 					`INSERT INTO SqliteRestoreStorageBinding (${COLUMNS.join(", ")}) VALUES (${COLUMNS.map((field) => `@${field}`).join(", ")})`,
