@@ -44,7 +44,35 @@ function localBindTarget(value) {
 	return address;
 }
 
+function scopedLoopbackTarget(address) {
+	const [literal, scope] = address.split("%");
+	const canonical = canonicalIp(literal);
+	if (
+		canonical !== "::" &&
+		canonical !== "::1" &&
+		canonical !== "0.0.0.0" &&
+		!canonical.startsWith("127.")
+	) {
+		throw new Error("Scoped listener requires an interface-aware HTTP target");
+	}
+
+	const interfaces = fs.readdirSync("/sys/class/net");
+	const scopeExists = /^[0-9]+$/.test(scope)
+		? interfaces.some(
+				(name) =>
+					Number(fs.readFileSync(path.join("/sys/class/net", name, "ifindex"), "utf8")) ===
+					Number(scope),
+			)
+		: interfaces.includes(scope);
+	if (!scopeExists) throw new Error("Invalid local interface scope");
+
+	// The kernel has no interface-specific destination for these addresses.
+	// Keep HOST intact for both listeners and the supervisor.
+	return localBindTarget(canonical);
+}
+
 async function resolveLocalBindTarget(value) {
+	if (isIP(value) === 6 && value.includes("%")) return scopedLoopbackTarget(value);
 	const address = isIP(value) ? value : (await lookup(value)).address;
 	return localBindTarget(address);
 }
