@@ -1739,6 +1739,7 @@ describe("native inventory independence from Jellyfin watch finalization", {
 
 			expect(await prepareJellyfinEpisodeRun(input)).toEqual({
 				kind: state === "active" ? "replay-pending" : "not-published",
+				...(state === "active" ? {} : { guardReason: "replay-state" }),
 			});
 			expect(await finalizeJellyfinEpisodeRun(input)).toEqual({
 				published: false,
@@ -3918,11 +3919,15 @@ describe("native inventory independence from Jellyfin watch finalization", {
 			data: { generationId: "new-parent-generation" },
 		});
 
+		const refusalReasons: string[] = [];
 		const result = await prisma.$transaction((tx) =>
-			commitPreparedJellyfinEpisodeRun(tx, input, prepared),
+			commitPreparedJellyfinEpisodeRun(tx, input, prepared, (reason) =>
+				refusalReasons.push(reason),
+			),
 		);
 
 		expect(result).toEqual({ published: false, itemCount: 0 });
+		expect(refusalReasons).toEqual(["parent-publication"]);
 		expect(
 			await prisma.jellyfinNativeWatchPublication.findUnique({
 				where: { instanceId: "jellyfin-1" },
@@ -3964,10 +3969,14 @@ describe("native inventory independence from Jellyfin watch finalization", {
 		vi.useFakeTimers({ toFake: ["Date"] });
 		try {
 			vi.setSystemTime(new Date("2026-09-08T00:02:01.000Z"));
+			const refusalReasons: string[] = [];
 			const result = await prisma.$transaction((tx) =>
-				commitPreparedJellyfinEpisodeRun(tx, input, prepared),
+				commitPreparedJellyfinEpisodeRun(tx, input, prepared, (reason) =>
+					refusalReasons.push(reason),
+				),
 			);
 			expect(result).toEqual({ published: false, itemCount: 0 });
+			expect(refusalReasons).toEqual(["parent-age"]);
 		} finally {
 			vi.useRealTimers();
 		}
@@ -4032,10 +4041,25 @@ describe("native inventory independence from Jellyfin watch finalization", {
 				});
 			}
 			const callInput = change === "owner" ? { ...input, userId: "other-owner" } : input;
+			const refusalReasons: string[] = [];
 			const result = await prisma.$transaction((tx) =>
-				commitPreparedJellyfinEpisodeRun(tx, callInput, prepared),
+				commitPreparedJellyfinEpisodeRun(tx, callInput, prepared, (reason) => {
+					refusalReasons.push(reason);
+					throw new Error("diagnostic callback failed");
+				}),
 			);
 			expect(result).toEqual({ published: false, itemCount: 0 });
+			expect(refusalReasons).toEqual([
+				(
+					{
+						attempt: "attempt-binding",
+						identity: "service-identity",
+						target: "run-authority",
+						unit: "run-completeness",
+						owner: "input-binding",
+					} as const
+				)[change],
+			]);
 			expect(
 				await prisma.jellyfinNativeWatchPublication.findUnique({
 					where: { instanceId: "jellyfin-1" },
@@ -4044,6 +4068,53 @@ describe("native inventory independence from Jellyfin watch finalization", {
 			expect(
 				await prisma.providerObservationRun.findUnique({ where: { id: seed.run.id } }),
 			).toMatchObject({ state: "running" });
+		},
+	);
+
+	it.each(["generation", "lease"] as const)(
+		"reports a bounded %s refusal without changing the current publication",
+		async (change) => {
+			const prisma = await database();
+			const seed = await completeFinalizerFixture(prisma);
+			await bindV3Fixture(prisma, seed.run.id);
+			await prisma.serviceInstance.update({
+				where: { id: "jellyfin-1" },
+				data: { identityStatus: "VERIFIED", expectedIdentity: "native-server" },
+			});
+			const input = {
+				prisma,
+				userId: "user-1",
+				instance: { id: "jellyfin-1" },
+				runId: seed.run.id,
+				scopes: seed.scopes,
+				attempt: seed.attempt,
+				now: seed.attempt.attemptedAt,
+				testHooks: { commitClock: () => seed.attempt.attemptedAt },
+			};
+			const projected = await prepareJellyfinEpisodeRun(input);
+			if (projected.kind !== "ready") throw new Error("Fixture did not prepare V3 publication");
+			const prepared = await stagePreparedCommit(prisma, input, projected);
+			if (change === "lease") {
+				await prisma.jellyfinEpisodePreparation.updateMany({
+					where: { runId: seed.run.id },
+					data: { leaseExpiresAt: new Date("2000-01-01T00:00:00.000Z") },
+				});
+			}
+			const stateBefore = await finalizerState(prisma, seed.run.id);
+			const refusalReasons: string[] = [];
+			const result = await prisma.$transaction((tx) =>
+				commitPreparedJellyfinEpisodeRun(
+					tx,
+					input,
+					change === "generation" ? { ...prepared, generationMetadata: "{}" } : prepared,
+					(reason) => refusalReasons.push(reason),
+				),
+			);
+			expect(result).toEqual({ published: false, itemCount: 0 });
+			expect(refusalReasons).toEqual([
+				change === "generation" ? "prepared-generation" : "preparation-lease",
+			]);
+			expect(await finalizerState(prisma, seed.run.id)).toEqual(stateBefore);
 		},
 	);
 
@@ -4109,7 +4180,10 @@ describe("native inventory independence from Jellyfin watch finalization", {
 			now: seed.attempt.attemptedAt,
 		});
 
-		expect(prepared.kind).toBe("not-published");
+		expect(prepared).toEqual({
+			kind: "not-published",
+			guardReason: "parent-publication",
+		});
 		expect(await finalizerState(prisma, seed.run.id)).toEqual(before);
 	});
 
@@ -4149,11 +4223,15 @@ describe("native inventory independence from Jellyfin watch finalization", {
 			},
 		});
 		const before = await finalizerState(prisma, seed.run.id);
+		const refusalReasons: string[] = [];
 		expect(
 			await prisma.$transaction((tx) =>
-				settleJellyfinEpisodeFinalizationRejection(tx, input, prepared),
+				settleJellyfinEpisodeFinalizationRejection(tx, input, prepared, (reason) =>
+					refusalReasons.push(reason),
+				),
 			),
 		).toBe(false);
+		expect(refusalReasons).toEqual(["run-completeness"]);
 		expect(await finalizerState(prisma, seed.run.id)).toEqual(before);
 	});
 
@@ -4178,6 +4256,7 @@ describe("native inventory independence from Jellyfin watch finalization", {
 		});
 		const prepared = await prepareJellyfinEpisodeRun(input);
 		if (prepared.kind !== "invalid") throw new Error("Fixture did not prove invalid run state");
+		expect(prepared.guardReason).toBe("run-completeness");
 
 		expect(
 			await prisma.$transaction((tx) =>

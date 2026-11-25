@@ -1066,13 +1066,32 @@ describe("Jellyfin episode finalizer worker transport", () => {
 			worker.emit("message", {
 				status: "not-published",
 				reason: "lease-busy",
+				guardReason: "parent-age",
 				secret: "private worker detail",
 			}),
 		);
 
 		const result = await run;
-		expect(result).toEqual({ status: "not-published", reason: "lease-busy" });
+		expect(result).toEqual({
+			status: "not-published",
+			reason: "lease-busy",
+			guardReason: "parent-age",
+		});
 		expect(JSON.stringify(result)).not.toContain("private");
+	});
+
+	it("drops unrecognized guarded refusal categories", async () => {
+		const worker = new FakeWorker();
+		const run = runJellyfinEpisodeFinalizerWorker(payload, { createWorker: () => worker as never });
+		setImmediate(() =>
+			worker.emit("message", {
+				status: "not-published",
+				reason: "commit-rejected",
+				guardReason: "private database path",
+			}),
+		);
+
+		expect(await run).toEqual({ status: "not-published", reason: "commit-rejected" });
 	});
 
 	it("drops unrecognized non-publication details", async () => {
