@@ -56,13 +56,48 @@ afterEach(() => {
 });
 
 describe("combined effective settings", () => {
-	it("keeps database ports/address ahead of image environment defaults", () => {
+	it("preserves original override presence separately from resolved supervisor listeners", () => {
+		const resolver = implementation();
+		const mask = resolver.combinedListenerOverrideMask({
+			API_PORT: "38081",
+			PORT: "",
+			HOST: "127.0.0.1",
+		});
+		expect(resolver.readCombinedListenerOverrides(mask)).toEqual({
+			apiPort: true,
+			webPort: false,
+			listenAddress: true,
+		});
+		expect(() => resolver.readCombinedListenerOverrides("1101")).toThrow();
+		expect(() => resolver.readCombinedListenerOverrides(undefined)).toThrow();
+	});
+
+	it("uses explicit overrides even when a settings row contains default values", () => {
+		expect(
+			implementation().resolveCombinedStartupSettings(
+				{ apiPort: 3001, webPort: 3000, listenAddress: "0.0.0.0" },
+				{ API_PORT: "38081", PORT: "38080", HOST: "127.0.0.2" },
+			),
+		).toMatchObject({
+			apiPort: 38081,
+			webPort: 38080,
+			listenAddress: "127.0.0.2",
+			source: { apiPort: "env", webPort: "env", listenAddress: "env" },
+		});
+	});
+
+	it("keeps saved custom listeners when the operator did not supply overrides", () => {
 		expect(
 			implementation().resolveCombinedStartupSettings(
 				{ apiPort: 3011, webPort: 3010, listenAddress: "127.0.0.1" },
-				{ API_PORT: "3001", PORT: "3000", HOST: "0.0.0.0" },
+				{ API_PORT: "", PORT: "", HOST: "" },
 			),
-		).toEqual({ apiPort: 3011, webPort: 3010, listenAddress: "127.0.0.1" });
+		).toEqual({
+			apiPort: 3011,
+			webPort: 3010,
+			listenAddress: "127.0.0.1",
+			source: { apiPort: "database", webPort: "database", listenAddress: "database" },
+		});
 	});
 	it("uses environment and then defaults only for absent validated settings", () => {
 		const absent = { apiPort: null, webPort: null, listenAddress: null };
@@ -72,13 +107,46 @@ describe("combined effective settings", () => {
 				PORT: "4010",
 				HOST: "::1",
 			}),
-		).toEqual({ apiPort: 4011, webPort: 4010, listenAddress: "::1" });
+		).toEqual({
+			apiPort: 4011,
+			webPort: 4010,
+			listenAddress: "::1",
+			source: { apiPort: "env", webPort: "env", listenAddress: "env" },
+		});
 		expect(implementation().resolveCombinedStartupSettings(absent, {})).toEqual({
 			apiPort: 3001,
 			webPort: 3000,
 			listenAddress: "0.0.0.0",
+			source: { apiPort: "default", webPort: "default", listenAddress: "default" },
+		});
+		expect(
+			implementation().resolveCombinedStartupSettings(
+				{ apiPort: 4011, webPort: 4010, listenAddress: "127.0.0.1" },
+				{ API_PORT: "3001", PORT: "3000", HOST: "0.0.0.0" },
+				"restart",
+			),
+		).toEqual({
+			apiPort: 3001,
+			webPort: 3000,
+			listenAddress: "0.0.0.0",
+			source: { apiPort: "supervisor", webPort: "supervisor", listenAddress: "supervisor" },
 		});
 	});
+	it.each([
+		["API_PORT", "0"],
+		["PORT", "3000oops"],
+		["HOST", "bad/host"],
+	] as const)(
+		"rejects invalid explicit %s instead of falling back to saved data",
+		(field, value) => {
+			expect(() =>
+				implementation().resolveCombinedStartupSettings(
+					{ apiPort: 3011, webPort: 3010, listenAddress: "127.0.0.1" },
+					{ [field]: value },
+				),
+			).toThrow(expect.objectContaining({ code: `INVALID_COMBINED_${field}` }));
+		},
+	);
 	for (const value of ["0", "65536", "3011junk", "-1", "3.5", " 3011"])
 		it(`refuses invalid effective environment port ${JSON.stringify(value)}`, () => {
 			expect(() =>

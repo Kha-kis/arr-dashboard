@@ -9,6 +9,7 @@ const state = vi.hoisted(() => ({
 	diagnostics: [] as unknown[],
 	stderr: [] as string[],
 	environment: {} as Record<string, unknown>,
+	listenerOverrides: undefined as unknown,
 	mountChecks: [] as boolean[],
 	listenGate: Promise.resolve(),
 	initFails: false,
@@ -82,8 +83,15 @@ vi.mock("../../utils/version.js", () => ({
 	getAppVersionInfo: () => ({ version: "synthetic", commitSha: "synthetic" }),
 }));
 vi.mock("../../../server.js", () => ({
-	buildServer: ({ env }: { env: Record<string, unknown> }) => {
+	buildServer: ({
+		env,
+		combinedListenerOverrides,
+	}: {
+		env: Record<string, unknown>;
+		combinedListenerOverrides?: unknown;
+	}) => {
 		state.environment = env;
+		state.listenerOverrides = combinedListenerOverrides;
 		return {
 			config: env,
 			hasDecorator: () => false,
@@ -121,6 +129,8 @@ beforeEach(() => {
 	state.exits.length = 0;
 	state.diagnostics.length = 0;
 	state.stderr.length = 0;
+	state.environment = {};
+	state.listenerOverrides = undefined;
 	state.initFails = false;
 	state.listenFails = false;
 	state.listenCode = undefined;
@@ -129,16 +139,17 @@ beforeEach(() => {
 	state.listenGate = Promise.resolve();
 	state.settings = { apiPort: 3011, webPort: 3010, listenAddress: "127.0.0.1" };
 	for (const [key, value] of Object.entries({
-		API_PORT: "3001",
+		API_PORT: undefined,
 		DATABASE_URL: "file:/synthetic-never-opened",
-		PORT: "3000",
-		HOST: "0.0.0.0",
+		PORT: undefined,
+		HOST: undefined,
 		API_HOST: "0.0.0.0",
 		TRUST_PROXY: "false",
 		COOKIE_SECURE: "false",
 		LAUNCHER_MANAGED: "true",
 		ARR_COMBINED_STARTUP_NONCE: "a".repeat(64),
 		ARR_COMBINED_STARTUP_PHASE: "initial",
+		ARR_COMBINED_LISTENER_OVERRIDES: undefined,
 	}))
 		vi.stubEnv(key, value);
 	Object.defineProperty(process, "send", {
@@ -166,14 +177,21 @@ beforeEach(() => {
 });
 
 it.each(["junk", "65536"])(
-	"ignores overridden raw API_PORT=%s only when combined saved port wins",
+	"refuses malformed explicit API_PORT=%s even with a saved port",
 	async (raw) => {
 		state.throwEarlyExit = true;
 		vi.stubEnv("API_PORT", raw);
 		await boot();
-		expect(state.exits).toEqual([]);
-		expect(state.environment.API_PORT).toBe(3011);
-		expect(state.events).toContain("handoff");
+		expect(state.events).toEqual(["native-validation", "owner", "owned-settings", "owner-closed"]);
+		expect(state.diagnostics).toEqual([
+			expect.objectContaining({
+				stage: "settings",
+				errorCategory: "validation",
+				code: "INVALID_COMBINED_API_PORT",
+			}),
+		]);
+		expect(state.exits).toEqual([1]);
+		expect(state.messages).toEqual([]);
 	},
 );
 it.each(["combined-no-saved-port", "standalone"])(
@@ -235,7 +253,7 @@ it("sends only after validation, ownership, settings and successful listen", asy
 		},
 	]);
 });
-it("uses resolved combined database ports and address rather than image defaults", async () => {
+it("uses saved combined listeners when the image supplies no overrides", async () => {
 	await boot();
 	expect(state.environment.API_PORT).toBe(3011);
 	expect(state.environment.API_HOST).toBe("127.0.0.1");
@@ -244,10 +262,53 @@ it("uses resolved combined database ports and address rather than image defaults
 it.each(["initial", "restart"])("requires the Docker mount check during %s", async (phase) => {
 	vi.stubEnv("ARR_DOCKER_SQLITE_MOUNT_CHECK", "1");
 	vi.stubEnv("ARR_COMBINED_STARTUP_PHASE", phase);
+	if (phase === "restart") {
+		vi.stubEnv("ARR_COMBINED_LISTENER_OVERRIDES", "000");
+		vi.stubEnv("API_PORT", "3011");
+		vi.stubEnv("PORT", "3010");
+		vi.stubEnv("HOST", "127.0.0.1");
+	}
 	await boot();
 	expect(state.mountChecks).toEqual([true]);
+	expect(state.events).toEqual([
+		"native-validation",
+		"owner",
+		"owned-settings",
+		"listen",
+		"listening",
+		"handoff",
+	]);
+	expect(state.exits).toEqual([]);
 });
+it("uses explicit combined listeners even when the values equal former image defaults", async () => {
+	vi.stubEnv("API_PORT", "3001");
+	vi.stubEnv("PORT", "3000");
+	vi.stubEnv("HOST", "0.0.0.0");
+	await boot();
+	expect(state.environment).toMatchObject({ API_PORT: 3001, API_HOST: "0.0.0.0" });
+	expect(state.listenerOverrides).toEqual({ apiPort: true, webPort: true, listenAddress: true });
+	expect(state.messages).toEqual([
+		{
+			kind: "arr-combined-startup",
+			version: 1,
+			nonce: "a".repeat(64),
+			apiPort: 3001,
+			webPort: 3000,
+			listenAddress: "0.0.0.0",
+		},
+	]);
+	expect(state.events).toEqual([
+		"native-validation",
+		"owner",
+		"owned-settings",
+		"listen",
+		"listening",
+		"handoff",
+	]);
+});
+
 it("preserves standalone environment precedence and sends no handoff", async () => {
+	vi.stubEnv("API_PORT", "3001");
 	vi.stubEnv("ARR_DOCKER_SQLITE_MOUNT_CHECK", "1");
 	vi.stubEnv("ARR_COMBINED_STARTUP_NONCE", undefined);
 	vi.stubEnv("ARR_COMBINED_STARTUP_PHASE", undefined);
@@ -261,6 +322,7 @@ it("preserves standalone environment precedence and sends no handoff", async () 
 });
 it("revalidates a replacement child but keeps its captured per-container bindings", async () => {
 	vi.stubEnv("ARR_COMBINED_STARTUP_PHASE", "restart");
+	vi.stubEnv("ARR_COMBINED_LISTENER_OVERRIDES", "101");
 	vi.stubEnv("API_PORT", "4011");
 	vi.stubEnv("PORT", "4010");
 	vi.stubEnv("HOST", "::1");
@@ -268,6 +330,7 @@ it("revalidates a replacement child but keeps its captured per-container binding
 	expect(state.events.filter((x) => x === "native-validation")).toHaveLength(1);
 	expect(state.environment.API_PORT).toBe(4011);
 	expect(state.environment.API_HOST).toBe("::1");
+	expect(state.listenerOverrides).toEqual({ apiPort: true, webPort: false, listenAddress: true });
 	expect(state.messages).toEqual([
 		{
 			kind: "arr-combined-startup",

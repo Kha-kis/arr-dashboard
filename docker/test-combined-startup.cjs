@@ -52,7 +52,7 @@ setInterval(()=>{},1000);}\n`,
 );
 fixture(
 	"/app/runtime-health.cjs",
-	"process.stdout.write('TEST_HEALTH_PORT:'+process.argv[3]+'\\n');\n",
+	"process.stderr.write('TEST_HEALTH_PORT:'+process.argv[3]+'\\n');process.stdout.write('http://'+process.argv[5]+':'+process.argv[4]+'\\t'+process.argv[5]);\n",
 );
 fixture(
 	"/app/web/server.js",
@@ -168,9 +168,9 @@ test("combined shell delegates one startup to the API and publishes health/web o
 		"native startup must not run in a pre-launch actor or diagnostic relaunch",
 	);
 	assert(r.out.indexOf("TEST_LISTEN_READY") >= 0);
-	assert(r.out.indexOf("TEST_HEALTH_PORT:3010") > r.out.indexOf("TEST_LISTEN_READY"));
-	assert(r.out.indexOf("TEST_WEB_STARTED") > r.out.indexOf("TEST_HEALTH_PORT:3010"));
-	assert(r.out.includes("TEST_WEB_BINDING:3010:http://localhost:3011"));
+	assert(r.errors.includes("TEST_HEALTH_PORT:3010"));
+	assert(r.out.indexOf("TEST_WEB_STARTED") > r.out.indexOf("TEST_LISTEN_READY"));
+	assert(r.out.includes("TEST_WEB_BINDING:3010:http://127.0.0.1:3011"));
 	assert(r.out.includes("TEST_API_CLOSED"), "fatal web exit must physically stop the tracked API");
 	assert.equal(r.code, 1, "the deliberate web exit must remain a fatal supervisor outcome");
 });
@@ -178,7 +178,7 @@ test("native failure never starts health/web or a diagnostic replacement", () =>
 	const r = run({ TEST_STARTUP_FAILURE: "true" });
 	assert.equal(r.code, 1);
 	assert.equal(r.native, 1);
-	assert(!r.out.includes("TEST_HEALTH_PORT:"));
+	assert(!r.errors.includes("TEST_HEALTH_PORT:"));
 	assert(!r.out.includes("TEST_WEB_STARTED"));
 	assert(r.errors.includes("Destructive schema changes are intentionally rejected at startup"));
 	assert(r.errors.includes("An unacknowledged commit is unknown; do not assume rollback"));
@@ -193,7 +193,7 @@ test("provider validation failure starts no API, health publisher or web", () =>
 	const r = run({ TEST_PROVIDER_FAILURE: "true" });
 	assert.equal(r.code, 1);
 	assert.equal(r.native, 0);
-	assert(!r.out.includes("TEST_HEALTH_PORT:"));
+	assert(!r.errors.includes("TEST_HEALTH_PORT:"));
 	assert(!r.out.includes("TEST_WEB_STARTED"));
 });
 test("consumer refusal stops and joins the API without starting web", () => {
@@ -201,7 +201,7 @@ test("consumer refusal stops and joins the API without starting web", () => {
 	assert.equal(r.code, 1);
 	assert.equal(r.native, 1);
 	assert(r.out.includes("TEST_API_CLOSED"));
-	assert(!r.out.includes("TEST_HEALTH_PORT:"));
+	assert(!r.errors.includes("TEST_HEALTH_PORT:"));
 	assert(!r.out.includes("TEST_WEB_STARTED"));
 });
 for (const mode of ["normal", "failed-stop", "real-held-native"])
@@ -222,6 +222,7 @@ for (const mode of ["normal", "failed-stop", "real-held-native"])
 			stdio: ["ignore", "pipe", "pipe"],
 		});
 		let output = "",
+			diagnostics = "",
 			signalled = false,
 			expired = false;
 		child.stdout.on("data", (bytes) => {
@@ -234,7 +235,9 @@ for (const mode of ["normal", "failed-stop", "real-held-native"])
 				child.kill("SIGTERM");
 			}
 		});
-		child.stderr.resume();
+		child.stderr.on("data", (bytes) => {
+			diagnostics += bytes;
+		});
 		const timer = setTimeout(() => {
 			expired = true;
 			child.kill("SIGKILL");
@@ -258,7 +261,7 @@ for (const mode of ["normal", "failed-stop", "real-held-native"])
 		} else assert(output.includes("TEST_API_CLOSED"));
 		assert.equal(output.includes("Services stopped gracefully"), mode === "normal");
 		assert(!output.includes("TEST_WEB_STARTED"));
-		assert(!output.includes("TEST_HEALTH_PORT:"));
+		assert(!diagnostics.includes("TEST_HEALTH_PORT:"));
 	});
 
 for (const scenario of [

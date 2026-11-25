@@ -91,9 +91,10 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		// Check if settings differ from what's currently running
 		const requiresRestart =
-			settings.apiPort !== effectiveApiPort ||
-			settings.webPort !== effectiveWebPort ||
-			settings.listenAddress !== effectiveListenAddress ||
+			(!app.combinedListenerOverrides?.apiPort && settings.apiPort !== effectiveApiPort) ||
+			(!app.combinedListenerOverrides?.webPort && settings.webPort !== effectiveWebPort) ||
+			(!app.combinedListenerOverrides?.listenAddress &&
+				settings.listenAddress !== effectiveListenAddress) ||
 			settings.trustProxy !== effectiveTrustProxy ||
 			(settings.secureCookies ?? effectiveTrustProxy) !== effectiveSecureCookies;
 
@@ -146,10 +147,23 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			}
 		}
 
-		// Check for port conflicts
-		const effectiveApiPort = apiPort ?? (Number(process.env.API_PORT) || 3001);
-		const effectiveWebPort = webPort ?? (Number(process.env.PORT) || 3000);
-		if (effectiveApiPort === effectiveWebPort) {
+		// Validate both saved fallbacks and the values a combined restart would select.
+		const runningApiPort = Number(process.env.API_PORT) || 3001;
+		const runningWebPort = Number(process.env.PORT) || 3000;
+		const overrides = app.combinedListenerOverrides;
+		let savedApiPort = apiPort ?? runningApiPort;
+		let savedWebPort = webPort ?? runningWebPort;
+		if (overrides && (apiPort !== undefined || webPort !== undefined)) {
+			const saved = await app.prisma.systemSettings.findUnique({
+				where: { id: 1 },
+				select: { apiPort: true, webPort: true },
+			});
+			savedApiPort = apiPort ?? saved?.apiPort ?? 3001;
+			savedWebPort = webPort ?? saved?.webPort ?? 3000;
+		}
+		const nextApiPort = overrides?.apiPort ? runningApiPort : savedApiPort;
+		const nextWebPort = overrides?.webPort ? runningWebPort : savedWebPort;
+		if (savedApiPort === savedWebPort || nextApiPort === nextWebPort) {
 			return reply.status(400).send({
 				success: false,
 				error: "API Port and Web Port cannot be the same",
@@ -286,9 +300,10 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		// Check if restart is needed (for port, listen address, or security changes)
 		const requiresRestart =
-			settings.apiPort !== currentApiPort ||
-			settings.webPort !== currentWebPort ||
-			settings.listenAddress !== currentListenAddress ||
+			(!app.combinedListenerOverrides?.apiPort && settings.apiPort !== currentApiPort) ||
+			(!app.combinedListenerOverrides?.webPort && settings.webPort !== currentWebPort) ||
+			(!app.combinedListenerOverrides?.listenAddress &&
+				settings.listenAddress !== currentListenAddress) ||
 			settings.trustProxy !== currentTrustProxy ||
 			(settings.secureCookies ?? currentTrustProxy) !== currentSecureCookies;
 

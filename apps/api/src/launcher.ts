@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 import pino, { type Logger } from "pino";
 import {
 	type CombinedStartupMessage,
+	combinedListenerOverrideMask,
 	parseCombinedStartupMessage,
 	publishCombinedStartupResult,
 	readCombinedStartupChannel,
@@ -193,6 +194,7 @@ function startServer() {
 				? {
 						ARR_COMBINED_STARTUP_NONCE: combinedChannel.nonce,
 						ARR_COMBINED_STARTUP_PHASE: combinedSettings ? "restart" : "initial",
+						ARR_COMBINED_LISTENER_OVERRIDES: combinedListenerOverrideMask(process.env),
 					}
 				: {}),
 			...(combinedSettings

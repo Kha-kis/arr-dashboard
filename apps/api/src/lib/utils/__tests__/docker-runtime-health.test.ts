@@ -19,7 +19,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const health = createRequire(import.meta.url)(
 	resolve(process.cwd(), "../../docker/runtime-health.cjs"),
 ) as {
-	publishWebPort(value: string, directory: string): void;
+	publishWebPort(value: string, directory: string, host?: string): void;
 	checkWebHealth(directory: string): Promise<boolean>;
 };
 
@@ -42,7 +42,7 @@ describe("Docker runtime-selected liveness", () => {
 		}
 		rmSync(fixture, { recursive: true, force: true });
 	});
-	async function listen(status = 200, stall = false, delayMs = 0) {
+	async function listen(status = 200, stall = false, delayMs = 0, host = "127.0.0.1") {
 		server = createServer((request, response) => {
 			requests.push(request.url ?? "");
 			if (stall) return;
@@ -55,7 +55,7 @@ describe("Docker runtime-selected liveness", () => {
 				response.end("synthetic fixture");
 			}
 		});
-		await new Promise<void>((done) => server!.listen(0, "127.0.0.1", done));
+		await new Promise<void>((done) => server!.listen(0, host, done));
 		const address = server.address();
 		if (!address || typeof address === "string") throw new Error("Fixture port unavailable");
 		return String(address.port);
@@ -69,6 +69,35 @@ describe("Docker runtime-selected liveness", () => {
 		expect(readFileSync(join(directory, "web-port"), "utf8")).toBe(`${port}\n`);
 		expect(await health.checkWebHealth(directory)).toBe(true);
 		expect(requests).toEqual(["/live"]);
+	});
+
+	it("probes the selected local listen address", async () => {
+		const port = await listen(200, false, 0, "127.0.0.2");
+		await health.publishWebPort(port, directory, "127.0.0.2");
+		expect(await health.checkWebHealth(directory)).toBe(true);
+		expect(requests).toEqual(["/live"]);
+	});
+
+	it.each(["::ffff:127.0.0.2", "::ffff:0.0.0.0"])(
+		"normalizes the local IPv4-mapped listener %s",
+		async (host) => {
+			const port = await listen(200, false, 0, host);
+			health.publishWebPort(port, directory, host);
+			expect(await health.checkWebHealth(directory)).toBe(true);
+			expect(requests).toEqual(["/live"]);
+		},
+	);
+
+	it("does not probe a nonlocal address from runtime metadata", async () => {
+		health.publishWebPort("3000", directory);
+		writeFileSync(join(directory, "web-port"), "3000\n192.0.2.1\n");
+		const fetcher = vi.spyOn(globalThis, "fetch");
+		try {
+			expect(await health.checkWebHealth(directory)).toBe(false);
+			expect(fetcher).not.toHaveBeenCalled();
+		} finally {
+			fetcher.mockRestore();
+		}
 	});
 
 	it("replaces stale metadata atomically and leaves no temporary files", async () => {

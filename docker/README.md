@@ -152,7 +152,7 @@ compatible pre-upgrade backup with the previous image for rollback, as above.
 | `DATABASE_URL` | `file:/config/prod.db` | Database connection (SQLite path or PostgreSQL URL) |
 | `PORT` | `3000` | Web server port |
 | `API_PORT` | `3001` | API server port (internal) |
-| `HOST` | `0.0.0.0` | Listen address |
+| `HOST` | `0.0.0.0` | Listen address. A scoped IPv6 wildcard such as `::%lo` still binds on all interfaces. Use `::1` or `127.0.0.1` for loopback-only access. |
 
 ### Session & Security
 

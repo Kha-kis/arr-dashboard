@@ -14,6 +14,7 @@ import { arrErrorToHttpStatus, isArrError } from "./lib/arr/client-factory.js";
 import { registerBackupMutationGuard } from "./lib/backup/backup-mutation-gate.js";
 import type { RestoreRuntime } from "./lib/backup/restore-runtime-admission.js";
 import { registerRestoreRuntimeActivation } from "./lib/backup/restore-runtime-bootstrap.js";
+import type { CombinedListenerOverrides } from "./lib/lifecycle/combined-startup.js";
 import { logger } from "./lib/logger.js";
 
 function isPrismaKnownError(
@@ -31,6 +32,7 @@ export type ServerOptions = {
 	logger?: boolean;
 	env?: ApiEnv;
 	restoreRuntime?: RestoreRuntime;
+	combinedListenerOverrides?: CombinedListenerOverrides;
 };
 
 /** Shared registration boundary for real server and native lifecycle tests. */
@@ -64,6 +66,8 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 		trustProxy: env.TRUST_PROXY,
 	});
 	app.decorate("config", env);
+	if (options.combinedListenerOverrides)
+		app.decorate("combinedListenerOverrides", options.combinedListenerOverrides);
 	if (options.restoreRuntime) app.decorate("restoreRuntime", options.restoreRuntime);
 	registerBackupMutationGuard(app);
 

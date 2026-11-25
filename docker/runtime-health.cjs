@@ -3,6 +3,14 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const { randomUUID } = require("node:crypto");
+const { lookup } = require("node:dns/promises");
+const { isIP } = require("node:net");
+const { get } = require("node:http");
+const { localSocketTarget, socketOrigin } = fs.existsSync(
+	path.join(__dirname, "docker-socket-target.cjs"),
+)
+	? require("./docker-socket-target.cjs")
+	: require("../apps/web/docker-socket-target.cjs");
 
 // Ephemeral container state, not database/configuration or readiness evidence.
 const runtimeDirectory = "/tmp/arr-dashboard-runtime-health";
@@ -14,6 +22,11 @@ function parsePort(value) {
 	const port = Number(value);
 	if (!Number.isSafeInteger(port) || port > 65535) throw new Error("Invalid runtime port");
 	return port;
+}
+
+async function resolveLocalBindTarget(value) {
+	const address = isIP(value) ? value : (await lookup(value)).address;
+	return localSocketTarget(address);
 }
 
 function directoryOwner(directory, publishing) {
@@ -29,8 +42,9 @@ function directoryOwner(directory, publishing) {
 	return state.uid;
 }
 
-function publishWebPort(value, directory = runtimeDirectory) {
+function publishWebPort(value, directory = runtimeDirectory, target) {
 	const port = parsePort(value);
+	const metadata = target === undefined ? `${port}\n` : `${port}\n${localSocketTarget(target)}\n`;
 	try {
 		fs.mkdirSync(directory, { mode: 0o700 });
 	} catch (error) {
@@ -47,7 +61,7 @@ function publishWebPort(value, directory = runtimeDirectory) {
 			0o600,
 		);
 		created = true;
-		fs.writeFileSync(descriptor, `${port}\n`);
+		fs.writeFileSync(descriptor, metadata);
 		fs.closeSync(descriptor);
 		descriptor = undefined;
 		fs.renameSync(temporary, path.join(directory, "web-port"));
@@ -58,7 +72,7 @@ function publishWebPort(value, directory = runtimeDirectory) {
 	}
 }
 
-function readWebPort(directory) {
+function readWebSocket(directory) {
 	const owner = directoryOwner(directory, false);
 	const descriptor = fs.openSync(
 		path.join(directory, "web-port"),
@@ -71,18 +85,19 @@ function readWebPort(directory) {
 			state.uid !== owner ||
 			(state.mode & 0o777) !== 0o600 ||
 			state.size < 2 ||
-			state.size > 6
+			state.size > 81
 		) {
 			throw new Error("Invalid runtime metadata");
 		}
-		const buffer = Buffer.alloc(7);
+		const buffer = Buffer.alloc(82);
 		const length = fs.readSync(descriptor, buffer, 0, buffer.length, 0);
 		const value = buffer.subarray(0, length).toString("utf8");
-		const port = parsePort(value.slice(0, -1));
-		if (length !== state.size || value !== `${port}\n`) {
-			throw new Error("Invalid runtime metadata");
-		}
-		return port;
+		if (length !== state.size || !value.endsWith("\n")) throw new Error("Invalid runtime metadata");
+		const fields = value.slice(0, -1).split("\n");
+		if (fields.length !== 1 && fields.length !== 2) throw new Error("Invalid runtime metadata");
+		const port = parsePort(fields[0]);
+		const hostname = fields.length === 2 ? localSocketTarget(fields[1]) : "127.0.0.1";
+		return { port, hostname };
 	} finally {
 		fs.closeSync(descriptor);
 	}
@@ -90,16 +105,24 @@ function readWebPort(directory) {
 
 async function checkWebHealth(directory = runtimeDirectory) {
 	try {
-		const port = readWebPort(directory);
-		const response = await fetch(`http://127.0.0.1:${port}/live`, {
-			redirect: "manual",
-			// Web /live already permits an 8s API response. Stay above that
-			// budget and below the image's unchanged 10s Docker timeout.
-			signal: AbortSignal.timeout(9000),
+		const { hostname, port } = readWebSocket(directory);
+		return await new Promise((resolve) => {
+			const request = get(
+				{
+					hostname,
+					port,
+					path: "/live",
+					headers: { host: new URL(socketOrigin(port, hostname)).host },
+					// Web allows an 8s API response. Stay below the Docker probe timeout.
+					signal: AbortSignal.timeout(9000),
+				},
+				(response) => {
+					response.destroy();
+					resolve(response.statusCode === 200);
+				},
+			);
+			request.once("error", () => resolve(false));
 		});
-		const healthy = response.status === 200;
-		await response.body?.cancel();
-		return healthy;
 	} catch {
 		return false;
 	}
@@ -108,14 +131,28 @@ async function checkWebHealth(directory = runtimeDirectory) {
 module.exports = { publishWebPort, checkWebHealth };
 
 if (require.main === module) {
-	if (process.argv[2] === "publish" && process.argv.length === 4) {
-		try {
-			publishWebPort(process.argv[3]);
-		} catch {
-			process.stderr.write("ERROR: Runtime health metadata unavailable\n");
-			process.exitCode = 1;
-		}
-	} else if (process.argv[2] === "check" && process.argv.length === 3) {
+	const [command, webPort, apiPort, host] = process.argv.slice(2);
+	if (command === "handoff" && process.argv.length === 6) {
+		resolveLocalBindTarget(host)
+			.then((target) => {
+				const apiOrigin = socketOrigin(parsePort(apiPort), target);
+				publishWebPort(webPort, runtimeDirectory, target);
+				const literal = host.split("%")[0];
+				if (
+					host.includes("%") &&
+					["::", "::ffff:0:0"].includes(new URL(`http://[${literal}]`).hostname.slice(1, -1))
+				) {
+					process.stderr.write(
+						"WARNING: An interface scope does not restrict a wildcard HOST. Use ::1 or 127.0.0.1 for loopback-only access.\n",
+					);
+				}
+				process.stdout.write(`${apiOrigin}\t${target}`);
+			})
+			.catch(() => {
+				process.stderr.write("ERROR: Runtime listener metadata unavailable\n");
+				process.exitCode = 1;
+			});
+	} else if (command === "check" && process.argv.length === 3) {
 		checkWebHealth().then((healthy) => {
 			process.exitCode = healthy ? 0 : 1;
 		});
