@@ -9,6 +9,7 @@ import {
 	createRuntimePrismaClient,
 	createRuntimeSessionMetadataPrismaClient,
 } from "../restore-runtime-client.js";
+import { readSqliteRuntimeControlCreateSql } from "../runtime-schema-registry.js";
 
 describe.skipIf(process.platform !== "linux")("guarded SQLite foreign-key enforcement", () => {
 	let directory: string;
@@ -23,10 +24,7 @@ describe.skipIf(process.platform !== "linux")("guarded SQLite foreign-key enforc
 		const db = new Database(path);
 		db.pragma("journal_mode=WAL");
 		db.pragma("foreign_keys=ON");
-		db.exec(`CREATE TABLE RestoreRuntimeControl (
-			id INTEGER PRIMARY KEY, protocolVersion INTEGER NOT NULL, phase TEXT NOT NULL,
-			runtimeEpoch TEXT, ownerBackendPid INTEGER, activeRestoreId TEXT,
-			lastCommittedRestoreId TEXT, lastCommittedAt DATETIME, destinationInstallationId TEXT);
+		db.exec(`${readSqliteRuntimeControlCreateSql()}
 			CREATE TABLE SqliteRestoreStorageBinding (
 			id INTEGER PRIMARY KEY, protocolVersion INTEGER NOT NULL,
 			databaseDevice TEXT NOT NULL, databaseInode TEXT NOT NULL,

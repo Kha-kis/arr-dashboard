@@ -29,6 +29,7 @@ import {
 } from "../restore-runtime-sqlite.js";
 import { parseSqliteRestoreRuntimeRecord } from "../restore-runtime-sqlite-enrollment.js";
 import { classifyRestoreRuntimeRecovery } from "../restore-runtime-state.js";
+import { readSqliteRuntimeControlCreateSql } from "../runtime-schema-registry.js";
 import {
 	preparePublicationCredentialFixture,
 	publicationCredentialColumns,
@@ -1284,10 +1285,7 @@ describe("real SQLite replacement reservation and terminal drain", () => {
 		main = new Database(path);
 		main.pragma("journal_mode = WAL");
 		main.exec(`CREATE TABLE Marker(value INTEGER); INSERT INTO Marker VALUES(7);
-			CREATE TABLE RestoreRuntimeControl (
-				id INTEGER PRIMARY KEY, protocolVersion INTEGER NOT NULL, phase TEXT NOT NULL,
-				runtimeEpoch TEXT, ownerBackendPid INTEGER, activeRestoreId TEXT,
-				lastCommittedRestoreId TEXT, lastCommittedAt DATETIME, destinationInstallationId TEXT);
+			${readSqliteRuntimeControlCreateSql()}
 			CREATE TABLE SqliteRestoreStorageBinding (
 				id INTEGER PRIMARY KEY, protocolVersion INTEGER NOT NULL,
 				databaseDevice TEXT NOT NULL, databaseInode TEXT NOT NULL,

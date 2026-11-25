@@ -33,6 +33,35 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe("SQLite startup timing isolation", () => {
+	it.each([
+		"runtime-journal",
+		"migration-receipt-table",
+		"data-format-receipt",
+		"coordination-path",
+	])("projects only the fixed cold-enrollment refusal %s", async (refusal) => {
+		const { timeSqliteStartupPhase } = await import("../runtime-schema-timing.js");
+		const { RuntimeSchemaStartupError } = await import("../runtime-schema-startup.js");
+		const error = Object.assign(new RuntimeSchemaStartupError(), {
+			refusal,
+			path: "/synthetic/private",
+		});
+		expect(() =>
+			timeSqliteStartupPhase("cold-enrollment-check", () => {
+				throw error;
+			}),
+		).toThrow();
+		expect(boundary.events.at(-1)).toMatchObject({ errorCategory: "schema", code: null, refusal });
+		expect(JSON.stringify(boundary.events)).not.toContain("/synthetic/private");
+		error.refusal = "foreign/synthetic/private";
+		expect(() =>
+			timeSqliteStartupPhase("cold-enrollment-check", () => {
+				throw error;
+			}),
+		).toThrow();
+		expect(boundary.events.at(-1)).not.toHaveProperty("refusal");
+		expect(JSON.stringify(boundary.events)).not.toContain("foreign/synthetic/private");
+	});
+
 	it.each(["schema-plan", "date-plan", "foreign-key-check"] as const)(
 		"reports entry to %s before the native call completes",
 		async (phase) => {

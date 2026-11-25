@@ -14,6 +14,7 @@ import {
 	type RestoreRuntime,
 } from "../restore-runtime-admission.js";
 import { recordRestoreRuntimeWorkerLoss } from "../restore-runtime-loss.js";
+import { readSqliteRuntimeControlCreateSql } from "../runtime-schema-registry.js";
 
 // These tests catch discarded/overwritten first-loss diagnostics and accidental
 // changes to actual native admission, using no live database or provider data.
@@ -27,10 +28,7 @@ describe("native runtime first-loss diagnostics", () => {
 		databaseUrl = `file:${path}`;
 		const db = new Database(path);
 		db.pragma("journal_mode=WAL");
-		db.exec(`CREATE TABLE RestoreRuntimeControl (
-			id INTEGER PRIMARY KEY,protocolVersion INTEGER NOT NULL,phase TEXT NOT NULL,
-			runtimeEpoch TEXT,ownerBackendPid INTEGER,activeRestoreId TEXT,lastCommittedRestoreId TEXT,
-			lastCommittedAt DATETIME,destinationInstallationId TEXT);
+		db.exec(`${readSqliteRuntimeControlCreateSql()}
 			CREATE TABLE SqliteRestoreStorageBinding (
 			id INTEGER PRIMARY KEY,protocolVersion INTEGER NOT NULL,databaseDevice TEXT NOT NULL,
 			databaseInode TEXT NOT NULL,directoryDevice TEXT NOT NULL,directoryInode TEXT NOT NULL,

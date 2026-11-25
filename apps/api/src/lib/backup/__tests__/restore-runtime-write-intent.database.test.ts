@@ -9,6 +9,7 @@ import {
 	type RestoreRuntime,
 } from "../restore-runtime-admission.js";
 import { createRuntimePrismaClient } from "../restore-runtime-client.js";
+import { readSqliteRuntimeControlCreateSql } from "../runtime-schema-registry.js";
 
 describe("opt-in guarded SQLite transaction write intent", () => {
 	let directory: string;
@@ -25,10 +26,7 @@ describe("opt-in guarded SQLite transaction write intent", () => {
 		writer = new Database(path, { timeout: 0 });
 		chmodSync(path, 0o600);
 		writer.pragma("journal_mode=WAL");
-		writer.exec(`CREATE TABLE RestoreRuntimeControl (
-			id INTEGER PRIMARY KEY, protocolVersion INTEGER NOT NULL, phase TEXT NOT NULL,
-			runtimeEpoch TEXT, ownerBackendPid INTEGER, activeRestoreId TEXT,
-			lastCommittedRestoreId TEXT, lastCommittedAt DATETIME, destinationInstallationId TEXT);
+		writer.exec(`${readSqliteRuntimeControlCreateSql()}
 			CREATE TABLE SqliteRestoreStorageBinding (
 			id INTEGER PRIMARY KEY, protocolVersion INTEGER NOT NULL,
 			databaseDevice TEXT NOT NULL, databaseInode TEXT NOT NULL,
