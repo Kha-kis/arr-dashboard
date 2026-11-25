@@ -128,6 +128,7 @@ describe("native retention follower execution", () => {
 			scanLimit: 10,
 			cursor: payload.cursor,
 			signal: undefined,
+			skipProtectedWriteAdmission: true,
 		});
 		expect(mocks.close).toHaveBeenCalledOnce();
 	});

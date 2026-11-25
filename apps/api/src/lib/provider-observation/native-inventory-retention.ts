@@ -332,6 +332,7 @@ export async function pruneNativeInventoryRetentionSlice(
 		scanLimit?: number;
 		cursor?: NativeInventoryRetentionCursor | null;
 		signal?: AbortSignal;
+		skipProtectedWriteAdmission?: boolean;
 	} = {},
 ): Promise<NativeInventoryRetentionSlice> {
 	const rowLimit = options.rowLimit ?? 500,
@@ -373,14 +374,27 @@ export async function pruneNativeInventoryRetentionSlice(
 		try {
 			// A read-side skip can only defer work until a later sweep. Every
 			// candidate with possible deletions still goes through the writer fences.
-			const metadataOnly = await keepAttemptMetadata(prisma, candidate, {
-				requireNoPasses: true,
-			}).catch((error: unknown) => {
-				rememberNativeInventoryRetentionBoundary(error, "candidate-enumeration", false);
-				throw error;
-			});
+			const skipWriter = await keepAttemptMetadata(prisma, candidate, { requireNoPasses: true })
+				.then((metadataOnly) => {
+					if (
+						metadataOnly ||
+						!options.skipProtectedWriteAdmission ||
+						candidate.state !== "incomplete" ||
+						!validRetentionBinding(candidate) ||
+						abandonedPass(candidate) !== null
+					) {
+						return metadataOnly;
+					}
+					// The probe may only defer. A failed probe falls back to the
+					// ordinary writer admission and its mandatory rechecks.
+					return protectedRun(prisma, candidate, cutoff).catch(() => false);
+				})
+				.catch((error: unknown) => {
+					rememberNativeInventoryRetentionBoundary(error, "candidate-enumeration", false);
+					throw error;
+				});
 			if (options.signal?.aborted) throw CANCELLED;
-			if (metadataOnly) continue;
+			if (skipWriter) continue;
 			const removed = await retentionTransaction(
 				prisma,
 				async (tx) => {
