@@ -912,49 +912,56 @@ describe.skipIf(process.platform !== "linux")("native SQLite schema startup writ
 		await refuse();
 		database(expectOnlyEnrollmentEvidence);
 	});
-	it.each(["before-native-commit", "after-native-commit"] as const)(
-		"keeps %s acknowledgement uncertainty explicit, closes locks and never retries COMMIT",
-		async (stage) => {
+	describe("COMMIT acknowledgement on an enrolled database", () => {
+		// Fresh enrollment is fixture setup. The fault and reopen are still timed together.
+		beforeEach(async () => {
 			await synchronize();
-			const before = rows("RestoreRuntimeControl"),
-				receipts = rows("ArrSchemaMigrationReceipt"),
-				binding = rows("SqliteRestoreStorageBinding");
-			const originalExec = Database.prototype.exec;
-			let commits = 0;
-			const intercepted = vi.spyOn(Database.prototype, "exec").mockImplementation(function (
-				this: Database.Database,
-				sql: string,
-			) {
-				if (this.name === path && sql === "COMMIT") {
-					commits++;
-					if (stage === "after-native-commit") originalExec.call(this, sql);
-					throw new Error("Synthetic native-call acknowledgement interruption");
+		}, 5_000);
+
+		it.each(["before-native-commit", "after-native-commit"] as const)(
+			"keeps %s acknowledgement uncertainty explicit, closes locks and never retries COMMIT",
+			async (stage) => {
+				const before = rows("RestoreRuntimeControl"),
+					receipts = rows("ArrSchemaMigrationReceipt"),
+					binding = rows("SqliteRestoreStorageBinding");
+				const originalExec = Database.prototype.exec;
+				let commits = 0;
+				const intercepted = vi.spyOn(Database.prototype, "exec").mockImplementation(function (
+					this: Database.Database,
+					sql: string,
+				) {
+					if (this.name === path && sql === "COMMIT") {
+						commits++;
+						if (stage === "after-native-commit") originalExec.call(this, sql);
+						throw new Error("Synthetic native-call acknowledgement interruption");
+					}
+					return originalExec.call(this, sql);
+				});
+				try {
+					await expect(synchronize()).rejects.toMatchObject({ category: "commit-unknown" });
+				} finally {
+					intercepted.mockRestore();
 				}
-				return originalExec.call(this, sql);
-			});
-			try {
-				await expect(synchronize()).rejects.toMatchObject({ category: "commit-unknown" });
-			} finally {
-				intercepted.mockRestore();
-			}
-			expect(commits).toBe(1);
-			expect(rows("SqliteRestoreStorageBinding")).toEqual(binding);
-			const after = rows("ArrSchemaMigrationReceipt");
-			expect(after).toHaveLength(receipts.length + (stage === "after-native-commit" ? 1 : 0));
-			expect(after).toContainEqual(receipts[0]);
-			if (stage === "before-native-commit") expect(rows("RestoreRuntimeControl")).toEqual(before);
-			else expect(rows("RestoreRuntimeControl")).not.toEqual(before);
-			const owner = await acquireSqliteRestoreRuntimeOwnership(url);
-			try {
-				expect(await owner.tryAcquireExclusive()).toBe(true);
-			} finally {
-				await owner.close();
-			}
-			await synchronize();
-			expect(rows("ArrSchemaMigrationReceipt")).toHaveLength(after.length + 1);
-			expect(rows("SqliteRestoreStorageBinding")).toEqual(binding);
-		},
-	);
+				expect(commits).toBe(1);
+				expect(rows("SqliteRestoreStorageBinding")).toEqual(binding);
+				const after = rows("ArrSchemaMigrationReceipt");
+				expect(after).toHaveLength(receipts.length + (stage === "after-native-commit" ? 1 : 0));
+				expect(after).toContainEqual(receipts[0]);
+				if (stage === "before-native-commit") expect(rows("RestoreRuntimeControl")).toEqual(before);
+				else expect(rows("RestoreRuntimeControl")).not.toEqual(before);
+				const owner = await acquireSqliteRestoreRuntimeOwnership(url);
+				try {
+					expect(await owner.tryAcquireExclusive()).toBe(true);
+				} finally {
+					await owner.close();
+				}
+				await synchronize();
+				expect(rows("ArrSchemaMigrationReceipt")).toHaveLength(after.length + 1);
+				expect(rows("SqliteRestoreStorageBinding")).toEqual(binding);
+			},
+			5_000,
+		);
+	});
 	it("blocks a real child-held shared operation without committing schema or epoch", async () => {
 		await synchronize();
 		const before = rows("RestoreRuntimeControl"),
