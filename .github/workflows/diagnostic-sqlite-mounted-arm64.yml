@@ -1,0 +1,49 @@
+{
+  "name": "Diagnostic only - native ARM64 Docker SQLite storage contract",
+  "on": {
+    "push": {
+      "branches": [
+        "qa/sqlite-mounted-lifecycle-ff781371"
+      ]
+    }
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "jobs": {
+    "native-lifecycle": {
+      "runs-on": "ubuntu-24.04-arm",
+      "timeout-minutes": 25,
+      "steps": [
+        {
+          "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+          "with": {
+            "persist-credentials": false,
+            "fetch-depth": 2
+          }
+        },
+        {
+          "name": "Build exact corrected source without staging or publishing",
+          "shell": "bash",
+          "run": "test \"$(uname -m)\" = aarch64\ntest \"$(git rev-parse HEAD^)\" = \"ff781371157f94e061f65fd3a598cffe2d147a75\"\ngit archive \"ff781371157f94e061f65fd3a598cffe2d147a75\" | docker build --build-arg COMMIT_SHA=\"ff781371157f94e061f65fd3a598cffe2d147a75\" -t arr-dashboard:sqlite-storage-arm64 -\ndocker image inspect arr-dashboard:sqlite-storage-arm64 --format \"{{.Id}} {{.Architecture}}\""
+        },
+        {
+          "name": "Run mounted lifecycle, preserving refusal and encrypted legacy recovery",
+          "shell": "bash",
+          "run": "set -o pipefail\nmkdir -p \"$RUNNER_TEMP/sqlite-lifecycle\"\npython3 -B scripts/diagnostics/sqlite-mounted-lifecycle.py arr-dashboard:sqlite-storage-arm64 khak1s/arr-dashboard@sha256:38982ae25af50ec455ccbce05f02d79c755d542f8995cc7aaa3b916a1c1acdb0 | tee \"$RUNNER_TEMP/sqlite-lifecycle/result.jsonl\""
+        },
+        {
+          "name": "Retain diagnostic receipt",
+          "if": "always()",
+          "uses": "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+          "with": {
+            "name": "sqlite-lifecycle-arm64",
+            "path": "${{ runner.temp }}/sqlite-lifecycle/result.jsonl",
+            "if-no-files-found": "warn",
+            "retention-days": 14
+          }
+        }
+      ]
+    }
+  }
+}
