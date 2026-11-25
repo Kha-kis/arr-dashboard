@@ -405,16 +405,19 @@ it("recovers the next retention tick after a guarded native inventory page write
 				status: "recorded",
 			},
 		);
+		// The guarded writer holds its lock through both admission attempts.
 		expect(retention.errors).toEqual([
 			{
 				category: "native-inventory-retention-failed",
 				failurePhase: "retention",
 				failureCode: "P1008",
+				outcome: "failed",
+				elapsedMs: expect.any(Number),
 				retentionBoundary: {
 					operation: "transaction-start",
 					transactionEntered: false,
 					nativeCode: "SQLITE_BUSY",
-					retryObserved: false,
+					retryObserved: true,
 				},
 			},
 		]);
