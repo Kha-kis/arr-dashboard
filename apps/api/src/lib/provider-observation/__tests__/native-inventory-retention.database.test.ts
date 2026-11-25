@@ -146,6 +146,52 @@ async function mixedAttemptFixture(retainFailureMetadata = false) {
 }
 
 describe("bounded native staging retention", { timeout: 30_000 }, () => {
+	it("retires fresh abandoned staging incrementally across database reopen, without touching a resumable pass", async () => {
+		const { prisma, dbPath } = await fixture();
+		await prisma.providerNativeInventoryRun.update({
+			where: { id: "old" },
+			data: { updatedAt: NOW, lastFailureCategory: "coverage-incomplete" },
+		});
+		await prisma.providerNativeInventoryPass.createMany({
+			data: [
+				{ id: "abandoned", runId: "old", ordinal: 1 },
+				{ id: "resumable", runId: "latest", ordinal: 1 },
+			],
+		});
+		await prisma.providerNativeInventoryStageItem.createMany({
+			data: ["abandoned", "abandoned", "abandoned", "resumable"].map((passId, i) => ({
+				passId,
+				domain: "library",
+				nativeId: `item-${i}`,
+				mediaType: "movie",
+				libraryIds: '["scope"]',
+			})),
+		});
+		expect(await previewNativeInventoryRetention(prisma, CUTOFF, 10)).toEqual({
+			candidateCount: 1,
+		});
+		const first = await pruneNativeInventoryRetentionSlice(prisma, CUTOFF, { rowLimit: 2 });
+		expect(first).toMatchObject({ deletedRows: 2, deletedRuns: 0, hasMore: true });
+		const reopened = createTestPrismaClient(dbPath);
+		try {
+			expect(
+				await pruneNativeInventoryRetentionSlice(reopened, CUTOFF, { rowLimit: 2 }),
+			).toMatchObject({ deletedRows: 2, deletedRuns: 0 });
+			expect(
+				await reopened.providerNativeInventoryRun.findUniqueOrThrow({ where: { id: "old" } }),
+			).toMatchObject({
+				state: "incomplete",
+				updatedAt: NOW,
+				lastFailureCategory: "coverage-incomplete",
+			});
+			expect(
+				await reopened.providerNativeInventoryStageItem.findMany({ select: { passId: true } }),
+			).toEqual([{ passId: "resumable" }]);
+		} finally {
+			await reopened.$disconnect();
+		}
+	});
+
 	it("REG916-01 advances through a full protected legacy timestamp window", async () => {
 		const { prisma } = await fixture();
 		await prisma.providerNativeInventoryRun.update({

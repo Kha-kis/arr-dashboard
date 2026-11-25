@@ -183,7 +183,13 @@ export interface JellyfinPublicationContext {
 }
 
 export interface JellyfinCacheRefreshResult {
-	nativeInventoryStatus?: "scheduled" | "coalesced" | "current" | "failed" | "superseded";
+	nativeInventoryStatus?:
+		| "scheduled"
+		| "coalesced"
+		| "current"
+		| "deferred"
+		| "failed"
+		| "superseded";
 	upserted: number;
 	errors: number;
 	errorMessages: string[];

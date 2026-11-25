@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { PrismaClient } from "../prisma.js";
+import type { Prisma, PrismaClient } from "../prisma.js";
 import {
 	createProviderPublicationAuthority,
 	ProviderIdentityGuardError,
@@ -160,12 +160,49 @@ function manifestContainsScope(
 	}
 }
 
+const COVERAGE_RETRY_START_MS = 5 * 60_000;
+const COVERAGE_RETRY_MAX_MS = 60 * 60_000;
+
+async function nextCoverageRetryAt(
+	tx: Prisma.TransactionClient,
+	run: {
+		id: string;
+		instanceId: string;
+		workKey: string;
+		connectionGeneration: number;
+		identityGeneration: number;
+	},
+	now: Date,
+): Promise<Date> {
+	const prior = await tx.providerNativeInventoryRun.findFirst({
+		where: {
+			id: { not: run.id },
+			instanceId: run.instanceId,
+			workKey: run.workKey,
+			connectionGeneration: run.connectionGeneration,
+			identityGeneration: run.identityGeneration,
+			state: { in: ["published", "incomplete", "superseded"] },
+		},
+		orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+		select: { state: true, lastFailureCategory: true, nextAttemptAt: true, updatedAt: true },
+	});
+	const priorDelay =
+		prior?.state === "incomplete" && prior.lastFailureCategory === "coverage-incomplete"
+			? (prior.nextAttemptAt?.getTime() ?? 0) - prior.updatedAt.getTime()
+			: 0;
+	const delay =
+		priorDelay >= COVERAGE_RETRY_START_MS && priorDelay <= COVERAGE_RETRY_MAX_MS
+			? Math.min(priorDelay * 2, COVERAGE_RETRY_MAX_MS)
+			: COVERAGE_RETRY_START_MS;
+	return new Date(now.getTime() + delay);
+}
+
 export async function admitNativeInventoryRun(
 	prisma: PrismaClient,
 	authority: ProviderPublicationAuthority,
 	workKey: NativeInventoryWorkKey,
 	now: Date,
-): Promise<{ status: "acquired" | "coalesced" | "superseded" | "retryable" }> {
+): Promise<{ status: "acquired" | "coalesced" | "deferred" | "superseded" | "retryable" }> {
 	if (
 		!Number.isFinite(now.getTime()) ||
 		(workKey === "paired" ? authority.service !== "PLEX" : authority.service === "PLEX")
@@ -201,6 +238,23 @@ export async function admitNativeInventoryRun(
 							},
 						});
 					}
+					const latest = await tx.providerNativeInventoryRun.findFirst({
+						where: {
+							instanceId: authority.id,
+							workKey,
+							connectionGeneration: authority.connectionGeneration,
+							identityGeneration: authority.identityGeneration,
+						},
+						orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+						select: { state: true, lastFailureCategory: true, nextAttemptAt: true },
+					});
+					if (
+						latest?.state === "incomplete" &&
+						latest.lastFailureCategory === "coverage-incomplete" &&
+						latest.nextAttemptAt &&
+						latest.nextAttemptAt > now
+					)
+						return { status: "deferred" } as const;
 					await tx.providerNativeInventoryRun.create({
 						data: {
 							instanceId: authority.id,
@@ -512,7 +566,11 @@ export async function failNativeInventoryRun(
 							activeSlotKey: retry ? current.activeSlotKey : null,
 							claimToken: null,
 							leaseUntil: null,
-							nextAttemptAt,
+							nextAttemptAt:
+								!retry && reason === "coverage-incomplete"
+									? await nextCoverageRetryAt(tx, current, now)
+									: nextAttemptAt,
+							updatedAt: now,
 							lastFailureCategory: reason,
 							failureCount: { increment: 1 },
 						},
@@ -1212,6 +1270,8 @@ export async function publishNativeInventoryRun(
 										claimToken: null,
 										leaseUntil: null,
 										lastFailureCategory: "coverage-incomplete",
+										nextAttemptAt: await nextCoverageRetryAt(tx, current, now),
+										updatedAt: now,
 									},
 						});
 						return { status: thirdAllowed ? "retryable" : "incomplete" } as const;
