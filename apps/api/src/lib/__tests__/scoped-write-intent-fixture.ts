@@ -24,7 +24,9 @@ type Entry = {
 };
 const entries: Entry[] = [];
 
-export async function createScopedWriteFixture(options: { writeIntent?: boolean } = {}) {
+export async function createScopedWriteFixture(
+	options: { writeIntent?: boolean; journalMode?: "WAL" | "DELETE" } = {},
+) {
 	const directory = mkdtempSync(join(tmpdir(), "arr-scoped-write-intent-"));
 	chmodSync(directory, 0o700);
 	const path = join(directory, "synthetic.sqlite");
@@ -35,7 +37,8 @@ export async function createScopedWriteFixture(options: { writeIntent?: boolean 
 	chmodSync(path, 0o600);
 	const writer = new Database(path, { timeout: 0 });
 	entry.writer = writer;
-	writer.pragma("journal_mode=WAL");
+	const journalMode = options.journalMode ?? "WAL";
+	writer.pragma("journal_mode=" + journalMode);
 	writer.exec(
 		"CREATE TABLE CompetitionProbe(id INTEGER PRIMARY KEY,value INTEGER NOT NULL); INSERT INTO CompetitionProbe VALUES(1,0)",
 	);
