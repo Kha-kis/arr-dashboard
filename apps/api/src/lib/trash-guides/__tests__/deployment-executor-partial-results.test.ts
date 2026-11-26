@@ -78,7 +78,7 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 		const prisma = {
 			libraryCleanupConfig: {
 				findUnique: vi.fn().mockResolvedValue(null),
-				upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
+				create: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
 				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 			},
 			serviceInstance: {
@@ -144,7 +144,7 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 		const prisma = {
 			libraryCleanupConfig: {
 				findUnique: vi.fn().mockResolvedValue(null),
-				upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
+				create: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
 				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 			},
 			serviceInstance: {
@@ -372,7 +372,7 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 		const prisma = {
 			libraryCleanupConfig: {
 				findUnique: vi.fn().mockResolvedValue(null),
-				upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
+				create: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
 				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 			},
 			trashTemplate: {
@@ -442,7 +442,7 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 		const prisma = {
 			libraryCleanupConfig: {
 				findUnique: vi.fn().mockResolvedValue(null),
-				upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
+				create: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
 				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 			},
 			trashTemplate: {

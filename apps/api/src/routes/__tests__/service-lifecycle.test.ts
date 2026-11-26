@@ -281,7 +281,7 @@ function createPrismaStub() {
 		},
 		libraryCleanupConfig: {
 			findUnique: vi.fn().mockResolvedValue(null),
-			upsert: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
+			create: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
 			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 		},
 		serviceInstance,

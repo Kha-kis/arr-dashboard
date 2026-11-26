@@ -17,7 +17,6 @@ import {
 	ruleDataSourceMap,
 } from "@arr/shared";
 import type { RadarrClient, SonarrClient } from "arr-sdk";
-import type { Prisma } from "../../generated/prisma/client.js";
 import { isNotFoundError } from "../arr/client-factory.js";
 import { acquireArrItemWriteLock } from "../arr/item-write-lock.js";
 import { evidenceFingerprint } from "../evidence-fingerprint.js";
@@ -66,11 +65,12 @@ import {
 	refreshOwnedPlexEpisodeCache,
 } from "../plex/plex-refresh-orchestration.js";
 import { plexConnectionFingerprint } from "../plex/service-instance-fingerprint.js";
-import type {
-	LibraryCleanupApproval,
-	LibraryCleanupConfig,
-	LibraryCleanupRule,
-	ServiceInstance,
+import {
+	type LibraryCleanupApproval,
+	type LibraryCleanupConfig,
+	type LibraryCleanupRule,
+	Prisma,
+	type ServiceInstance,
 } from "../prisma.js";
 import { withQuiObservationTopologyGuard } from "../qui/observation-topology-guard.js";
 import { SeerrClient } from "../seerr/seerr-client.js";
@@ -79,7 +79,6 @@ import {
 	providerIdentityAuthorityFingerprint,
 	providerInstanceAuthorityFingerprint,
 } from "../services/service-identity.js";
-import { withSqliteTransactionWriteIntent } from "../sqlite-transaction-intent.js";
 import { createTmdbV3Client } from "../tmdb/list-client.js";
 import { createTraktClient } from "../trakt/list-client.js";
 import { getErrorMessage } from "../utils/error-message.js";
@@ -1201,12 +1200,19 @@ async function findOrCreateCleanupLeaseConfig(
 	const existing = await prisma.libraryCleanupConfig.findUnique(lookup);
 	if (existing) return existing;
 
-	// A first upsert can read before inserting. Reserve the SQLite writer first
-	// so a competing writer can commit without waiting on our read snapshot.
-	// Resolve Prisma's lazy query inside the write-intent context.
-	return withSqliteTransactionWriteIntent(async () =>
-		prisma.libraryCleanupConfig.upsert({ ...lookup, update: {}, create: { userId } }),
-	);
+	// Keep creation a single INSERT. The read in an upsert could keep a
+	// SQLite snapshot open while a competing writer is trying to commit.
+	try {
+		return await prisma.libraryCleanupConfig.create({ data: { userId }, select: lookup.select });
+	} catch (error) {
+		if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002")
+			throw error;
+
+		// Another request may have created the row after our lookup.
+		const created = await prisma.libraryCleanupConfig.findUnique(lookup);
+		if (created) return created;
+		throw error;
+	}
 }
 
 async function withCleanupMutationLease<T>(

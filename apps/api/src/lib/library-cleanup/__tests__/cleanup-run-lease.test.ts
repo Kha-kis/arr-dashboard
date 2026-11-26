@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { hasSqliteTransactionWriteIntent } from "../../sqlite-transaction-intent.js";
+import { Prisma } from "../../prisma.js";
 import {
 	acquireCleanupRunLease,
 	CleanupPolicyMutationConflictError,
@@ -169,13 +169,11 @@ describe("library cleanup database run lease", () => {
 		const prisma = {
 			libraryCleanupConfig: {
 				findUnique: vi.fn(async () => {
-					expect(hasSqliteTransactionWriteIntent()).toBe(false);
 					calls.push("find");
 					return null;
 				}),
-				upsert: vi.fn(async () => {
-					expect(hasSqliteTransactionWriteIntent()).toBe(true);
-					calls.push("upsert");
+				create: vi.fn(async () => {
+					calls.push("create");
 					return { id: "config-1" };
 				}),
 				updateMany,
@@ -192,16 +190,58 @@ describe("library cleanup database run lease", () => {
 				return "created";
 			}),
 		).resolves.toBe("created");
-		expect(calls).toEqual(["find", "upsert", "acquire", "mutate", "release"]);
+		expect(calls).toEqual(["find", "create", "acquire", "mutate", "release"]);
 	});
 
+	it.each([
+		{ code: "P2002", existing: { id: "concurrent-config" }, recovered: true, reads: 2 },
+		{ code: "P2002", existing: null, recovered: false, reads: 2 },
+		{ code: "P1008", existing: { id: "uncertain-config" }, recovered: false, reads: 1 },
+	])(
+		"admits only a confirmed concurrent config after $code (readback $reads)",
+		async ({ code, existing, recovered, reads }) => {
+			const error = new Prisma.PrismaClientKnownRequestError("Synthetic config creation failure", {
+				code,
+				clientVersion: "test",
+			});
+			const config = {
+				findUnique: vi.fn().mockResolvedValueOnce(null).mockResolvedValue(existing),
+				create: vi.fn().mockRejectedValue(error),
+				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+			};
+			const prisma = { libraryCleanupConfig: config } as unknown as CleanupExecutorDeps["prisma"];
+			const log = { warn: vi.fn(), error: vi.fn() } as unknown as CleanupExecutorDeps["log"];
+			const mutate = vi.fn(async () => "admitted");
+			const admission = withCleanupTopologyMutationLease({ prisma, log }, "user-1", mutate);
+			if (recovered) {
+				await expect(admission).resolves.toBe("admitted");
+				expect(config.updateMany).toHaveBeenCalledWith(
+					expect.objectContaining({
+						where: expect.objectContaining({ id: existing?.id, userId: "user-1" }),
+					}),
+				);
+				expect(mutate).toHaveBeenCalledOnce();
+			} else {
+				await expect(admission).rejects.toBe(error);
+				expect(config.updateMany).not.toHaveBeenCalled();
+				expect(mutate).not.toHaveBeenCalled();
+			}
+			expect(config.create).toHaveBeenCalledOnce();
+			expect(config.findUnique).toHaveBeenCalledTimes(reads);
+			expect(config.findUnique).toHaveBeenLastCalledWith({
+				where: { userId: "user-1" },
+				select: { id: true },
+			});
+		},
+	);
+
 	it("refuses mutation when the config found by lookup cannot be claimed", async () => {
-		const upsert = vi.fn();
+		const create = vi.fn();
 		const updateMany = vi.fn().mockResolvedValue({ count: 0 });
 		const prisma = {
 			libraryCleanupConfig: {
 				findUnique: vi.fn().mockResolvedValue({ id: "disappeared-config" }),
-				upsert,
+				create,
 				updateMany,
 			},
 		} as unknown as CleanupExecutorDeps["prisma"];
@@ -216,17 +256,17 @@ describe("library cleanup database run lease", () => {
 				where: expect.objectContaining({ id: "disappeared-config", userId: "user-1" }),
 			}),
 		);
-		expect(upsert).not.toHaveBeenCalled();
+		expect(create).not.toHaveBeenCalled();
 		expect(mutate).not.toHaveBeenCalled();
 	});
 
 	it("keeps bounded topology callbacks separate from renewable lease authority", async () => {
 		const updateMany = vi.fn().mockResolvedValue({ count: 1 });
-		const upsert = vi.fn();
+		const create = vi.fn();
 		const prisma = {
 			libraryCleanupConfig: {
 				findUnique: vi.fn().mockResolvedValue({ id: "config-1" }),
-				upsert,
+				create,
 				updateMany,
 			},
 		} as unknown as CleanupExecutorDeps["prisma"];
@@ -237,7 +277,7 @@ describe("library cleanup database run lease", () => {
 			0,
 		);
 		expect(mutate).toHaveBeenCalledWith();
-		expect(upsert).not.toHaveBeenCalled();
+		expect(create).not.toHaveBeenCalled();
 		const token = updateMany.mock.calls[0]?.[0]?.data.runClaimToken;
 		expect(token).toEqual(expect.any(String));
 		expect(updateMany).toHaveBeenLastCalledWith({
@@ -261,7 +301,7 @@ describe("library cleanup database run lease", () => {
 		const prisma = {
 			libraryCleanupConfig: {
 				findUnique: vi.fn().mockResolvedValue({ id: "config-1" }),
-				upsert: vi.fn(async () => ({ id: "config-1" })),
+				create: vi.fn(async () => ({ id: "config-1" })),
 				updateMany,
 			},
 		} as unknown as CleanupExecutorDeps["prisma"];
@@ -283,7 +323,7 @@ describe("library cleanup database run lease", () => {
 		const prisma = {
 			libraryCleanupConfig: {
 				findUnique: vi.fn().mockResolvedValue({ id: "config-1" }),
-				upsert: vi.fn(async () => ({ id: "config-1" })),
+				create: vi.fn(async () => ({ id: "config-1" })),
 				updateMany,
 			},
 		} as unknown as CleanupExecutorDeps["prisma"];
@@ -301,7 +341,7 @@ describe("library cleanup database run lease", () => {
 		const prisma = {
 			libraryCleanupConfig: {
 				findUnique: vi.fn().mockResolvedValue({ id: "config-1" }),
-				upsert: vi.fn().mockResolvedValue({ id: "config-1" }),
+				create: vi.fn().mockResolvedValue({ id: "config-1" }),
 				updateMany: vi.fn().mockResolvedValue({ count: 0 }),
 			},
 		} as unknown as CleanupExecutorDeps["prisma"];
@@ -321,7 +361,7 @@ describe("library cleanup database run lease", () => {
 		const prisma = {
 			libraryCleanupConfig: {
 				findUnique: vi.fn().mockResolvedValue({ id: "config-1" }),
-				upsert: vi.fn().mockResolvedValue({ id: "config-1" }),
+				create: vi.fn().mockResolvedValue({ id: "config-1" }),
 				updateMany,
 			},
 		} as unknown as CleanupExecutorDeps["prisma"];
@@ -347,7 +387,7 @@ describe("library cleanup database run lease", () => {
 		const prisma = {
 			libraryCleanupConfig: {
 				findUnique: vi.fn().mockResolvedValue({ id: "config-1" }),
-				upsert: vi.fn(),
+				create: vi.fn(),
 				updateMany: vi.fn().mockResolvedValue({ count: 0 }),
 			},
 		} as unknown as CleanupExecutorDeps["prisma"];
@@ -361,7 +401,7 @@ describe("library cleanup database run lease", () => {
 				configId: "config-1",
 			}),
 		).rejects.toBeInstanceOf(CleanupPolicyMutationConflictError);
-		expect(prisma.libraryCleanupConfig.upsert).not.toHaveBeenCalled();
+		expect(prisma.libraryCleanupConfig.create).not.toHaveBeenCalled();
 		expect(mutate).not.toHaveBeenCalled();
 	});
 });
