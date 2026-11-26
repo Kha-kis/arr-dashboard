@@ -101,10 +101,19 @@ async function withFixture(
 		seedOld: (id: string) => Promise<void>;
 		assertProtected: () => Promise<void>;
 	}) => Promise<void>,
+	journalMode?: "wal" | "delete",
 ) {
 	const path = join(directory, `case-${sequence++}.db`);
 	copyFileSync(join(directory, "template.db"), path, constants.COPYFILE_EXCL);
 	chmodSync(path, 0o600);
+	if (journalMode) {
+		const setup = new Database(path);
+		try {
+			expect(setup.pragma(`journal_mode = ${journalMode}`, { simple: true })).toBe(journalMode);
+		} finally {
+			setup.close();
+		}
+	}
 	let losses = 0;
 	const runtime = await openRestoreRuntime({
 		databaseUrl: `file:${path}`,
@@ -542,6 +551,65 @@ describe("bounded native retention admission retry", () => {
 			expect(observed.observed).toEqual({ attempts: 1, callbacks: 1 });
 		});
 	});
+
+	it.each(["wal", "delete"] as const)(
+		"skips protected staged work while a real %s writer is reserved",
+		async (journalMode) => {
+			await withFixture(async ({ prisma, writer, assertProtected }) => {
+				await prisma.providerNativeInventoryRun.update({
+					where: { id: "latest" },
+					data: { state: "incomplete", activeSlotKey: null, updatedAt: OLD },
+				});
+				await prisma.providerNativeInventoryPass.create({
+					data: { id: "latest-pass", runId: "latest", ordinal: 1, state: "collecting" },
+				});
+				await prisma.providerNativeInventoryStageItem.create({
+					data: {
+						passId: "latest-pass",
+						domain: "library",
+						nativeId: "keep-protected",
+						mediaType: "movie",
+						libraryIds: '["synthetic"]',
+					},
+				});
+				const observed = observeTransactions(prisma);
+				writer.exec("BEGIN IMMEDIATE");
+				let first: Awaited<ReturnType<typeof pruneNativeInventoryRetentionSlice>>;
+				try {
+					expect(writer.pragma("journal_mode", { simple: true })).toBe(journalMode);
+					first = await pruneNativeInventoryRetentionSlice(observed.prisma, CUTOFF, {
+						scanLimit: 1,
+						skipProtectedWriteAdmission: true,
+					});
+					expect(first).toEqual({
+						deletedRows: 0,
+						deletedRuns: 0,
+						scannedRuns: 1,
+						nextCursor: { id: "latest" },
+						hasMore: true,
+					});
+					expect(observed.observed).toEqual({ attempts: 0, callbacks: 0 });
+					expect(writer.inTransaction).toBe(true);
+				} finally {
+					writer.exec("ROLLBACK");
+				}
+				const next = await pruneNativeInventoryRetentionSlice(observed.prisma, CUTOFF, {
+					cursor: first.nextCursor,
+					skipProtectedWriteAdmission: true,
+				});
+				expect(next).toMatchObject({ deletedRows: 2, scannedRuns: 1, hasMore: false });
+				expect(observed.observed).toEqual({ attempts: 1, callbacks: 1 });
+				await assertProtected();
+				expect(
+					await prisma.providerNativeInventoryStageItem.count({ where: { passId: "latest-pass" } }),
+				).toBe(1);
+				expect(
+					await prisma.providerNativeInventoryPass.count({ where: { id: "old-A-pass" } }),
+				).toBe(0);
+			}, journalMode);
+		},
+		15_000,
+	);
 
 	it("retries one settled native-busy admission and revalidates the real transaction", async () => {
 		await withFixture(async ({ prisma, writer, assertProtected }) => {

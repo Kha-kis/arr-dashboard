@@ -49,6 +49,7 @@ export async function executeNativeInventoryRetentionSlice(
 				scanLimit: input.scanLimit,
 				cursor: input.cursor,
 				signal: options.signal,
+				skipProtectedWriteAdmission: true,
 			});
 			retentionCallbackCompleted = true;
 			return { status: "completed", ...result };
