@@ -132,6 +132,50 @@ class PromotionTests(RegistryFixture):
         self.assertEqual(event["readbackAttempts"], 2)
         self.assertEqual(event["priorStateObservations"], 1)
 
+    def test_ghcr_floating_alias_can_return_its_prior_digest_after_copy(self):
+        repo, tag = REPOS[1], "2"
+        registry = self.registries[repo]
+        original_read = registry.tag_digest
+        observations = iter((OLD, INDEX))
+
+        def delayed_read(name):
+            if name == tag and (repo, tag, INDEX) in self.writes:
+                return next(observations, INDEX)
+            return original_read(name)
+
+        with (patch.object(registry, "tag_digest", side_effect=delayed_read),
+              patch("release_promotion.time.sleep")):
+            self.apply()
+        self.assertEqual(self.writes.count((repo, tag, INDEX)), 1)
+        self.assertEqual(self.events[-1]["status"], "verified")
+        event = next(event for event in self.events if event.get("status") == "alias-verified"
+                     and event.get("registry") == repo and event.get("tag") == tag)
+        self.assertEqual(event["priorStateObservations"], 1)
+
+    def test_ghcr_floating_alias_exhaustion_stops_promotion_at_that_write(self):
+        repo, tag = REPOS[1], "2"
+        registry = self.registries[repo]
+        original_read = registry.tag_digest
+        stale_reads = 0
+
+        def delayed_read(name):
+            nonlocal stale_reads
+            if name == tag and (repo, tag, INDEX) in self.writes:
+                stale_reads += 1
+                return OLD
+            return original_read(name)
+
+        with (patch.object(registry, "tag_digest", side_effect=delayed_read),
+              patch("release_promotion.time.monotonic", side_effect=lambda: 100 if stale_reads > 1 else 0),
+              patch("release_promotion.time.sleep") as sleep,
+              self.assertRaisesRegex(ValueError, "readback deadline")):
+            self.apply()
+        self.assertEqual(self.writes[-1], (repo, tag, INDEX))
+        self.assertEqual(self.writes.count((repo, tag, INDEX)), 1)
+        self.assertFalse(any(name == "latest" for _, name, _ in self.writes))
+        self.assertEqual(self.events[-1]["status"], "incomplete")
+        sleep.assert_called_once()
+
     def test_readback_retries_permitted_floating_baseline(self):
         registry = self.registries[REPOS[0]]
         observations = iter((OLD, INDEX))
