@@ -109,11 +109,16 @@ describe("authenticated cached Library poster delivery", () => {
 	const inject = () => createInjectAuthenticated(app)("GET", url);
 
 	it.each([
-		["artist", "LIDARR"],
-		["author", "READARR"],
+		["artist", "LIDARR", "cover"],
+		["artist", "LIDARR", "redirect"],
+		["author", "READARR", "cover"],
 	] as const)(
-		"preserves case for %s posters through actual credentialed HTTP",
-		async (itemType, service) => {
+		"preserves case for %s posters through actual credentialed HTTP (%s, %s)",
+		async (itemType, service, mode) => {
+			const path =
+				itemType === "artist"
+					? "/arr/api/v1/mediacover/artist/42/poster.PNG"
+					: "/arr/MediaCover/42/poster.PNG";
 			const requests: Array<{
 				path: string | undefined;
 				authenticated: boolean;
@@ -127,8 +132,11 @@ describe("authenticated cached Library poster delivery", () => {
 				const authenticated = request.headers["x-api-key"] === "synthetic-token";
 				requests.push({ path: request.url, authenticated, readActive: fixture.readActive });
 				if (!authenticated) return void response.writeHead(403).end();
-				if (request.url !== "/arr/MediaCover/42/poster.PNG")
-					return void response.writeHead(404).end();
+				if (itemType === "artist" && request.url === "/arr/MediaCover/42/poster.PNG")
+					return void response.writeHead(302, { location: "/arr/login" }).end();
+				if (request.url !== path) return void response.writeHead(404).end();
+				if (mode === "redirect")
+					return void response.writeHead(302, { location: "/arr/login" }).end();
 				response.writeHead(200, { "content-type": "image/png", connection: "close" }).end(bytes);
 			});
 			try {
@@ -159,11 +167,10 @@ describe("authenticated cached Library poster delivery", () => {
 					"GET",
 					`/api/library/poster/instance-1/${itemType}/42`,
 				);
-				expect(response.statusCode).toBe(200);
-				expect(response.rawPayload).toEqual(bytes);
-				expect(requests).toEqual([
-					{ path: "/arr/MediaCover/42/poster.PNG", authenticated: true, readActive: false },
-				]);
+				expect(response.statusCode).toBe(mode === "cover" ? 200 : 503);
+				if (mode === "cover") expect(response.rawPayload).toEqual(bytes);
+				else expect(response.headers["cache-control"]).toBe("no-store");
+				expect(requests).toEqual([{ path, authenticated: true, readActive: false }]);
 				expect(rawRequest).not.toHaveBeenCalled();
 			} finally {
 				server.closeAllConnections();
@@ -311,7 +318,9 @@ describe("authenticated cached Library poster delivery", () => {
 			);
 			expect(rawRequest).toHaveBeenCalledWith(
 				otherInstance,
-				"/MediaCover/42/poster.jpg",
+				itemType === "artist"
+					? "/api/v1/mediacover/artist/42/poster.jpg"
+					: "/MediaCover/42/poster.jpg",
 				expect.anything(),
 			);
 		},
