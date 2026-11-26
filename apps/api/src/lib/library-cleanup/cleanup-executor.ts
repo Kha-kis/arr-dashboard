@@ -17,7 +17,6 @@ import {
 	ruleDataSourceMap,
 } from "@arr/shared";
 import type { RadarrClient, SonarrClient } from "arr-sdk";
-import type { Prisma } from "../../generated/prisma/client.js";
 import { isNotFoundError } from "../arr/client-factory.js";
 import { acquireArrItemWriteLock } from "../arr/item-write-lock.js";
 import { evidenceFingerprint } from "../evidence-fingerprint.js";
@@ -66,11 +65,12 @@ import {
 	refreshOwnedPlexEpisodeCache,
 } from "../plex/plex-refresh-orchestration.js";
 import { plexConnectionFingerprint } from "../plex/service-instance-fingerprint.js";
-import type {
-	LibraryCleanupApproval,
-	LibraryCleanupConfig,
-	LibraryCleanupRule,
-	ServiceInstance,
+import {
+	type LibraryCleanupApproval,
+	type LibraryCleanupConfig,
+	type LibraryCleanupRule,
+	Prisma,
+	type ServiceInstance,
 } from "../prisma.js";
 import { withQuiObservationTopologyGuard } from "../qui/observation-topology-guard.js";
 import { SeerrClient } from "../seerr/seerr-client.js";
@@ -1192,6 +1192,29 @@ export class CleanupPolicyMutationConflictError extends Error {
 	}
 }
 
+async function findOrCreateCleanupLeaseConfig(
+	prisma: CleanupExecutorDeps["prisma"],
+	userId: string,
+): Promise<{ id: string }> {
+	const lookup = { where: { userId }, select: { id: true } } as const;
+	const existing = await prisma.libraryCleanupConfig.findUnique(lookup);
+	if (existing) return existing;
+
+	// Keep creation a single INSERT. The read in an upsert could keep a
+	// SQLite snapshot open while a competing writer is trying to commit.
+	try {
+		return await prisma.libraryCleanupConfig.create({ data: { userId }, select: lookup.select });
+	} catch (error) {
+		if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002")
+			throw error;
+
+		// Another request may have created the row after our lookup.
+		const created = await prisma.libraryCleanupConfig.findUnique(lookup);
+		if (created) return created;
+		throw error;
+	}
+}
+
 async function withCleanupMutationLease<T>(
 	deps: Pick<CleanupExecutorDeps, "prisma" | "log">,
 	userId: string,
@@ -1213,12 +1236,7 @@ async function withCleanupMutationLease<T>(
 		// cleanup-sensitive write and the first cleanup run.
 		const config = options.configId
 			? { id: options.configId }
-			: await prisma.libraryCleanupConfig.upsert({
-					where: { userId },
-					update: {},
-					create: { userId },
-					select: { id: true },
-				});
+			: await findOrCreateCleanupLeaseConfig(prisma, userId);
 		const runClaimToken = await acquireCleanupRunLease(prisma, userId, config.id);
 		if (!runClaimToken) throw conflictError();
 
@@ -1270,12 +1288,7 @@ export async function withRenewableCleanupTopologyMutationLease<T>(
 	mutate: (runLease: CleanupRunLease) => Promise<T>,
 ): Promise<T> {
 	return await withCleanupOperationGuard(async () => {
-		const config = await deps.prisma.libraryCleanupConfig.upsert({
-			where: { userId },
-			update: {},
-			create: { userId },
-			select: { id: true },
-		});
+		const config = await findOrCreateCleanupLeaseConfig(deps.prisma, userId);
 		let runLease: CleanupRunLease;
 		try {
 			runLease = await startCleanupRunLease(deps, userId, config.id);

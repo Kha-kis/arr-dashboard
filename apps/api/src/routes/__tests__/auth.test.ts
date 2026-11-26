@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { Prisma } from "../../lib/prisma.js";
 
 // ---------------------------------------------------------------------------
 // Module-level mocks — vi.hoisted for references before vi.mock
@@ -111,8 +112,10 @@ function createMockPrisma() {
 	const prisma = {
 		user: userMock,
 		libraryCleanupConfig: {
-			upsert: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
+			findUnique: vi.fn().mockResolvedValue(null),
+			create: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
 			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+			update: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
 		},
 		serviceInstance: {
 			findMany: vi.fn().mockResolvedValue([]),
@@ -558,11 +561,24 @@ describe("DELETE /auth/account", () => {
 		mockPrisma.user.findFirst.mockResolvedValue(makeUser({ hashedPassword: null }));
 		mockPrisma.user.findUnique.mockResolvedValue(makeUser({ hashedPassword: null }));
 
+		mockPrisma.libraryCleanupConfig.update.mockRejectedValueOnce(
+			new Prisma.PrismaClientKnownRequestError("Synthetic account cascade removed config", {
+				code: "P2025",
+				clientVersion: "test",
+			}),
+		);
 		const res = await injectAuthenticated("DELETE", "/auth/account");
 
 		expect(res.statusCode).toBe(200);
 		expect(mockPrisma.user.delete).toHaveBeenCalledWith({ where: { id: "user-1" } });
-		expect(mockPrisma.libraryCleanupConfig.updateMany).toHaveBeenCalledTimes(2);
+		expect(mockPrisma.libraryCleanupConfig.updateMany).toHaveBeenCalledOnce();
+		const token = mockPrisma.libraryCleanupConfig.updateMany.mock.calls[0]?.[0]?.data.runClaimToken;
+		expect(token).toEqual(expect.any(String));
+		expect(mockPrisma.libraryCleanupConfig.update).toHaveBeenCalledExactlyOnceWith({
+			where: { id: "cleanup-config-1", userId: "user-1", runClaimToken: token },
+			data: { runClaimToken: null, runClaimedAt: null },
+			select: { id: true },
+		});
 	});
 
 	it("returns 409 without deleting the account while cleanup owns the lease", async () => {

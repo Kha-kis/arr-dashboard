@@ -125,7 +125,8 @@ describe("instance quality profile score persistence", () => {
 		};
 		const prisma = {
 			libraryCleanupConfig: {
-				upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
+				findUnique: vi.fn().mockResolvedValue(null),
+				create: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
 				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 			},
 			serviceInstance: {

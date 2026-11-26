@@ -15,6 +15,104 @@ import {
 	waitForLoadingComplete,
 } from "../../utils/test-helpers";
 import { ensureAuthenticated } from "../utils/auth-helpers";
+import { lidarrGetArtists } from "../utils/service-api";
+
+const LIBRARY_ACCEPTANCE_TIMEOUT_MS = 15_000;
+const LIDARR_SEED_TITLE = "Radiohead";
+
+interface LibrarySyncStatus {
+	instanceId: string;
+	instanceName: string;
+	service: string;
+	syncStatus: {
+		syncInProgress: boolean;
+		lastFullSync: string | null;
+		itemCount: number;
+	};
+}
+
+async function waitForSeededLidarrLibrary(page: import("@playwright/test").Page, deadline: number) {
+	const apiBaseUrl = `${new URL(page.url()).origin}/api`;
+	let syncRequestStatus: number | null = null;
+	const remainingMs = () => {
+		const remaining = deadline - Date.now();
+		if (remaining <= 0) {
+			throw new Error(
+				`Seeded Lidarr library did not become ready within the 15-second acceptance budget; sync request status=${syncRequestStatus ?? "not requested"}`,
+			);
+		}
+		return remaining;
+	};
+	const getLidarrStatus = async () => {
+		const response = await page.request.get(`${apiBaseUrl}/library/sync/status`, {
+			timeout: remainingMs(),
+		});
+		if (!response.ok()) {
+			throw new Error(`Library sync status returned HTTP ${response.status()}`);
+		}
+		const payload = (await response.json()) as { instances: LibrarySyncStatus[] };
+		const status = payload.instances.find(
+			(instance) => instance.service === "lidarr" && instance.instanceName === "E2E Lidarr",
+		);
+		if (!status)
+			throw new Error("Expected E2E Lidarr instance was not available for library readiness");
+		return status;
+	};
+
+	const startedAt = Date.now();
+	let syncRequested = false;
+	for (;;) {
+		const status = await getLidarrStatus();
+		if (!status.syncStatus.syncInProgress) {
+			if (
+				!syncRequested &&
+				(status.syncStatus.lastFullSync === null || status.syncStatus.itemCount === 0)
+			) {
+				const syncResponse = await page.request.post(
+					`${apiBaseUrl}/library/sync/${encodeURIComponent(status.instanceId)}`,
+					{ timeout: remainingMs() },
+				);
+				if (syncResponse.status() !== 409 && !syncResponse.ok()) {
+					throw new Error(`Lidarr cache sync request returned HTTP ${syncResponse.status()}`);
+				}
+				syncRequested = true;
+				syncRequestStatus = syncResponse.status();
+				await page.waitForTimeout(Math.min(200, remainingMs()));
+				continue;
+			}
+
+			const libraryResponse = await page.request.get(
+				`${apiBaseUrl}/library?service=lidarr&search=${encodeURIComponent(LIDARR_SEED_TITLE)}&limit=20`,
+				{ timeout: remainingMs() },
+			);
+			if (!libraryResponse.ok()) {
+				throw new Error(`Library cache read returned HTTP ${libraryResponse.status()}`);
+			}
+			const library = (await libraryResponse.json()) as {
+				items: Array<{ title?: string }>;
+			};
+			if (library.items.some((item) => item.title === LIDARR_SEED_TITLE)) {
+				return {
+					syncRequestStatus,
+					readyElapsedMs: Date.now() - startedAt,
+				};
+			}
+
+			if (!syncRequested) {
+				const syncResponse = await page.request.post(
+					`${apiBaseUrl}/library/sync/${encodeURIComponent(status.instanceId)}`,
+					{ timeout: remainingMs() },
+				);
+				if (syncResponse.status() !== 409 && !syncResponse.ok()) {
+					throw new Error(`Lidarr cache sync request returned HTTP ${syncResponse.status()}`);
+				}
+				syncRequested = true;
+				syncRequestStatus = syncResponse.status();
+			}
+		}
+		await page.waitForTimeout(Math.min(200, remainingMs()));
+	}
+}
 
 // Map sidebar link text to expected route paths (must match sidebar.tsx labels)
 const SIDEBAR_NAVIGATION = [
@@ -41,8 +139,18 @@ interface ConsoleError {
 }
 
 test.describe("Full Navigation Sweep", () => {
-	test("should navigate to every sidebar page without errors", async ({ page }) => {
+	test("should navigate to every sidebar page without errors", async ({ page }, testInfo) => {
 		const consoleErrors: ConsoleError[] = [];
+
+		// The existing suite setup seeds the disposable source service. Verify it
+		// read-only so the cache readiness check cannot hide a fixture failure.
+		const lidarrArtists = await lidarrGetArtists(
+			process.env.LIDARR_EXTERNAL_URL || "http://localhost:8686",
+			process.env.LIDARR_API_KEY || "",
+		);
+		if (!lidarrArtists.some((artist) => artist.artistName === LIDARR_SEED_TITLE)) {
+			throw new Error(`Required Lidarr seed ${LIDARR_SEED_TITLE} is missing`);
+		}
 
 		// Collect console errors during navigation
 		page.on("console", (msg) => {
@@ -59,7 +167,23 @@ test.describe("Full Navigation Sweep", () => {
 		await waitForLoadingComplete(page);
 		await ensureAuthenticated(page);
 
+		const seededLidarrCard = page
+			.getByRole("button", { name: LIDARR_SEED_TITLE, exact: true })
+			.first();
 		for (const { linkName, route } of SIDEBAR_NAVIGATION) {
+			let libraryDeadline: number | undefined;
+			if (route === "/library") {
+				// A first empty sync can finish before the seed runs. Verify the cache
+				// before loading Library so the existing browser checks see that seed
+				// without loading the same artwork twice.
+				libraryDeadline = Date.now() + LIBRARY_ACCEPTANCE_TIMEOUT_MS;
+				const readiness = await waitForSeededLidarrLibrary(page, libraryDeadline);
+				testInfo.annotations.push({
+					type: "library-readiness",
+					description: `sync request status=${readiness.syncRequestStatus ?? "not needed"}; seeded item ready in ${readiness.readyElapsedMs}ms`,
+				});
+			}
+
 			const historyResponsePromise =
 				route === "/history"
 					? page.waitForResponse((response) => {
@@ -82,7 +206,15 @@ test.describe("Full Navigation Sweep", () => {
 
 			// Verify page renders — some pages use <main>, others use <banner> + heading
 			const mainContent = page.locator("main").or(page.getByRole("heading", { level: 1 }));
-			await expect(mainContent.first()).toBeVisible({ timeout: TIMEOUTS.medium });
+			const remainingLibraryMs = () => {
+				if (libraryDeadline === undefined) return TIMEOUTS.medium;
+				const remaining = libraryDeadline - Date.now();
+				if (remaining <= 0) {
+					throw new Error("Library content assertions exceeded the 15-second acceptance budget");
+				}
+				return remaining;
+			};
+			await expect(mainContent.first()).toBeVisible({ timeout: remainingLibraryMs() });
 
 			if (route === "/library") {
 				// The fixture's Docker-only Lidarr poster URL is intentionally blocked by
@@ -90,10 +222,8 @@ test.describe("Full Navigation Sweep", () => {
 				const posterFallback = page
 					.getByRole("img", { name: "Radiohead" })
 					.or(page.getByRole("button", { name: "Artwork", exact: true }));
-				await expect(posterFallback.first()).toBeVisible();
-				await expect(
-					page.getByRole("button", { name: "Radiohead", exact: true }).first(),
-				).toBeVisible();
+				await expect(posterFallback.first()).toBeVisible({ timeout: remainingLibraryMs() });
+				await expect(seededLidarrCard).toBeVisible({ timeout: remainingLibraryMs() });
 			}
 
 			if (route === "/history") {

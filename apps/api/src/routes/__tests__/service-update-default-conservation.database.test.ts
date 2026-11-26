@@ -128,15 +128,17 @@ describe("service update admission on populated SQLite", () => {
 
 	it("refuses a stale disabled admission if the record becomes enabled before the guarded read", async () => {
 		const before = await readServices();
-		const upsert = prisma.libraryCleanupConfig.upsert.bind(prisma.libraryCleanupConfig);
+		const findService = prisma.serviceInstance.findFirst.bind(prisma.serviceInstance);
 		const concurrent = new Database(join(directory, "fixture.db"));
-		vi.spyOn(prisma.libraryCleanupConfig, "upsert").mockImplementationOnce((args) => {
-			// Real database interleaving between preliminary admission and the protected reread.
-			concurrent
-				.prepare("UPDATE ServiceInstance SET enabled=1, label=? WHERE id=? AND userId=?")
-				.run("Concurrent enable", "candidate", "user-1");
-			return upsert(args);
-		});
+		vi.spyOn(prisma.serviceInstance, "findFirst")
+			.mockImplementationOnce(findService)
+			.mockImplementationOnce((args) => {
+				// Interleave a real write between the preliminary read and the guarded reread.
+				concurrent
+					.prepare("UPDATE ServiceInstance SET enabled=1, label=? WHERE id=? AND userId=?")
+					.run("Concurrent enable", "candidate", "user-1");
+				return findService(args);
+			});
 		const release = acquireIndependentCleanupOperationGuard();
 		try {
 			const response = await update("candidate", browserEdit());
