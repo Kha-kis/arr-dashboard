@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from release_promotion import (
     REGISTRIES, alias_plan, apply_aliases, discover_qualification, main, read_qualification,
-    require_release_event, timestamp, verify_copy_plan,
+    require_release_event, timestamp, verify_alias_readback, verify_copy_plan,
 )
 
 
@@ -96,6 +96,126 @@ class PromotionTests(RegistryFixture):
                 self.apply()
         self.assertFalse(self.writes)
         self.assertTrue(self.events[-1]["readErrors"])
+
+    def test_readback_retries_only_the_prewrite_state_and_never_repeats_the_write(self):
+        registry = self.registries[REPOS[0]]
+        registry.tags["2.25.0"] = None
+        observations = iter((None, INDEX))
+        with (patch.object(registry, "tag_digest", side_effect=lambda _tag: next(observations)) as read,
+              patch("release_promotion.time.sleep") as sleep):
+            verify_alias_readback(registry, REPOS[0], "2.25.0", None, INDEX)
+        self.assertEqual(read.call_count, 2)
+        sleep.assert_called_once()
+        self.assertEqual(self.writes, [])
+
+    def test_post_copy_absence_retries_readback_without_repeating_copy(self):
+        registry = self.registries[REPOS[0]]
+        original_read = registry.tag_digest
+        observations = iter((None, INDEX))
+        reads = 0
+
+        def delayed_read(tag):
+            nonlocal reads
+            if tag == "2.25.0" and (REPOS[0], tag, INDEX) in self.writes:
+                reads += 1
+                return next(observations, INDEX)
+            return original_read(tag)
+
+        with (patch.object(registry, "tag_digest", side_effect=delayed_read),
+              patch("release_promotion.time.sleep")):
+            self.apply()
+        self.assertEqual(reads, 4)  # two readback polls plus final-state observations
+        self.assertEqual(self.writes.count((REPOS[0], "2.25.0", INDEX)), 1)
+        event = next(event for event in self.events
+                     if event.get("status") == "alias-verified" and event.get("registry") == REPOS[0]
+                     and event.get("tag") == "2.25.0")
+        self.assertEqual(event["readbackAttempts"], 2)
+        self.assertEqual(event["priorStateObservations"], 1)
+
+    def test_ghcr_floating_alias_can_return_its_prior_digest_after_copy(self):
+        repo, tag = REPOS[1], "2"
+        registry = self.registries[repo]
+        original_read = registry.tag_digest
+        observations = iter((OLD, INDEX))
+
+        def delayed_read(name):
+            if name == tag and (repo, tag, INDEX) in self.writes:
+                return next(observations, INDEX)
+            return original_read(name)
+
+        with (patch.object(registry, "tag_digest", side_effect=delayed_read),
+              patch("release_promotion.time.sleep")):
+            self.apply()
+        self.assertEqual(self.writes.count((repo, tag, INDEX)), 1)
+        self.assertEqual(self.events[-1]["status"], "verified")
+        event = next(event for event in self.events if event.get("status") == "alias-verified"
+                     and event.get("registry") == repo and event.get("tag") == tag)
+        self.assertEqual(event["priorStateObservations"], 1)
+
+    def test_ghcr_floating_alias_exhaustion_stops_promotion_at_that_write(self):
+        repo, tag = REPOS[1], "2"
+        registry = self.registries[repo]
+        original_read = registry.tag_digest
+        stale_reads = 0
+
+        def delayed_read(name):
+            nonlocal stale_reads
+            if name == tag and (repo, tag, INDEX) in self.writes:
+                stale_reads += 1
+                return OLD
+            return original_read(name)
+
+        with (patch.object(registry, "tag_digest", side_effect=delayed_read),
+              patch("release_promotion.time.monotonic", side_effect=lambda: 100 if stale_reads > 1 else 0),
+              patch("release_promotion.time.sleep") as sleep,
+              self.assertRaisesRegex(ValueError, "readback deadline")):
+            self.apply()
+        self.assertEqual(self.writes[-1], (repo, tag, INDEX))
+        self.assertEqual(self.writes.count((repo, tag, INDEX)), 1)
+        self.assertFalse(any(name == "latest" for _, name, _ in self.writes))
+        self.assertEqual(self.events[-1]["status"], "incomplete")
+        sleep.assert_called_once()
+
+    def test_readback_retries_permitted_floating_baseline(self):
+        registry = self.registries[REPOS[0]]
+        observations = iter((OLD, INDEX))
+        with (patch.object(registry, "tag_digest", side_effect=lambda _tag: next(observations)) as read,
+              patch("release_promotion.time.sleep") as sleep):
+            verify_alias_readback(registry, REPOS[0], "latest", OLD, INDEX)
+        self.assertEqual(read.call_count, 2)
+        sleep.assert_called_once()
+
+    def test_readback_conflict_fails_immediately_without_sleep(self):
+        registry = self.registries[REPOS[0]]
+        with (patch.object(registry, "tag_digest", return_value=OTHER) as read,
+              patch("release_promotion.time.sleep") as sleep,
+              self.assertRaisesRegex(ValueError, "conflicting registry state")):
+            verify_alias_readback(registry, REPOS[0], "2.25.0", None, INDEX)
+        read.assert_called_once_with("2.25.0")
+        sleep.assert_not_called()
+
+    def test_conflict_after_stale_baseline_still_fails_immediately(self):
+        registry = self.registries[REPOS[0]]
+        with (patch.object(registry, "tag_digest", side_effect=(None, OTHER)) as read,
+              patch("release_promotion.time.sleep") as sleep,
+              self.assertRaisesRegex(ValueError, "conflicting registry state")):
+            verify_alias_readback(registry, REPOS[0], "2.25.0", None, INDEX)
+        self.assertEqual(read.call_count, 2)
+        sleep.assert_called_once()
+
+    def test_readback_exhaustion_and_unclassifiable_errors_fail_closed(self):
+        registry = self.registries[REPOS[0]]
+        with (patch.object(registry, "tag_digest", return_value=None),
+              patch("release_promotion.time.sleep"),
+              patch("release_promotion.time.monotonic", side_effect=(0, 0, 0, 100)),
+              self.assertRaisesRegex(ValueError, "readback deadline")):
+            verify_alias_readback(registry, REPOS[0], "2.25.0", None, INDEX)
+        with (patch.object(registry, "tag_digest", side_effect=OSError("read failed")) as read,
+              patch("release_promotion.time.sleep") as sleep,
+              self.assertRaises(OSError)):
+            verify_alias_readback(registry, REPOS[0], "2.25.0", None, INDEX)
+        read.assert_called_once_with("2.25.0")
+        sleep.assert_not_called()
 
     def test_bad_expectations_refuse(self):
         with self.assertRaises(ValueError):

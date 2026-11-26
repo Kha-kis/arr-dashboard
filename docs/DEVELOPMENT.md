@@ -323,8 +323,10 @@ native fixtures, forwards signals, waits for physical child exit, and retains
 private files on uncertain failure. PostgreSQL-only mode allocates no SQLite actor.
 
 CI runs quality checks first, then independent database, package, API, contract,
-heap, browser and Docker jobs. Two separate hosted SQLite runners each use two
-workers; PostgreSQL runs once, serially, on its own runner. The existing
+heap, browser and Docker jobs. Four hosted SQLite shards use one worker each
+to avoid overlapping native fixture startup on the same runner. The SQLite
+driver also supports two or four workers for local runs. PostgreSQL runs once,
+serially, on its own runner. The existing
 `Lint, Type Check & Test` required check waits for all jobs and fails if any is
 failed, cancelled, skipped or missing. The root full-test command also includes
 the workflow contract; existing full PR verification remains required.

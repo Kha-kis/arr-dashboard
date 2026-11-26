@@ -36,6 +36,7 @@ test("explicit SQLite forwards legal Vitest selection and consumes only its phas
 		runSqlite: true,
 		runPostgres: false,
 	});
+	assert.equal(select(argv, "1").sqliteWorkers, "1");
 	assert.equal(argv[0], "--phase=sqlite");
 	assert.equal(select(["--phase", "sqlite"]).phase, "sqlite");
 });
@@ -77,7 +78,7 @@ test("interactive mode and unsupported worker limits remain refused", () => {
 	for (const flag of ["--watch", "--ui", "--watch=true", "--ui=true"]) {
 		assert.throws(() => select([flag]), /noninteractive/);
 	}
-	for (const workers of ["", "1", "3", "8"])
+	for (const workers of ["", "0", "3", "8"])
 		assert.throws(() => select([], workers), /ARR_API_TEST_WORKERS/);
 });
 
