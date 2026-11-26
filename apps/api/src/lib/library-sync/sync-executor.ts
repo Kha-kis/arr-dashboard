@@ -16,6 +16,7 @@ import type { Encryptor } from "../auth/encryption.js";
 import { withIsolatedRuntimePrismaTransaction } from "../backup/restore-runtime-client.js";
 import { triggerLabelSyncForItem } from "../label-sync/trigger-for-item.js";
 import { buildLibraryItem } from "../library/library-item-builder.js";
+import { toNumber } from "../library/type-converters.js";
 import { arrPolicyEvidenceFromRaw } from "../library-cleanup/arr-policy-evidence.js";
 import { withSqliteTransactionWriteIntent } from "../sqlite-transaction-intent.js";
 import { getErrorMessage } from "../utils/error-message.js";
@@ -548,6 +549,16 @@ export async function syncInstance(
 		};
 
 		for await (const raw of itemStream) {
+			// Display normalization can synthesize an ID. Only provider identity
+			// may authorize storage and reconciliation of absent cache records.
+			const providerId = toNumber(raw.id);
+			if (
+				providerId === undefined ||
+				!Number.isInteger(providerId) ||
+				providerId <= 0 ||
+				providerId > 2147483647
+			)
+				throw new Error("Provider library record has no usable numeric identity");
 			rawBatch.push(raw);
 			streamedItemCount++;
 			if (rawBatch.length >= BATCH_SIZE) {
