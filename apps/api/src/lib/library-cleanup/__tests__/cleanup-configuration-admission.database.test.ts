@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,6 +21,8 @@ describe("cleanup configuration SQLite admission", () => {
 			const directory = mkdtempSync(join(tmpdir(), "cleanup-config-admission-"));
 			const dbPath = join(directory, "fixture.db");
 			const commitSignal = join(directory, "config-read-observed");
+			const commitAcknowledged = join(directory, "writer-committed");
+			const commitWait = new Int32Array(new SharedArrayBuffer(4));
 			let runtime: Awaited<ReturnType<typeof openRestoreRuntime>> | undefined;
 			let native: ReturnType<typeof createRuntimePrismaClient> | undefined;
 			let holder: ReturnType<typeof spawn> | undefined;
@@ -50,7 +52,7 @@ describe("cleanup configuration SQLite admission", () => {
 				const holderProgram = [
 					"const Database = require(process.argv[1]);",
 					"const fs = require('node:fs');",
-					"const [db, signal] = process.argv.slice(2);",
+					"const [db, signal, acknowledged] = process.argv.slice(2);",
 					"const connection = new Database(db, { timeout: 6000 });",
 					"connection.exec('BEGIN IMMEDIATE');",
 					"connection.prepare('UPDATE User SET username = ? WHERE id = ?').run('writer-updated-owner', 'owner');",
@@ -68,13 +70,16 @@ describe("cleanup configuration SQLite admission", () => {
 					"  clearInterval(timer);",
 					"  console.log('COMMIT_ATTEMPT');",
 					"  connection.exec('COMMIT');",
+					"  fs.writeFileSync(acknowledged, 'committed');",
 					"  console.log('COMMITTED');",
 					"  connection.close();",
 					"}, 2);",
 				].join("\n");
-				holder = spawn(process.execPath, ["-e", holderProgram, modulePath, dbPath, commitSignal], {
-					stdio: ["ignore", "pipe", "pipe"],
-				});
+				holder = spawn(
+					process.execPath,
+					["-e", holderProgram, modulePath, dbPath, commitSignal, commitAcknowledged],
+					{ stdio: ["ignore", "pipe", "pipe"] },
+				);
 				holderExit = once(holder, "exit");
 				let holderOutput = "";
 				holder.stdout?.on("data", (chunk: Buffer) => {
@@ -118,6 +123,19 @@ describe("cleanup configuration SQLite admission", () => {
 										if (readsConfig && !configReadObserved) {
 											configReadObserved = true;
 											writeFileSync(commitSignal, "release");
+											// Hold this SQLite boundary until the independent writer commits.
+											// A deferred DELETE reader would block that commit. Waiting also
+											// keeps the next Restore guard read outside the commit window.
+											const deadline = performance.now() + 2_000;
+											while (!existsSync(commitAcknowledged)) {
+												const remaining = deadline - performance.now();
+												if (remaining <= 0) {
+													throw new Error(
+														"Competing writer could not commit after the config read",
+													);
+												}
+												Atomics.wait(commitWait, 0, 0, Math.min(2, remaining));
+											}
 										}
 										return result;
 									};
