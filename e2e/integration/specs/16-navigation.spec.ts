@@ -167,8 +167,22 @@ test.describe("Full Navigation Sweep", () => {
 		await waitForLoadingComplete(page);
 		await ensureAuthenticated(page);
 
+		const seededLidarrCard = page
+			.getByRole("button", { name: LIDARR_SEED_TITLE, exact: true })
+			.first();
 		for (const { linkName, route } of SIDEBAR_NAVIGATION) {
 			let libraryDeadline: number | undefined;
+			if (route === "/library") {
+				// A first empty sync can finish before the seed runs. Verify the cache
+				// before loading Library so the existing browser checks see that seed
+				// without loading the same artwork twice.
+				libraryDeadline = Date.now() + LIBRARY_ACCEPTANCE_TIMEOUT_MS;
+				const readiness = await waitForSeededLidarrLibrary(page, libraryDeadline);
+				testInfo.annotations.push({
+					type: "library-readiness",
+					description: `sync request status=${readiness.syncRequestStatus ?? "not needed"}; seeded item ready in ${readiness.readyElapsedMs}ms`,
+				});
+			}
 
 			const historyResponsePromise =
 				route === "/history"
@@ -186,21 +200,6 @@ test.describe("Full Navigation Sweep", () => {
 
 			// Re-auth if session was lost due to rate limiting
 			await ensureAuthenticated(page);
-			if (route === "/library") {
-				// A first empty sync can finish before the existing suite seed runs.
-				// Wait for the seeded cache through the app's authenticated API, then
-				// reload once so the browser reads that completed cache generation.
-				libraryDeadline = Date.now() + LIBRARY_ACCEPTANCE_TIMEOUT_MS;
-				const readiness = await waitForSeededLidarrLibrary(page, libraryDeadline);
-				testInfo.annotations.push({
-					type: "library-readiness",
-					description: `sync request status=${readiness.syncRequestStatus ?? "not needed"}; seeded item ready in ${readiness.readyElapsedMs}ms`,
-				});
-				const remaining = libraryDeadline - Date.now();
-				if (remaining <= 0)
-					throw new Error("Library readiness exceeded the 15-second acceptance budget");
-				await page.reload({ waitUntil: "networkidle", timeout: remaining });
-			}
 
 			// Verify URL changed to expected route
 			expect(page.url()).toContain(route);
@@ -224,9 +223,7 @@ test.describe("Full Navigation Sweep", () => {
 					.getByRole("img", { name: "Radiohead" })
 					.or(page.getByRole("button", { name: "Artwork", exact: true }));
 				await expect(posterFallback.first()).toBeVisible({ timeout: remainingLibraryMs() });
-				await expect(
-					page.getByRole("button", { name: "Radiohead", exact: true }).first(),
-				).toBeVisible({ timeout: remainingLibraryMs() });
+				await expect(seededLidarrCard).toBeVisible({ timeout: remainingLibraryMs() });
 			}
 
 			if (route === "/history") {
