@@ -5,6 +5,7 @@ import {
 	requirePlexTargetLedgerBinding,
 	verifyPersistedPlexGenerationTargets,
 } from "../../plex/plex-generation-target-ledger.js";
+import { Prisma } from "../../prisma.js";
 import { withCurrentProviderPublicationAuthority } from "../../services/provider-identity-guard.js";
 import { providerInstanceAuthorityFingerprint } from "../../services/service-identity.js";
 import {
@@ -640,6 +641,14 @@ function installRecoveryRunClaimStore(
 				configs.find((config) => config.id === where.id || config.userId === where.userId),
 			),
 			updateMany,
+			update: vi.fn(async (query: Parameters<typeof updateMany>[0]) => {
+				if ((await updateMany(query)).count !== 1)
+					throw new Prisma.PrismaClientKnownRequestError("Synthetic cleanup claim not found", {
+						code: "P2025",
+						clientVersion: "test",
+					});
+				return { id: query.where.id };
+			}),
 		},
 		$transaction: vi.fn(async (callback: (tx: typeof fixture.prisma) => Promise<unknown>) => {
 			transactionState.depth++;

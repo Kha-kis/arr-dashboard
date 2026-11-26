@@ -125,6 +125,7 @@ describe("deployment history undeploy", () => {
 	const systemGet = vi.fn();
 	const transaction = vi.fn();
 	const cleanupUpdateMany = vi.fn();
+	const cleanupRelease = vi.fn();
 	let transactionClient: Record<string, unknown>;
 
 	beforeEach(async () => {
@@ -142,6 +143,7 @@ describe("deployment history undeploy", () => {
 				findUnique: vi.fn().mockResolvedValue(null),
 				create: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
 				updateMany: cleanupUpdateMany.mockResolvedValue({ count: 1 }),
+				update: cleanupRelease.mockResolvedValue({ id: "cleanup-config" }),
 			},
 			templateDeploymentHistory: {
 				findFirst: historyFindFirst,
@@ -330,11 +332,14 @@ describe("deployment history undeploy", () => {
 		const acquireIndexes = cleanupUpdateMany.mock.calls.flatMap(([args], index) =>
 			args.data.runClaimToken ? [index] : [],
 		);
-		const releaseIndexes = cleanupUpdateMany.mock.calls.flatMap(([args], index) =>
-			args.data.runClaimToken === null ? [index] : [],
-		);
 		expect(acquireIndexes).toHaveLength(1);
-		expect(releaseIndexes).toHaveLength(1);
+		const token = cleanupUpdateMany.mock.calls[acquireIndexes[0]!]![0].data.runClaimToken;
+		expect(token).toEqual(expect.any(String));
+		expect(cleanupRelease).toHaveBeenCalledExactlyOnceWith({
+			where: { id: "cleanup-config", userId, runClaimToken: token },
+			data: { runClaimToken: null, runClaimedAt: null },
+			select: { id: true },
+		});
 		const finalWriteIndex = historyUpdateMany.mock.calls.findIndex(
 			([args]) => args.data.rolledBack === true,
 		);
@@ -343,7 +348,7 @@ describe("deployment history undeploy", () => {
 			historyUpdateMany.mock.invocationCallOrder[0]!,
 		);
 		expect(historyUpdateMany.mock.invocationCallOrder[finalWriteIndex]).toBeLessThan(
-			cleanupUpdateMany.mock.invocationCallOrder[releaseIndexes[0]!]!,
+			cleanupRelease.mock.invocationCallOrder[0]!,
 		);
 	});
 
@@ -1547,6 +1552,7 @@ describe("deployment history delete", () => {
 	const syncFindMany = vi.fn();
 	const backupFindFirst = vi.fn();
 	const cleanupUpdateMany = vi.fn();
+	const cleanupRelease = vi.fn();
 
 	beforeEach(async () => {
 		vi.resetAllMocks();
@@ -1558,6 +1564,7 @@ describe("deployment history delete", () => {
 				findUnique: vi.fn().mockResolvedValue(null),
 				create: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
 				updateMany: cleanupUpdateMany.mockResolvedValue({ count: 1 }),
+				update: cleanupRelease.mockResolvedValue({ id: "cleanup-config" }),
 			},
 			templateDeploymentHistory: {
 				findFirst: historyFindFirst,
@@ -1753,9 +1760,21 @@ describe("deployment history delete", () => {
 
 	it("holds the topology lease while checking paired recovery state and deleting", async () => {
 		let leaseHeld = false;
+		let activeToken: string | undefined;
 		cleanupUpdateMany.mockImplementation(async ({ data }) => {
-			leaseHeld = data.runClaimToken !== null;
+			activeToken = data.runClaimToken;
+			leaseHeld = true;
 			return { count: 1 };
+		});
+		cleanupRelease.mockImplementation(async ({ where }) => {
+			expect(where).toEqual({
+				id: "cleanup-config",
+				userId,
+				runClaimToken: expect.any(String),
+			});
+			expect(where.runClaimToken).toBe(activeToken);
+			leaseHeld = false;
+			return { id: "cleanup-config" };
 		});
 		historyFindFirst.mockResolvedValue(historyRow({ undeployStatus: "COMPLETED" }));
 		syncFindMany.mockImplementation(async () => {
