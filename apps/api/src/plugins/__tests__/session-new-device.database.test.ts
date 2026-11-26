@@ -11,12 +11,12 @@ import { NotificationDispatcher } from "../../lib/notifications/notification-dis
 import { NotificationService } from "../../lib/notifications/notification-service.js";
 import { RuleEngine } from "../../lib/notifications/rule-engine.js";
 import { PlexClient } from "../../lib/plex/plex-client.js";
-import schedulerRegistryPlugin from "../scheduler-registry.js";
 import {
 	buildFailedSessionSnapshot,
 	buildJellyfinSessionSnapshot,
 	buildPlexSessionSnapshot,
 } from "../lib/session-snapshot-measurements.js";
+import schedulerRegistryPlugin from "../scheduler-registry.js";
 import sessionSnapshotSchedulerPlugin from "../session-snapshot-scheduler.js";
 
 const MINUTE = 60_000;
@@ -260,59 +260,109 @@ describe("actual scheduler new-device baseline and native outbox", () => {
 			await native.run(() => native.prisma.sessionSnapshot.count({ where: { instanceId } })),
 		).toBe(2);
 	});
-	it("keeps the history cap for meaningful rows while excluding verified idle across two providers", async () => {
-		await native.run(async () => {
-			const jellyfin = await native.prisma.serviceInstance.findUniqueOrThrow({
-				where: { id: instanceId },
-			});
-			const key = native.encryptor.encrypt("synthetic-plex-key");
-			const plex = await native.prisma.serviceInstance.create({
-				data: {
-					userId: native.userId,
-					service: "PLEX",
-					label: "Synthetic Plex idle",
-					baseUrl: "https://example.invalid/plex-idle",
-					encryptedApiKey: key.value,
-					encryptionIv: key.iv,
-					enabled: true,
-				},
-			});
-			const idle = [
-				{
-					instanceId,
-					...buildJellyfinSessionSnapshot([], "JELLYFIN", {
-						connectionGeneration: jellyfin.connectionGeneration,
-						identityGeneration: jellyfin.identityGeneration,
-					}),
-				},
-				{
-					instanceId: plex.id,
-					...buildPlexSessionSnapshot([], {
-						connectionGeneration: plex.connectionGeneration,
-						identityGeneration: plex.identityGeneration,
-					}),
-				},
-			];
-			for (let offset = 0; offset < 10_020; offset += 334) {
-				await native.prisma.sessionSnapshot.createMany({
-					data: Array.from({ length: 334 }, (_, index) => ({
-						...idle[index % 2]!,
-						id: `idle-${String(offset + index).padStart(6, "0")}`,
-						capturedAt: new realDate(now - MINUTE),
-					})),
+	it.each(["current", "changed", "disabled", "contradictory"] as const)(
+		"honors exact idle evidence in the bounded %s history",
+		async (scenario) => {
+			await native.run(async () => {
+				const jellyfin = await native.prisma.serviceInstance.findUniqueOrThrow({
+					where: { id: instanceId },
 				});
+				const key = native.encryptor.encrypt("synthetic-plex-key");
+				const plex = await native.prisma.serviceInstance.create({
+					data: {
+						userId: native.userId,
+						service: "PLEX",
+						label: "Synthetic Plex idle",
+						baseUrl: "https://example.invalid/plex-idle",
+						encryptedApiKey: key.value,
+						encryptionIv: key.iv,
+						enabled: true,
+					},
+				});
+				const idle = [
+					{
+						instanceId,
+						...buildJellyfinSessionSnapshot([], "JELLYFIN", {
+							connectionGeneration: jellyfin.connectionGeneration,
+							identityGeneration: jellyfin.identityGeneration,
+						}),
+					},
+					{
+						instanceId: plex.id,
+						...buildPlexSessionSnapshot([], {
+							connectionGeneration: plex.connectionGeneration,
+							identityGeneration: plex.identityGeneration,
+						}),
+					},
+				];
+				const rowCount = scenario === "disabled" ? 20_040 : 10_020;
+				for (let offset = 0; offset < rowCount; offset += 334) {
+					await native.prisma.sessionSnapshot.createMany({
+						data: Array.from({ length: 334 }, (_, index) => ({
+							...idle[index % 2]!,
+							id: `idle-${String(offset + index).padStart(6, "0")}`,
+							capturedAt: new realDate(now - MINUTE),
+						})),
+					});
+				}
+				if (scenario === "changed" || scenario === "contradictory") {
+					await native.prisma.serviceInstance.updateMany({
+						where: { id: { in: [instanceId, plex.id] } },
+						data: { connectionGeneration: { increment: 1 } },
+					});
+				}
+				if (scenario === "disabled") {
+					await native.prisma.serviceInstance.update({
+						where: { id: plex.id },
+						data: { enabled: false },
+					});
+				}
+				if (scenario === "contradictory") {
+					await native.prisma.sessionSnapshot.create({
+						data: {
+							...idle[0]!,
+							id: "idle-000500-conflicting-count",
+							concurrentStreams: 1,
+							capturedAt: new realDate(now - MINUTE),
+						},
+					});
+				}
+				// A keyset cursor must retain the first eligible row when the previous
+				// page's boundary row becomes excluded by the learned idle receipt.
+				await native.prisma.sessionSnapshot.create({
+					data: {
+						id: "idle-000500-known-client",
+						instanceId,
+						sessionsJson: JSON.stringify([{ platform: "Wholphin" }]),
+						concurrentStreams: 1,
+						capturedAt: new realDate(now - MINUTE),
+					},
+				});
+			});
+			sessions = [
+				...sessions,
+				{ ...sessions[0]!, id: "genuinely-new-session", client: "New synthetic client" },
+			];
+			await boot();
+			const notify = vi.spyOn(service, "notify");
+			await tick();
+			if (scenario === "contradictory") {
+				expect(await events()).toEqual([]);
+				return;
 			}
-		});
-		await boot();
-		await tick();
-		expect((await events()).map(({ eventType }) => eventType)).toEqual(["JELLYFIN_NEW_DEVICE"]);
-		await app!.close();
-		app = undefined;
-		await native.restart();
-		await boot();
-		await tick(5);
-		expect((await events()).map(({ eventType }) => eventType)).toEqual(["JELLYFIN_NEW_DEVICE"]);
-	}, 90_000);
+			expect((await events()).map(({ eventType }) => eventType)).toEqual(["JELLYFIN_NEW_DEVICE"]);
+			expect(notify).toHaveBeenCalledWith(
+				expect.objectContaining({ body: expect.stringContaining('"New synthetic client"') }),
+			);
+			await app!.close();
+			app = undefined;
+			await native.restart();
+			await boot();
+			await tick(5);
+			expect((await events()).map(({ eventType }) => eventType)).toEqual(["JELLYFIN_NEW_DEVICE"]);
+		},
+		90_000,
+	);
 
 	it.each(["failed", "legacy", "invalid"] as const)(
 		"keeps empty %s history incomplete instead of treating it as confirmed idle",
@@ -502,6 +552,51 @@ describe("actual scheduler new-device baseline and native outbox", () => {
 			await native.run(() => native.prisma.sessionSnapshot.count({ where: { instanceId } })),
 		).toBe(2);
 	});
+	it("bounds the additional exact historical idle exclusions", async () => {
+		const receipts = Array.from({ length: 25 }, (_, index) =>
+			buildJellyfinSessionSnapshot([], "JELLYFIN", {
+				connectionGeneration: index + 1,
+				identityGeneration: 0,
+			}),
+		);
+		await native.run(() =>
+			native.prisma.sessionSnapshot.createMany({
+				data: Array.from({ length: 500 }, (_, index) => ({
+					...receipts[index % receipts.length]!,
+					id: `idle-${String(index).padStart(6, "0")}`,
+					instanceId,
+					capturedAt: new realDate(now - MINUTE),
+				})),
+			}),
+		);
+		const read = vi.spyOn(native.prisma.sessionSnapshot, "findMany");
+		await boot();
+		await tick();
+		expect(read).toHaveBeenCalledTimes(2);
+		expect(read.mock.calls[1]![0]).toMatchObject({
+			where: {
+				OR: [
+					{ measurementJson: null },
+					{
+						NOT: {
+							OR: [
+								expect.objectContaining({ instanceId }),
+								{
+									concurrentStreams: 0,
+									sessionsJson: "[]",
+									measurementJson: {
+										in: receipts.slice(0, 24).map((receipt) => receipt.measurementJson),
+									},
+								},
+							],
+						},
+					},
+				],
+			},
+		});
+		expect((await events()).map(({ eventType }) => eventType)).toEqual(["JELLYFIN_NEW_DEVICE"]);
+	});
+
 	it("treats twenty full history batches as incomplete without exceeding the existing cap", async () => {
 		let page = 0;
 		const historyReads: { findMany: HistoryRead } = native.prisma.sessionSnapshot;
@@ -516,8 +611,7 @@ describe("actual scheduler new-device baseline and native outbox", () => {
 		expect(read).toHaveBeenCalledTimes(20);
 		expect(read.mock.calls[1]![0]).toMatchObject({
 			take: 500,
-			skip: 1,
-			cursor: { id: "synthetic-499-499" },
+			where: { id: { gt: "synthetic-499-499" } },
 		});
 		expect(await events()).toEqual([]);
 		expect(

@@ -45,6 +45,7 @@ const NEW_DEVICE_LOOKBACK_DAYS = 30;
 
 // Keep the size of the exclusion predicate bounded. Additional scopes still count toward the scan.
 const MAX_IDLE_EXCLUSION_SCOPES = 24;
+const MAX_HISTORICAL_IDLE_RECEIPTS = 24;
 
 function notificationDeviceLabel(platform: unknown, fallback?: unknown): string | undefined {
 	const primary = typeof platform === "string" ? platform.trim() : "";
@@ -157,17 +158,33 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 						};
 					});
 					const PLATFORM_BATCH_SIZE = 500;
+					const historicalIdleReceipts = new Set<string>();
 					let cursor: string | undefined;
 					let exhausted = false;
 					let parseFailures = 0;
 					// Preserve the bounded 20-batch/10K-record scan. Hitting the cap
 					// without exhaustion establishes positives, never absence.
 					for (let batchCount = 0; batchCount < 20; batchCount++) {
+						const idleExclusions = [
+							...confirmedIdle,
+							...(historicalIdleReceipts.size > 0
+								? [
+										{
+											concurrentStreams: 0,
+											sessionsJson: "[]",
+											measurementJson: { in: [...historicalIdleReceipts] },
+										},
+									]
+								: []),
+						];
 						const batch = await app.prisma.sessionSnapshot.findMany({
 							where: {
 								capturedAt: { gte: platformCutoff },
-								...(confirmedIdle.length > 0
-									? { OR: [{ measurementJson: null }, { NOT: { OR: confirmedIdle } }] }
+								// The last selected row can become excluded before the next batch.
+								// Compare its key directly so there is no eligible row to skip.
+								...(cursor ? { id: { gt: cursor } } : {}),
+								...(idleExclusions.length > 0
+									? { OR: [{ measurementJson: null }, { NOT: { OR: idleExclusions } }] }
 									: {}),
 							},
 							select: {
@@ -178,7 +195,6 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 							},
 							orderBy: { id: "asc" },
 							take: PLATFORM_BATCH_SIZE,
-							...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
 						});
 						if (admissionClosed) return baseline;
 						for (const snap of batch) {
@@ -192,6 +208,15 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 									sessions.length === 0 &&
 									snap.concurrentStreams === 0
 								) {
+									// Learn exact canonical receipts from the scan instead of
+									// querying connection generations that are no longer configured.
+									if (
+										historicalIdleReceipts.size < MAX_HISTORICAL_IDLE_RECEIPTS &&
+										snap.sessionsJson === "[]" &&
+										snap.measurementJson === JSON.stringify(measurement)
+									) {
+										historicalIdleReceipts.add(snap.measurementJson);
+									}
 									continue;
 								}
 								if (
