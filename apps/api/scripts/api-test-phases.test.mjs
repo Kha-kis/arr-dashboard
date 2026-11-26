@@ -138,7 +138,7 @@ export async function prepareNativePostgresFixture() {
 const args = process.argv.slice(2);
 const config = args[args.indexOf("--config") + 1];
 const phase = config.endsWith("vitest.sqlite.mjs") ? "sqlite" : config;
-record({ event: "run:" + phase, args, engine: process.env.RESTORE_RUNTIME_ENGINE, pid: process.pid });
+record({ event: "run:" + phase, args, engine: process.env.RESTORE_RUNTIME_ENGINE, pid: process.pid, tempDirectory: process.env.TMPDIR });
 process.on("exit", () => record({ event: "exited:" + phase }));
 setTimeout(() => process.exit(process.env.FAIL_PHASE === phase ? 1 : 0), 10);
 `,
@@ -148,7 +148,13 @@ setTimeout(() => process.exit(process.env.FAIL_PHASE === phase ? 1 : 0), 10);
 			[join(directory, "scripts/run-api-tests.mjs"), ...args],
 			{
 				cwd: directory,
-				env: { PATH: process.env.PATH, HOME: directory, LANG: "C.UTF-8", TZ: "UTC" },
+				env: {
+					PATH: process.env.PATH,
+					HOME: directory,
+					LANG: "C.UTF-8",
+					TZ: "UTC",
+					TMPDIR: directory,
+				},
 				encoding: "utf8",
 			},
 		);
@@ -163,7 +169,7 @@ setTimeout(() => process.exit(process.env.FAIL_PHASE === phase ? 1 : 0), 10);
 		childrenExited = true;
 		for (const call of calls.filter((call) => call.event.startsWith("dispose-")))
 			assert.deepEqual(call.options, { childrenExited: true });
-		return { code: child.status, calls };
+		return { code: child.status, calls, directory };
 	} finally {
 		// Keep uncertain child state for diagnosis instead of deleting executing code.
 		if (childrenExited) {
@@ -230,6 +236,10 @@ for (const { name, args, failPhase, code, events } of [
 			for (const argument of args.slice(1)) assert.ok(sqliteArgs.includes(argument), argument);
 			assert.ok(!sqliteArgs.some((argument) => argument.startsWith("--phase")));
 		}
+		const sqlite = result.calls.find((call) => call.event === "run:sqlite");
+		if (sqlite) assert.equal(sqlite.tempDirectory, result.directory);
+		for (const call of result.calls.filter((item) => item.pid && item !== sqlite))
+			assert.equal(call.tempDirectory, undefined);
 		const admission = result.calls.find((call) => call.event === "run:admission");
 		if (admission) assert.equal(admission.engine, "postgres");
 	});

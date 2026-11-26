@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
 import { writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { selectApiTestPhases } from "./api-test-phases.mjs";
@@ -89,7 +90,12 @@ try {
 				...nodeOnlySuites.flatMap((suite) => ["--exclude", suite]),
 			],
 			apiRoot,
-			{ ...cleanEnvironment(), ...actors.environment, LOG_DIR: join(actors.directory, "logs") },
+			{
+				...cleanEnvironment(),
+				...actors.environment,
+				TMPDIR: tmpdir(),
+				LOG_DIR: join(actors.directory, "logs"),
+			},
 		);
 		sqlitePassed = true;
 	}
