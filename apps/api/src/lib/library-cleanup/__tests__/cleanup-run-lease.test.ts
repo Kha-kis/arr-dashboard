@@ -13,6 +13,13 @@ import {
 } from "../cleanup-executor.js";
 import type { CleanupExecutorDeps } from "../types.js";
 
+function missingLeaseError() {
+	return new Prisma.PrismaClientKnownRequestError("Synthetic missing lease", {
+		code: "P2025",
+		clientVersion: "test",
+	});
+}
+
 describe("library cleanup database run lease", () => {
 	it("allows only one owner and requires the same token to release it", async () => {
 		let storedToken: string | null = null;
@@ -43,8 +50,12 @@ describe("library cleanup database run lease", () => {
 				return { count: 1 };
 			},
 		);
+		const update = vi.fn(async (query: Parameters<typeof updateMany>[0]) => {
+			if ((await updateMany(query)).count !== 1) throw missingLeaseError();
+			return { id: "config-1" };
+		});
 		const prisma = {
-			libraryCleanupConfig: { updateMany },
+			libraryCleanupConfig: { updateMany, update },
 		} as unknown as CleanupExecutorDeps["prisma"];
 		const now = new Date("2026-07-27T12:00:00.000Z");
 
@@ -63,6 +74,20 @@ describe("library cleanup database run lease", () => {
 		await expect(
 			acquireCleanupRunLease(prisma, "user-1", "config-1", now, "owner-2"),
 		).resolves.toBe("owner-2");
+	});
+
+	it("propagates an uncertain release without trying another write", async () => {
+		const error = new Prisma.PrismaClientKnownRequestError("Synthetic release timeout", {
+			code: "P1008",
+			clientVersion: "test",
+		});
+		const update = vi.fn().mockRejectedValue(error);
+		const prisma = { libraryCleanupConfig: { update } } as unknown as CleanupExecutorDeps["prisma"];
+
+		await expect(releaseCleanupRunLease(prisma, "user-1", "config-1", "owner-1")).rejects.toBe(
+			error,
+		);
+		expect(update).toHaveBeenCalledOnce();
 	});
 
 	it("reclaims a lease only after its timeout", async () => {
@@ -162,8 +187,8 @@ describe("library cleanup database run lease", () => {
 
 	it("holds the cleanup lease across a service topology mutation", async () => {
 		const calls: string[] = [];
-		const updateMany = vi.fn(async ({ data }: { data: { runClaimToken: string | null } }) => {
-			calls.push(data.runClaimToken === null ? "release" : "acquire");
+		const updateMany = vi.fn(async () => {
+			calls.push("acquire");
 			return { count: 1 };
 		});
 		const prisma = {
@@ -177,6 +202,10 @@ describe("library cleanup database run lease", () => {
 					return { id: "config-1" };
 				}),
 				updateMany,
+				update: vi.fn(async () => {
+					calls.push("release");
+					return { id: "config-1" };
+				}),
 			},
 		} as unknown as CleanupExecutorDeps["prisma"];
 		const log = {
@@ -207,6 +236,7 @@ describe("library cleanup database run lease", () => {
 			const config = {
 				findUnique: vi.fn().mockResolvedValueOnce(null).mockResolvedValue(existing),
 				create: vi.fn().mockRejectedValue(error),
+				update: vi.fn().mockResolvedValue({ id: "concurrent-config" }),
 				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 			};
 			const prisma = { libraryCleanupConfig: config } as unknown as CleanupExecutorDeps["prisma"];
@@ -263,11 +293,13 @@ describe("library cleanup database run lease", () => {
 	it("keeps bounded topology callbacks separate from renewable lease authority", async () => {
 		const updateMany = vi.fn().mockResolvedValue({ count: 1 });
 		const create = vi.fn();
+		const update = vi.fn().mockResolvedValue({ id: "config-1" });
 		const prisma = {
 			libraryCleanupConfig: {
 				findUnique: vi.fn().mockResolvedValue({ id: "config-1" }),
 				create,
 				updateMany,
+				update,
 			},
 		} as unknown as CleanupExecutorDeps["prisma"];
 		const log = { warn: vi.fn(), error: vi.fn() } as unknown as CleanupExecutorDeps["log"];
@@ -280,22 +312,17 @@ describe("library cleanup database run lease", () => {
 		expect(create).not.toHaveBeenCalled();
 		const token = updateMany.mock.calls[0]?.[0]?.data.runClaimToken;
 		expect(token).toEqual(expect.any(String));
-		expect(updateMany).toHaveBeenLastCalledWith({
+		expect(update).toHaveBeenCalledExactlyOnceWith({
 			where: { id: "config-1", userId: "user-1", runClaimToken: token },
 			data: { runClaimToken: null, runClaimedAt: null },
+			select: { id: true },
 		});
 	});
 
 	it("renews an explicit recovery topology lease through the ownership assertion", async () => {
 		const calls: string[] = [];
 		const updateMany = vi.fn(async ({ data }: { data: { runClaimToken?: string | null } }) => {
-			calls.push(
-				data.runClaimToken === null
-					? "release"
-					: typeof data.runClaimToken === "string"
-						? "acquire"
-						: "renew",
-			);
+			calls.push(typeof data.runClaimToken === "string" ? "acquire" : "renew");
 			return { count: 1 };
 		});
 		const prisma = {
@@ -303,6 +330,10 @@ describe("library cleanup database run lease", () => {
 				findUnique: vi.fn().mockResolvedValue({ id: "config-1" }),
 				create: vi.fn(async () => ({ id: "config-1" })),
 				updateMany,
+				update: vi.fn(async () => {
+					calls.push("release");
+					return { id: "config-1" };
+				}),
 			},
 		} as unknown as CleanupExecutorDeps["prisma"];
 		const log = { warn: vi.fn(), error: vi.fn() } as unknown as CleanupExecutorDeps["log"];
@@ -318,13 +349,13 @@ describe("library cleanup database run lease", () => {
 		const updateMany = vi
 			.fn()
 			.mockResolvedValueOnce({ count: 1 })
-			.mockResolvedValueOnce({ count: 0 })
 			.mockResolvedValueOnce({ count: 0 });
 		const prisma = {
 			libraryCleanupConfig: {
 				findUnique: vi.fn().mockResolvedValue({ id: "config-1" }),
 				create: vi.fn(async () => ({ id: "config-1" })),
 				updateMany,
+				update: vi.fn().mockRejectedValue(missingLeaseError()),
 			},
 		} as unknown as CleanupExecutorDeps["prisma"];
 		const log = { warn: vi.fn(), error: vi.fn() } as unknown as CleanupExecutorDeps["log"];
@@ -358,11 +389,13 @@ describe("library cleanup database run lease", () => {
 
 	it("releases the topology lease when the service mutation fails", async () => {
 		const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+		const update = vi.fn().mockResolvedValue({ id: "config-1" });
 		const prisma = {
 			libraryCleanupConfig: {
 				findUnique: vi.fn().mockResolvedValue({ id: "config-1" }),
 				create: vi.fn().mockResolvedValue({ id: "config-1" }),
 				updateMany,
+				update,
 			},
 		} as unknown as CleanupExecutorDeps["prisma"];
 		const log = {
@@ -375,10 +408,11 @@ describe("library cleanup database run lease", () => {
 				throw new Error("write failed");
 			}),
 		).rejects.toThrow("write failed");
-		expect(updateMany).toHaveBeenCalledTimes(2);
-		expect(updateMany.mock.calls[1]![0]).toMatchObject({
+		expect(updateMany).toHaveBeenCalledOnce();
+		expect(update).toHaveBeenCalledExactlyOnceWith({
 			where: { id: "config-1", userId: "user-1", runClaimToken: expect.any(String) },
 			data: { runClaimToken: null, runClaimedAt: null },
+			select: { id: true },
 		});
 	});
 

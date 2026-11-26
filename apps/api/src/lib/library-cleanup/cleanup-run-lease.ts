@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { Prisma } from "../prisma.js";
 import type { CleanupExecutorDeps } from "./types.js";
 
 export const CLEANUP_RUN_LEASE_MS = 2 * 60 * 60 * 1000;
@@ -46,11 +47,20 @@ export async function releaseCleanupRunLease(
 	configId: string,
 	runClaimToken: string,
 ): Promise<boolean> {
-	const release = await prisma.libraryCleanupConfig.updateMany({
-		where: { id: configId, userId, runClaimToken },
-		data: { runClaimToken: null, runClaimedAt: null },
-	});
-	return release.count === 1;
+	try {
+		// The unique ID keeps this a scalar update while the owner and token
+		// still fence lease release in the same database statement.
+		await prisma.libraryCleanupConfig.update({
+			where: { id: configId, userId, runClaimToken },
+			data: { runClaimToken: null, runClaimedAt: null },
+			select: { id: true },
+		});
+		return true;
+	} catch (error) {
+		if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025")
+			return false;
+		throw error;
+	}
 }
 
 export async function renewCleanupRunLease(
