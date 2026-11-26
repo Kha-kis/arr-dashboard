@@ -190,6 +190,7 @@ describe("sync rollback route", () => {
 		};
 		const prisma = {
 			libraryCleanupConfig: {
+				findUnique: vi.fn().mockResolvedValue(null),
 				upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
 				updateMany: cleanupUpdateMany.mockResolvedValue({ count: 1 }),
 			},

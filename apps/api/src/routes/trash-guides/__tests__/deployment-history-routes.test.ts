@@ -139,6 +139,7 @@ describe("deployment history undeploy", () => {
 		transaction.mockImplementation(async (callback) => callback(transactionClient));
 		const prisma = {
 			libraryCleanupConfig: {
+				findUnique: vi.fn().mockResolvedValue(null),
 				upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
 				updateMany: cleanupUpdateMany.mockResolvedValue({ count: 1 }),
 			},
@@ -1554,6 +1555,7 @@ describe("deployment history delete", () => {
 		registerTestErrorHandler(app);
 		const prisma = {
 			libraryCleanupConfig: {
+				findUnique: vi.fn().mockResolvedValue(null),
 				upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
 				updateMany: cleanupUpdateMany.mockResolvedValue({ count: 1 }),
 			},

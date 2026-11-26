@@ -79,6 +79,7 @@ import {
 	providerIdentityAuthorityFingerprint,
 	providerInstanceAuthorityFingerprint,
 } from "../services/service-identity.js";
+import { withSqliteTransactionWriteIntent } from "../sqlite-transaction-intent.js";
 import { createTmdbV3Client } from "../tmdb/list-client.js";
 import { createTraktClient } from "../trakt/list-client.js";
 import { getErrorMessage } from "../utils/error-message.js";
@@ -1192,6 +1193,22 @@ export class CleanupPolicyMutationConflictError extends Error {
 	}
 }
 
+async function findOrCreateCleanupLeaseConfig(
+	prisma: CleanupExecutorDeps["prisma"],
+	userId: string,
+): Promise<{ id: string }> {
+	const lookup = { where: { userId }, select: { id: true } } as const;
+	const existing = await prisma.libraryCleanupConfig.findUnique(lookup);
+	if (existing) return existing;
+
+	// A first upsert can read before inserting. Reserve the SQLite writer first
+	// so a competing writer can commit without waiting on our read snapshot.
+	// Resolve Prisma's lazy query inside the write-intent context.
+	return withSqliteTransactionWriteIntent(async () =>
+		prisma.libraryCleanupConfig.upsert({ ...lookup, update: {}, create: { userId } }),
+	);
+}
+
 async function withCleanupMutationLease<T>(
 	deps: Pick<CleanupExecutorDeps, "prisma" | "log">,
 	userId: string,
@@ -1213,12 +1230,7 @@ async function withCleanupMutationLease<T>(
 		// cleanup-sensitive write and the first cleanup run.
 		const config = options.configId
 			? { id: options.configId }
-			: await prisma.libraryCleanupConfig.upsert({
-					where: { userId },
-					update: {},
-					create: { userId },
-					select: { id: true },
-				});
+			: await findOrCreateCleanupLeaseConfig(prisma, userId);
 		const runClaimToken = await acquireCleanupRunLease(prisma, userId, config.id);
 		if (!runClaimToken) throw conflictError();
 
@@ -1270,12 +1282,7 @@ export async function withRenewableCleanupTopologyMutationLease<T>(
 	mutate: (runLease: CleanupRunLease) => Promise<T>,
 ): Promise<T> {
 	return await withCleanupOperationGuard(async () => {
-		const config = await deps.prisma.libraryCleanupConfig.upsert({
-			where: { userId },
-			update: {},
-			create: { userId },
-			select: { id: true },
-		});
+		const config = await findOrCreateCleanupLeaseConfig(deps.prisma, userId);
 		let runLease: CleanupRunLease;
 		try {
 			runLease = await startCleanupRunLease(deps, userId, config.id);

@@ -77,6 +77,7 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 		};
 		const prisma = {
 			libraryCleanupConfig: {
+				findUnique: vi.fn().mockResolvedValue(null),
 				upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
 				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 			},
@@ -142,6 +143,7 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 		};
 		const prisma = {
 			libraryCleanupConfig: {
+				findUnique: vi.fn().mockResolvedValue(null),
 				upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
 				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 			},
@@ -369,6 +371,7 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 	it("preserves applied details and profile evidence when a bulk target conflicts", async () => {
 		const prisma = {
 			libraryCleanupConfig: {
+				findUnique: vi.fn().mockResolvedValue(null),
 				upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
 				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 			},
@@ -438,6 +441,7 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 	it("counts an unverified bulk write as uncertain instead of failed", async () => {
 		const prisma = {
 			libraryCleanupConfig: {
+				findUnique: vi.fn().mockResolvedValue(null),
 				upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
 				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 			},

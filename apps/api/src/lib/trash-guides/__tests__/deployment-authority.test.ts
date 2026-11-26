@@ -85,6 +85,7 @@ function createFixture(
 	const transaction = vi.fn();
 	const prisma = {
 		libraryCleanupConfig: {
+			findUnique: vi.fn().mockResolvedValue(null),
 			upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
 			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 		},
@@ -625,6 +626,7 @@ describe("deployment execution authority", () => {
 			);
 		const prisma = {
 			libraryCleanupConfig: {
+				findUnique: vi.fn().mockResolvedValue(null),
 				upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
 				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 			},
@@ -733,6 +735,7 @@ describe("deployment execution authority", () => {
 	it("rejects equivalent endpoint aliases under the topology lease before any deployment", async () => {
 		const prisma = {
 			libraryCleanupConfig: {
+				findUnique: vi.fn().mockResolvedValue(null),
 				upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
 				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 			},
