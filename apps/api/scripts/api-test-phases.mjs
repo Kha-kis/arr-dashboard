@@ -20,8 +20,8 @@ export function selectApiTestPhases(argv, sqliteWorkers = "4") {
 		)
 	)
 		throw new Error("The API gate is noninteractive so native child exit can be joined.");
-	if (sqliteWorkers !== "2" && sqliteWorkers !== "4")
-		throw new Error("ARR_API_TEST_WORKERS must be 2 or 4.");
+	if (!["1", "2", "4"].includes(sqliteWorkers))
+		throw new Error("ARR_API_TEST_WORKERS must be 1, 2, or 4.");
 	if (phase === "postgres" && vitestArguments.length > 0)
 		throw new Error("PostgreSQL-only mode does not accept extra Vitest arguments.");
 	return {

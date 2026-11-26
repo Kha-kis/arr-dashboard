@@ -108,7 +108,7 @@ test("SQLite shards own only SQLite and native PostgreSQL runs once", () => {
 		sqlite.run,
 		"pnpm --filter @arr/api run test:sqlite --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }}",
 	);
-	assert.deepEqual(sqlite.env, { ARR_API_TEST_WORKERS: "2" });
+	assert.deepEqual(sqlite.env, { ARR_API_TEST_WORKERS: "1" });
 	assert.equal(
 		step("api-postgres", "Run native PostgreSQL phases").run,
 		"pnpm --filter @arr/api run test:postgres",
