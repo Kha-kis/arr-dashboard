@@ -1,5 +1,6 @@
 import { NotFoundError } from "arr-sdk";
 import { describe, expect, it, vi } from "vitest";
+import { Prisma } from "../../prisma.js";
 import {
 	encodeJellyfinLibraryGenerationMetadata,
 	fingerprintJellyfinLibraryRows,
@@ -623,6 +624,32 @@ function makeDeps(options: TestOptions = {}) {
 		},
 	);
 
+	const cleanupConfigUpdate = vi.fn(
+		async ({
+			where,
+			data,
+		}: {
+			where: { id: string; userId: string; runClaimToken: string };
+			data: { runClaimToken: null; runClaimedAt: null };
+		}) => {
+			if (where.id !== "config-1" || where.userId !== "user-1")
+				throw new Prisma.PrismaClientKnownRequestError("Synthetic cleanup config not found", {
+					code: "P2025",
+					clientVersion: "test",
+				});
+			const result = await cleanupConfigUpdateMany({
+				where: { runClaimToken: where.runClaimToken },
+				data: { runClaimToken: data.runClaimToken },
+			});
+			if (result.count !== 1)
+				throw new Prisma.PrismaClientKnownRequestError("Synthetic cleanup lease not found", {
+					code: "P2025",
+					clientVersion: "test",
+				});
+			return { id: where.id };
+		},
+	);
+
 	let currentMutationRules = [
 		{
 			...currentSeriesRule("rule-1", options.action ?? "delete", "Example Movie"),
@@ -672,6 +699,7 @@ function makeDeps(options: TestOptions = {}) {
 					rules: currentMutationRules,
 				})),
 				updateMany: cleanupConfigUpdateMany,
+				update: cleanupConfigUpdate,
 			},
 			serviceInstance: {
 				findMany: serviceInstanceFindMany,

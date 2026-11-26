@@ -167,6 +167,7 @@ function createMockPrisma() {
 			findUnique: vi.fn().mockResolvedValue(null),
 			create: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
 			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+			update: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
 		},
 		serviceInstance: {
 			findMany: vi.fn().mockResolvedValue([]),
@@ -509,7 +510,14 @@ describe("PUT /services/:id", () => {
 			expect.objectContaining({ label: "Updated Label" }),
 			expect.objectContaining({ encrypt: expect.any(Function) }),
 		);
-		expect(mockPrisma.libraryCleanupConfig.updateMany).toHaveBeenCalledTimes(2);
+		expect(mockPrisma.libraryCleanupConfig.updateMany).toHaveBeenCalledOnce();
+		const token = mockPrisma.libraryCleanupConfig.updateMany.mock.calls[0]?.[0]?.data.runClaimToken;
+		expect(token).toEqual(expect.any(String));
+		expect(mockPrisma.libraryCleanupConfig.update).toHaveBeenCalledExactlyOnceWith({
+			where: { id: "cleanup-config-1", userId: "user-1", runClaimToken: token },
+			data: { runClaimToken: null, runClaimedAt: null },
+			select: { id: true },
+		});
 	});
 
 	it("returns 404 for non-owned instance via requireInstance", async () => {
@@ -1203,7 +1211,14 @@ describe("DELETE /services/:id", () => {
 		expect(mockPrisma.serviceInstance.delete).toHaveBeenCalledWith({
 			where: { id: "inst-1", userId: "user-1" },
 		});
-		expect(mockPrisma.libraryCleanupConfig.updateMany).toHaveBeenCalledTimes(2);
+		expect(mockPrisma.libraryCleanupConfig.updateMany).toHaveBeenCalledOnce();
+		const token = mockPrisma.libraryCleanupConfig.updateMany.mock.calls[0]?.[0]?.data.runClaimToken;
+		expect(token).toEqual(expect.any(String));
+		expect(mockPrisma.libraryCleanupConfig.update).toHaveBeenCalledExactlyOnceWith({
+			where: { id: "cleanup-config-1", userId: "user-1", runClaimToken: token },
+			data: { runClaimToken: null, runClaimedAt: null },
+			select: { id: true },
+		});
 	});
 
 	it("returns 404 for non-owned instance", async () => {
