@@ -1524,6 +1524,17 @@ export async function collectPlexCacheLiveEvidence(
 
 		for (const entry of history) {
 			const isRelevantHistory = entry.type === "movie" || entry.type === "episode";
+			const canonicalShowFallback =
+				entry.type === "episode" && entry.grandparentKeyFallback === true;
+			// The original blank-key branch ignored known Personal Media history.
+			// Recovery of a candidate key must not change that section policy.
+			if (
+				canonicalShowFallback &&
+				entry.librarySectionID &&
+				personalMediaSectionIds.has(entry.librarySectionID)
+			) {
+				continue;
+			}
 			const itemRatingKey = entry.type === "episode" ? entry.grandparentRatingKey : entry.ratingKey;
 			if (!itemRatingKey?.trim()) {
 				if (isRelevantHistory) {
@@ -1546,7 +1557,14 @@ export async function collectPlexCacheLiveEvidence(
 			const username = accountMap.get(entry.accountID);
 			if (isRelevantHistory) {
 				if (!currentLibraryRatingKeys.has(itemRatingKey)) {
-					ignoredHistoricalItems++;
+					if (canonicalShowFallback) {
+						attributionRawHistory++;
+						attributionUnresolvedHistory++;
+						historyAttributionGap = true;
+						markIncomplete("historyItemsWithoutUsableMediaKey");
+					} else {
+						ignoredHistoricalItems++;
+					}
 					continue;
 				}
 				if (!username) {
@@ -1569,6 +1587,19 @@ export async function collectPlexCacheLiveEvidence(
 				continue;
 			}
 
+			if (
+				canonicalShowFallback &&
+				(itemData.mediaType !== "series" ||
+					!entry.librarySectionID ||
+					entry.librarySectionID !== itemData.sectionId)
+			) {
+				attributionRawHistory++;
+				attributionUnresolvedHistory++;
+				historyAttributionGap = true;
+				markIncomplete("currentHistoryItemsWithoutMappedMetadata");
+				continue;
+			}
+
 			const aggKey = `${itemData.mediaType}:${itemData.tmdbId}:${itemData.sectionId}${
 				options.preserveProviderDuplicates ? `:${itemData.ratingKey}` : ""
 			}`;
@@ -1580,6 +1611,11 @@ export async function collectPlexCacheLiveEvidence(
 				continue;
 			}
 
+			if (canonicalShowFallback) {
+				// A corroborated path is positive evidence, not an exact history key.
+				historyAttributionGap = true;
+				markIncomplete("historyItemsWithoutUsableMediaKey");
+			}
 			const existing = aggregations.get(aggKey);
 			attributionRawHistory++;
 			attributionResolvedHistory++;
