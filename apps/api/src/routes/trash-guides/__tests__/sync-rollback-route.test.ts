@@ -91,6 +91,7 @@ describe("sync rollback route", () => {
 	const profileGetAll = vi.fn();
 	const rawRequest = vi.fn();
 	const cleanupUpdateMany = vi.fn();
+	const cleanupRelease = vi.fn();
 	const transaction = vi.fn();
 	let syncRecord: Record<string, unknown>;
 	const mockDeploymentOwnershipRows = (rows: Record<string, unknown>[]) => {
@@ -193,6 +194,7 @@ describe("sync rollback route", () => {
 				findUnique: vi.fn().mockResolvedValue(null),
 				create: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
 				updateMany: cleanupUpdateMany.mockResolvedValue({ count: 1 }),
+				update: cleanupRelease.mockResolvedValue({ id: "cleanup-config" }),
 			},
 			trashSyncHistory: {
 				findFirst: syncFindFirst,
@@ -269,11 +271,14 @@ describe("sync rollback route", () => {
 		const acquireIndexes = cleanupUpdateMany.mock.calls.flatMap(([args], index) =>
 			args.data.runClaimToken ? [index] : [],
 		);
-		const releaseIndexes = cleanupUpdateMany.mock.calls.flatMap(([args], index) =>
-			args.data.runClaimToken === null ? [index] : [],
-		);
 		expect(acquireIndexes).toHaveLength(1);
-		expect(releaseIndexes).toHaveLength(1);
+		const token = cleanupUpdateMany.mock.calls[acquireIndexes[0]!]![0].data.runClaimToken;
+		expect(token).toEqual(expect.any(String));
+		expect(cleanupRelease).toHaveBeenCalledExactlyOnceWith({
+			where: { id: "cleanup-config", userId, runClaimToken: token },
+			data: { runClaimToken: null, runClaimedAt: null },
+			select: { id: true },
+		});
 		const finalWriteIndex = syncUpdate.mock.calls.findIndex(
 			([args]) => args.data.rollbackStatus === "PARTIAL",
 		);
@@ -282,7 +287,7 @@ describe("sync rollback route", () => {
 			syncUpdate.mock.invocationCallOrder[0]!,
 		);
 		expect(syncUpdate.mock.invocationCallOrder[finalWriteIndex]).toBeLessThan(
-			cleanupUpdateMany.mock.invocationCallOrder[releaseIndexes[0]!]!,
+			cleanupRelease.mock.invocationCallOrder[0]!,
 		);
 	});
 
