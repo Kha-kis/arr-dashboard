@@ -51,6 +51,9 @@ export function libraryPosterPath(
 			// Corrupt cached metadata cannot choose a path. Use the fixed default.
 		}
 	}
+	if (itemType === "artist" && /^(jpg|png|gif)$/i.test(extension)) {
+		return `/api/v1/mediacover/artist/${itemId}/poster.${extension}`;
+	}
 	return `/MediaCover/${itemId}/poster.${extension}`;
 }
 
