@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import type { FastifyBaseLogger, FastifyReply, FastifyRequest } from "fastify";
 import type { ApiEnv } from "../../config/env.js";
-import type { Prisma, PrismaClient } from "../../lib/prisma.js";
+import { Prisma, type PrismaClient } from "../../lib/prisma.js";
 import {
 	retainRestoreRuntimeOperation,
 	withRestoreRuntimeOperation,
@@ -69,6 +69,7 @@ type SessionPrincipalRow = Prisma.SessionGetPayload<Record<string, never>> & {
 export class SessionService {
 	private validationAdmissionClosed = false;
 	private readonly pendingValidationWork = new Set<Promise<void>>();
+	private readonly pendingSessionAccess = new Map<string, { latestObservedAt: Date }>();
 
 	constructor(
 		private readonly prisma: PrismaClient,
@@ -102,6 +103,62 @@ export class SessionService {
 			this.pendingValidationWork.delete(completion);
 			settle();
 		}
+	}
+
+	/** Coalesce only overlapping observations for one session; never age-throttle access data. */
+	private queueSessionAccessUpdate(sessionId: string, observedAt: Date): void {
+		const existing = this.pendingSessionAccess.get(sessionId);
+		if (existing) {
+			if (observedAt > existing.latestObservedAt) existing.latestObservedAt = observedAt;
+			return;
+		}
+
+		const pending = { latestObservedAt: observedAt };
+		this.pendingSessionAccess.set(sessionId, pending);
+		void this.trackValidationWork(async () => {
+			let retained: ReturnType<typeof retainRestoreRuntimeOperation>;
+			let target = observedAt;
+			try {
+				retained = retainRestoreRuntimeOperation();
+				while (true) {
+					const update = () =>
+						this.metadataPrisma.session.update({
+							where: { id: sessionId, lastAccessedAt: { lt: target } },
+							data: { lastAccessedAt: target },
+							select: { id: true },
+						});
+					try {
+						await (retained
+							? retained.run(update)
+							: withRestoreRuntimeOperation(update, { independent: true }));
+					} catch (error) {
+						if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+							// The row disappeared or already has an equal/newer timestamp.
+							// This is a settled no-match, so joined observations are not replayed.
+							if (this.pendingSessionAccess.get(sessionId) === pending)
+								this.pendingSessionAccess.delete(sessionId);
+							return;
+						}
+						throw error;
+					}
+
+					const newest = pending.latestObservedAt;
+					if (newest <= target) {
+						if (this.pendingSessionAccess.get(sessionId) === pending)
+							this.pendingSessionAccess.delete(sessionId);
+						return;
+					}
+					target = newest;
+				}
+			} catch {
+				// Match the existing best-effort metadata contract. A failed attempt
+				// is not replayed; a later accepted request may observe and write again.
+				if (this.pendingSessionAccess.get(sessionId) === pending)
+					this.pendingSessionAccess.delete(sessionId);
+			} finally {
+				await retained?.release();
+			}
+		}).catch(() => {});
 	}
 
 	/**
@@ -355,23 +412,9 @@ export class SessionService {
 		}
 
 		// Metadata stays nonblocking for authentication, but must settle before DB teardown.
-		void this.trackValidationWork(async () => {
-			// The accepted lookup may finish after new admission closes. Retain its
-			// metadata obligation without extending the request's database ticket.
-			const retained = retainRestoreRuntimeOperation();
-			try {
-				const update = async () =>
-					this.metadataPrisma.session.update({
-						where: { id: hashedToken },
-						data: { lastAccessedAt: new Date() },
-					});
-				return await (retained
-					? retained.run(update)
-					: withRestoreRuntimeOperation(update, { independent: true }));
-			} finally {
-				await retained?.release();
-			}
-		}).catch(() => {});
+		// Capture time at the accepted read, then let overlapping reads for this same
+		// session share one writer while retaining only their newest timestamp.
+		this.queueSessionAccessUpdate(hashedToken, new Date());
 
 		return { session: record, token: unsigned.value };
 	}
