@@ -7,6 +7,38 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [2.25.3] — SQLite availability and provider maintenance
+
+### Before you upgrade
+
+Docker SQLite installations require an explicitly configured persistent database directory. Verify an applicable encrypted backup, stop the old writer, and keep the same verified mount, ownership, configuration and secrets. If the database is still in the container writable layer, pause automatic updates and keep the original container and its data available. Use a verified backup and Restore into a separately enrolled persistent installation before replacing the original. Keep a matched pre-upgrade backup and configuration for rollback. Review the [Docker SQLite storage, migration and recovery guide](https://github.com/Kha-kis/arr-dashboard/blob/main/docs/SQLITE-STORAGE.md) and the [v2.25.0 startup advisory](https://github.com/Kha-kis/arr-dashboard/releases/tag/v2.25.0#sqlite-startup-advisory).
+
+### Functional fixes
+
+- Load Radarr movie artwork through the authenticated API when Forms authentication protects the cover route. The proxy retains its redirect, authorization and image checks. ([#953](https://github.com/Kha-kis/arr-dashboard/pull/953))
+- Exclude verified idle observations from new-device notification history and apply matching live and stored platform normalization. Incomplete observations continue to limit deduplication decisions. ([#954](https://github.com/Kha-kis/arr-dashboard/pull/954))
+- Suppress false stale alerts for fresh partial Plex publications. Positive-only observations can still be displayed. Cleanup and other provider writes still require complete, applicable evidence. ([#955](https://github.com/Kha-kis/arr-dashboard/pull/955))
+- Avoid requesting a SQLite writer transaction when a retention sweep finds only protected work. Potential cleanup still uses the existing guarded transaction and preserves active, resumable and published state. ([#956](https://github.com/Kha-kis/arr-dashboard/pull/956))
+
+### Diagnostics
+
+- Classify SQLite contention by the observed admission or transaction stage. ([#950](https://github.com/Kha-kis/arr-dashboard/pull/950))
+- Report safe categories for SQLite storage-binding mismatches while retaining the existing identity checks. ([#951](https://github.com/Kha-kis/arr-dashboard/pull/951))
+- Distinguish guarded Jellyfin finalizer refusals from other worker failures. ([#952](https://github.com/Kha-kis/arr-dashboard/pull/952))
+
+### Release tooling
+
+- Use one worker in each of the four hosted SQLite shards, with existing assertions and deadlines. ([#959](https://github.com/Kha-kis/arr-dashboard/pull/959))
+- Allow a short read-only observation window after a successful registry write. A conflicting digest stops promotion immediately. ([#958](https://github.com/Kha-kis/arr-dashboard/pull/958))
+
+### Known limitations
+
+- Reporter-specific SQLite contention, Restore admission, NAS startup and Jellyfin finalization causes remain under investigation. A storage mismatch diagnostic does not establish continuity or authorize rebinding. General offline recovery for ambiguous legacy state without an applicable backup remains unverified.
+- Unraid FUSE user-share paths remain outside supported Docker SQLite storage. A direct local pool path worked in one reporter’s installation. Preserve existing data and use the documented backup-based transition when changing a bound mount.
+- Unattributed Plex history and missing current metadata can still prevent complete provider coverage. Jellyfin worker preparation failures may require separate evidence.
+
+Thanks to [sugarfunk](https://github.com/sugarfunk), [Quigongentoo](https://github.com/Quigongentoo), [Kirkpajl](https://github.com/Kirkpajl), [dorin89](https://github.com/dorin89), [mk-djs](https://github.com/mk-djs), [swever826](https://github.com/swever826), and [wlogin12345](https://github.com/wlogin12345) for the detailed reports and follow-up evidence.
+
 ## [2.25.2] — Inventory maintenance and Docker listener fixes
 
 ### Before you upgrade
@@ -1933,6 +1965,7 @@ Major dependency updates:
 ---
 
 [Unreleased]: https://github.com/Kha-kis/arr-dashboard/compare/v2.25.1...HEAD
+[2.25.3]: https://github.com/Kha-kis/arr-dashboard/compare/v2.25.2...v2.25.3
 [2.25.2]: https://github.com/Kha-kis/arr-dashboard/compare/v2.25.1...v2.25.2
 [2.25.1]: https://github.com/Kha-kis/arr-dashboard/compare/v2.25.0...v2.25.1
 [2.25.0]: https://github.com/Kha-kis/arr-dashboard/compare/v2.24.1...v2.25.0

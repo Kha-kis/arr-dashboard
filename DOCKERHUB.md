@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.25.2** — Reclaims reusable space from abandoned native inventory staging, spaces out retries, and restores explicit Docker listener precedence.
+> **Version 2.25.3** — Reduces contention during protected SQLite retention and improves Radarr artwork, new-device notifications, and Plex freshness alerts.
 
 > [!IMPORTANT]
 > **Before upgrading Docker SQLite to v2.25.1 or later**, confirm that its database uses an explicit persistent directory mount. Pause automatic container updates and pin your current image if you follow `latest`, `2`, or `2.25`. If the database is in the writable layer, keep the original container and verify an encrypted backup before moving to separately initialized persistent storage. [Read the startup advisory](https://github.com/Kha-kis/arr-dashboard/releases/tag/v2.25.0#sqlite-startup-advisory).
@@ -104,6 +104,7 @@ Stable 2.x does not enforce this restriction at runtime. Enforcement is tracked 
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
+| `2.25.3` | **SQLite availability and provider maintenance** — Avoids unnecessary writer admission, fixes authenticated Radarr artwork and two notification behaviors, and adds scoped SQLite and Jellyfin diagnostics. |
 | `2.25.2` | **Inventory maintenance and Docker listener fixes** — Bounded staging cleanup, progressive retry delays, and consistent listener settings across startup, the Web proxy, health checks, and internal restarts. |
 | `2.25.1` | **Startup recovery and maintenance** — Requires persistent Docker SQLite storage, resumes verified interrupted enrollment, and improves TRaSH quality order and Jellyfin diagnostics. [Upgrade notes](https://github.com/Kha-kis/arr-dashboard/blob/main/CHANGELOG.md). |
 | `2.25.0` | **Durable grabs and restore recovery** — Updates the Manual Search Grab and Backup Restore APIs, keeps the last published Plex and Jellyfin inventory readable during refresh, and improves populated SQLite startup. [Upgrade notes](https://github.com/Kha-kis/arr-dashboard/blob/main/CHANGELOG.md). |
