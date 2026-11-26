@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { Prisma } from "../../../lib/prisma.js";
 import {
 	createInjectAuthenticated,
 	registerTestErrorHandler,
@@ -72,7 +73,7 @@ async function createApp(prisma: unknown, deploymentExecutor: unknown) {
 	database.libraryCleanupConfig ??= {
 		findUnique: vi.fn().mockResolvedValue(null),
 		create: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
-		updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+		update: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
 	};
 	const app = Fastify({ logger: false });
 	setupAuthInjection(app);
@@ -377,7 +378,12 @@ describe("deployment authority writer locking", () => {
 				libraryCleanupConfig: {
 					findUnique: vi.fn().mockResolvedValue(null),
 					create: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
-					updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+					update: vi.fn().mockRejectedValue(
+						new Prisma.PrismaClientKnownRequestError("held cleanup lease", {
+							code: "P2025",
+							clientVersion: "test",
+						}),
+					),
 				},
 				serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
 				templateQualityProfileMapping: {

@@ -90,8 +90,7 @@ describe("sync rollback route", () => {
 	const profileGetById = vi.fn();
 	const profileGetAll = vi.fn();
 	const rawRequest = vi.fn();
-	const cleanupUpdateMany = vi.fn();
-	const cleanupRelease = vi.fn();
+	const cleanupUpdate = vi.fn();
 	const transaction = vi.fn();
 	let syncRecord: Record<string, unknown>;
 	const mockDeploymentOwnershipRows = (rows: Record<string, unknown>[]) => {
@@ -193,8 +192,8 @@ describe("sync rollback route", () => {
 			libraryCleanupConfig: {
 				findUnique: vi.fn().mockResolvedValue(null),
 				create: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
-				updateMany: cleanupUpdateMany.mockResolvedValue({ count: 1 }),
-				update: cleanupRelease.mockResolvedValue({ id: "cleanup-config" }),
+				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+				update: cleanupUpdate.mockResolvedValue({ id: "cleanup-config" }),
 			},
 			trashSyncHistory: {
 				findFirst: syncFindFirst,
@@ -268,13 +267,17 @@ describe("sync rollback route", () => {
 		const response = await createInjectAuthenticated(app)("POST", "/sync-1/rollback");
 
 		expect(response.statusCode, response.body).toBe(200);
-		const acquireIndexes = cleanupUpdateMany.mock.calls.flatMap(([args], index) =>
+		const acquireIndexes = cleanupUpdate.mock.calls.flatMap(([args], index) =>
 			args.data.runClaimToken ? [index] : [],
 		);
 		expect(acquireIndexes).toHaveLength(1);
-		const token = cleanupUpdateMany.mock.calls[acquireIndexes[0]!]![0].data.runClaimToken;
+		const token = cleanupUpdate.mock.calls[acquireIndexes[0]!]![0].data.runClaimToken;
 		expect(token).toEqual(expect.any(String));
-		expect(cleanupRelease).toHaveBeenCalledExactlyOnceWith({
+		const releaseIndex = cleanupUpdate.mock.calls.findIndex(
+			([args]) => args.data.runClaimToken === null,
+		);
+		expect(releaseIndex).toBeGreaterThan(acquireIndexes[0]!);
+		expect(cleanupUpdate.mock.calls[releaseIndex]?.[0]).toEqual({
 			where: { id: "cleanup-config", userId, runClaimToken: token },
 			data: { runClaimToken: null, runClaimedAt: null },
 			select: { id: true },
@@ -283,11 +286,11 @@ describe("sync rollback route", () => {
 			([args]) => args.data.rollbackStatus === "PARTIAL",
 		);
 		expect(finalWriteIndex).toBeGreaterThanOrEqual(0);
-		expect(cleanupUpdateMany.mock.invocationCallOrder[acquireIndexes[0]!]).toBeLessThan(
+		expect(cleanupUpdate.mock.invocationCallOrder[acquireIndexes[0]!]).toBeLessThan(
 			syncUpdate.mock.invocationCallOrder[0]!,
 		);
 		expect(syncUpdate.mock.invocationCallOrder[finalWriteIndex]).toBeLessThan(
-			cleanupRelease.mock.invocationCallOrder[0]!,
+			cleanupUpdate.mock.invocationCallOrder[releaseIndex]!,
 		);
 	});
 

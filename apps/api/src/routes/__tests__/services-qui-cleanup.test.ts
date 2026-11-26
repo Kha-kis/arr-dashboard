@@ -17,6 +17,7 @@
  * This file pins the wiring.
  */
 
+import { Prisma } from "../../lib/prisma.js";
 import Fastify from "fastify";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -140,7 +141,51 @@ function makeJellyfinInstance(overrides: Record<string, unknown> = {}) {
 	});
 }
 
+function createCleanupLeaseMock() {
+	let row: {
+		id: string;
+		userId: string;
+		runClaimToken: string | null;
+		runClaimedAt: Date | null;
+	} | null = null;
+	return {
+		findUnique: vi.fn(async ({ where }: any) => (row?.userId === where.userId ? { ...row } : null)),
+		create: vi.fn(async ({ data }: any) => {
+			row = {
+				id: "cleanup-config-1",
+				userId: data.userId,
+				runClaimToken: null,
+				runClaimedAt: null,
+			};
+			return { ...row };
+		}),
+		update: vi.fn(async ({ where, data }: any) => {
+			const available = where.OR?.some((condition: any) => {
+				if ("runClaimToken" in condition) return row?.runClaimToken === null;
+				if ("runClaimedAt" in condition && condition.runClaimedAt === null)
+					return row?.runClaimedAt === null;
+				if (condition.runClaimedAt?.lt instanceof Date)
+					return row?.runClaimedAt instanceof Date && row.runClaimedAt < condition.runClaimedAt.lt;
+				return false;
+			});
+			const matches =
+				row?.id === where.id &&
+				row?.userId === where.userId &&
+				(where.OR ? available : row?.runClaimToken === where.runClaimToken);
+			if (!matches || !row) {
+				throw new Prisma.PrismaClientKnownRequestError("Synthetic cleanup lease not found", {
+					code: "P2025",
+					clientVersion: "test",
+				});
+			}
+			Object.assign(row, data);
+			return { id: row.id };
+		}),
+	};
+}
+
 function createMockPrisma() {
+	const cleanupLease = createCleanupLeaseMock();
 	const prisma = {
 		$executeRaw: vi.fn().mockResolvedValue(1),
 		searchGrabClaim: { findFirst: vi.fn().mockResolvedValue(null) },
@@ -152,11 +197,7 @@ function createMockPrisma() {
 			count: vi.fn().mockResolvedValue(0),
 			findFirst: vi.fn().mockResolvedValue(null),
 		},
-		libraryCleanupConfig: {
-			findUnique: vi.fn().mockResolvedValue(null),
-			create: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
-			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
-		},
+		libraryCleanupConfig: cleanupLease,
 		serviceInstance: {
 			findMany: vi.fn().mockResolvedValue([]),
 			findFirst: vi

@@ -72,7 +72,7 @@ describe("PUT /library-cleanup/rules/:id partial persistence", () => {
 				update,
 			},
 			libraryCleanupConfig: {
-				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+				update: vi.fn().mockResolvedValue({ id: "config-1" }),
 			},
 		} as never);
 		app.decorate("arrClientFactory", {} as never);

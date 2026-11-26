@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { Prisma } from "../../lib/prisma.js";
 
 // ---------------------------------------------------------------------------
 // Module-level mocks
@@ -402,7 +403,12 @@ describe("POST /services", () => {
 	});
 
 	it("returns 409 without changing topology while cleanup owns the lease", async () => {
-		mockPrisma.libraryCleanupConfig.updateMany.mockResolvedValueOnce({ count: 0 });
+		mockPrisma.libraryCleanupConfig.update.mockRejectedValueOnce(
+			new Prisma.PrismaClientKnownRequestError("Cleanup config lease is already held", {
+				code: "P2025",
+				clientVersion: "test",
+			}),
+		);
 
 		const res = await injectAuthenticated("POST", "/services", {
 			body: {
@@ -510,10 +516,23 @@ describe("PUT /services/:id", () => {
 			expect.objectContaining({ label: "Updated Label" }),
 			expect.objectContaining({ encrypt: expect.any(Function) }),
 		);
-		expect(mockPrisma.libraryCleanupConfig.updateMany).toHaveBeenCalledOnce();
-		const token = mockPrisma.libraryCleanupConfig.updateMany.mock.calls[0]?.[0]?.data.runClaimToken;
+		expect(mockPrisma.libraryCleanupConfig.update).toHaveBeenCalledTimes(2);
+		const token = mockPrisma.libraryCleanupConfig.update.mock.calls[0]?.[0]?.data.runClaimToken;
 		expect(token).toEqual(expect.any(String));
-		expect(mockPrisma.libraryCleanupConfig.update).toHaveBeenCalledExactlyOnceWith({
+		expect(mockPrisma.libraryCleanupConfig.update.mock.calls[0]?.[0]).toMatchObject({
+			where: {
+				id: "cleanup-config-1",
+				userId: "user-1",
+				OR: expect.arrayContaining([
+					{ runClaimToken: null },
+					{ runClaimedAt: null },
+					{ runClaimedAt: { lt: expect.any(Date) } },
+				]),
+			},
+			data: { runClaimToken: token, runClaimedAt: expect.any(Date) },
+			select: { id: true },
+		});
+		expect(mockPrisma.libraryCleanupConfig.update.mock.calls[1]?.[0]).toEqual({
 			where: { id: "cleanup-config-1", userId: "user-1", runClaimToken: token },
 			data: { runClaimToken: null, runClaimedAt: null },
 			select: { id: true },
@@ -1211,10 +1230,23 @@ describe("DELETE /services/:id", () => {
 		expect(mockPrisma.serviceInstance.delete).toHaveBeenCalledWith({
 			where: { id: "inst-1", userId: "user-1" },
 		});
-		expect(mockPrisma.libraryCleanupConfig.updateMany).toHaveBeenCalledOnce();
-		const token = mockPrisma.libraryCleanupConfig.updateMany.mock.calls[0]?.[0]?.data.runClaimToken;
+		expect(mockPrisma.libraryCleanupConfig.update).toHaveBeenCalledTimes(2);
+		const token = mockPrisma.libraryCleanupConfig.update.mock.calls[0]?.[0]?.data.runClaimToken;
 		expect(token).toEqual(expect.any(String));
-		expect(mockPrisma.libraryCleanupConfig.update).toHaveBeenCalledExactlyOnceWith({
+		expect(mockPrisma.libraryCleanupConfig.update.mock.calls[0]?.[0]).toMatchObject({
+			where: {
+				id: "cleanup-config-1",
+				userId: "user-1",
+				OR: expect.arrayContaining([
+					{ runClaimToken: null },
+					{ runClaimedAt: null },
+					{ runClaimedAt: { lt: expect.any(Date) } },
+				]),
+			},
+			data: { runClaimToken: token, runClaimedAt: expect.any(Date) },
+			select: { id: true },
+		});
+		expect(mockPrisma.libraryCleanupConfig.update.mock.calls[1]?.[0]).toEqual({
 			where: { id: "cleanup-config-1", userId: "user-1", runClaimToken: token },
 			data: { runClaimToken: null, runClaimedAt: null },
 			select: { id: true },

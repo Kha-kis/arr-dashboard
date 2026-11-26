@@ -2779,7 +2779,7 @@ describe("Jellyfin V2 cleanup parent-watch isolation", () => {
 			libraryCleanupAuditEvent: { create: auditCreate },
 			libraryCleanupConfig: {
 				...deps.prisma.libraryCleanupConfig,
-				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+				update: vi.fn().mockResolvedValue({ id: "config-1" }),
 			},
 		});
 		Object.assign(deps, { skipPendingMediaServerRescanRetry: true });

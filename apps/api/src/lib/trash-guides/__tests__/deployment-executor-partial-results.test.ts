@@ -79,7 +79,7 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 			libraryCleanupConfig: {
 				findUnique: vi.fn().mockResolvedValue(null),
 				create: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
-				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+				update: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
 			},
 			serviceInstance: {
 				findFirst: vi.fn().mockResolvedValue(instance),
@@ -145,7 +145,7 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 			libraryCleanupConfig: {
 				findUnique: vi.fn().mockResolvedValue(null),
 				create: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
-				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+				update: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
 			},
 			serviceInstance: {
 				findFirst: vi.fn().mockResolvedValue({
@@ -373,7 +373,7 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 			libraryCleanupConfig: {
 				findUnique: vi.fn().mockResolvedValue(null),
 				create: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
-				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+				update: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
 			},
 			trashTemplate: {
 				findUnique: vi.fn().mockResolvedValue({ id: "template-1", name: "Radarr - Any" }),
@@ -443,7 +443,7 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 			libraryCleanupConfig: {
 				findUnique: vi.fn().mockResolvedValue(null),
 				create: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
-				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+				update: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
 			},
 			trashTemplate: {
 				findUnique: vi.fn().mockResolvedValue({ id: "template-1", name: "Any" }),
