@@ -9,6 +9,7 @@ import re
 import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 import zipfile
 
@@ -25,6 +26,8 @@ VERSION = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
 IDENTIFIER = re.compile(r"[1-9][0-9]{0,19}")
 MANIFEST_FILE = "release-qualification.json"
 MAX_RECORD_BYTES = 1024 * 1024
+READBACK_WINDOW_SECONDS = 5.0
+READBACK_POLL_INTERVAL_SECONDS = 0.5
 
 
 def require(condition, message):
@@ -64,6 +67,23 @@ def check_aliases(registries, plan, index, *, recovery=True):
         require(recovery or current == old, f"existing promotion state requires a deliberate rerun: {repo}:{tag}")
 
 
+def verify_alias_readback(registry, repository, tag, previous, index):
+    """Retry only stale read-only observations after a successful copy."""
+    deadline = time.monotonic() + READBACK_WINDOW_SECONDS
+    attempts = 0
+    while True:
+        attempts += 1
+        current = registry.tag_digest(tag)
+        if current == index:
+            return attempts
+        require(current == previous,
+                f"conflicting registry state during readback: {repository}:{tag}")
+        remaining = deadline - time.monotonic()
+        require(remaining > 0,
+                f"registry readback deadline expired: {repository}:{tag}")
+        time.sleep(min(READBACK_POLL_INTERVAL_SECONDS, remaining))
+
+
 def apply_aliases(registries, plan, index, write_index, emit):
     """Accept already verified writes, and stop on the first failure or drift."""
     verified = False
@@ -71,12 +91,17 @@ def apply_aliases(registries, plan, index, write_index, emit):
         check_aliases(registries, plan, index)
         for repo, tag, old in plan:
             current = read_expected(registries, repo, tag, old, index)
+            attempts = 1
             if current != index:
                 emit({"status": "write-intent", "registry": repo, "tag": tag, "from": current, "to": index})
                 write_index(repo, tag, index)
-            require(registries[repo].tag_digest(tag) == index,
-                    f"alias readback differs: {repo}:{tag}")
-            emit({"status": "alias-verified", "registry": repo, "tag": tag, "digest": index})
+                attempts = verify_alias_readback(registries[repo], repo, tag, old, index)
+            else:
+                require(registries[repo].tag_digest(tag) == index,
+                        f"alias readback differs: {repo}:{tag}")
+            emit({"status": "alias-verified", "registry": repo, "tag": tag,
+                  "digest": index, "readbackAttempts": attempts,
+                  "priorStateObservations": attempts - 1})
         for repo, tag, _old in plan:
             require(registries[repo].tag_digest(tag) == index, f"final alias differs: {repo}:{tag}")
         verified = True
