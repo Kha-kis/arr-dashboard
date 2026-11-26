@@ -182,7 +182,7 @@ jobs:
       - name: Run API SQLite shard
         run: pnpm --filter @arr/api run test:sqlite --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }}
         env:
-          ARR_API_TEST_WORKERS: "2"
+          ARR_API_TEST_WORKERS: "1"
 
   api-postgres:
     name: API Native PostgreSQL
