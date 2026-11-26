@@ -4,11 +4,11 @@ import {
 	type DashboardStatisticsResponse,
 	dashboardStatisticsResponseSchema,
 } from "@arr/shared";
-import type {
-	DashboardStatisticsSnapshot,
+import {
+	type DashboardStatisticsSnapshot,
 	Prisma,
-	PrismaClient,
-	ServiceInstance,
+	type PrismaClient,
+	type ServiceInstance,
 } from "../../lib/prisma.js";
 import { withIsolatedRuntimePrismaTransaction } from "../backup/restore-runtime-client.js";
 import { withSqliteTransactionWriteIntent } from "../sqlite-transaction-intent.js";
@@ -230,18 +230,25 @@ export async function failDashboardRefresh(
 	category: DashboardRefreshFailureCategory,
 ): Promise<boolean> {
 	if (!fingerprint || !token || !Number.isFinite(now.getTime())) return false;
-	const cleared = await prisma.dashboardStatisticsSnapshot.updateMany({
-		where: { userId, claimFingerprint: fingerprint, claimToken: token },
-		data: {
-			claimFingerprint: null,
-			claimToken: null,
-			leaseUntil: null,
-			retryAt: new Date(now.getTime() + PARTIAL_RETRY_MS),
-			retryFingerprint: fingerprint,
-			lastFailureCategory: category,
-		},
-	});
-	return cleared.count === 1;
+	try {
+		await prisma.dashboardStatisticsSnapshot.update({
+			where: { userId, claimFingerprint: fingerprint, claimToken: token },
+			data: {
+				claimFingerprint: null,
+				claimToken: null,
+				leaseUntil: null,
+				retryAt: new Date(now.getTime() + PARTIAL_RETRY_MS),
+				retryFingerprint: fingerprint,
+				lastFailureCategory: category,
+			},
+			select: { userId: true },
+		});
+		return true;
+	} catch (error) {
+		if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025")
+			return false;
+		throw error;
+	}
 }
 
 export async function readDashboardSnapshot(
