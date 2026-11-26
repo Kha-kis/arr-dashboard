@@ -14,6 +14,7 @@ import type { FastifyBaseLogger } from "fastify";
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient, ServiceInstance, ServiceType } from "../../../lib/prisma.js";
 import type { ArrClientFactory } from "../../arr/client-factory.js";
+import { streamLibraryItems } from "../../arr/library-stream.js";
 import { createArrServiceFingerprint } from "../../arr/service-fingerprint.js";
 import type { Encryptor } from "../../auth/encryption.js";
 import { evaluateSingleCondition, extractRating } from "../../library-cleanup/rule-evaluators.js";
@@ -990,6 +991,55 @@ describe("syncInstance", () => {
 			expect(mockPrisma.libraryCache.deleteMany).toHaveBeenCalledWith({
 				where: { id: { in: ["cache-2"] } },
 			});
+		});
+
+		it("does not prune existing cache rows when an array contains a malformed entry", async () => {
+			const { deps, instance, mockPrisma } = setupSync(
+				"SONARR",
+				[],
+				[{ id: "cache-unseen", arrItemId: 999, itemType: "series", hasFile: true, data: null }],
+			);
+			const encoder = new TextEncoder();
+			const records = Array.from({ length: 100 }, (_, index) =>
+				JSON.stringify(makeRawItem({ id: index + 1 })),
+			);
+			const responseBody = new ReadableStream<Uint8Array>({
+				start(controller) {
+					controller.enqueue(encoder.encode(`[${records.join(",")}`));
+					controller.enqueue(encoder.encode(",null]"));
+					controller.close();
+				},
+			});
+			const streamFactory = {
+				rawRequest: vi.fn().mockResolvedValue(new Response(responseBody)),
+			} as unknown as ArrClientFactory;
+			deps.streamLibraryItems = (_factory, streamedInstance, log) =>
+				streamLibraryItems(streamFactory, streamedInstance, log);
+
+			const result = await syncInstance(deps, instance);
+
+			expect(result.success).toBe(false);
+			expect(result.itemsProcessed).toBe(100);
+			expect(result.itemsRemoved).toBe(0);
+			expect(mockPrisma.libraryCache.deleteMany).not.toHaveBeenCalled();
+		});
+
+		it("does not prune existing cache rows when the provider stream is incomplete", async () => {
+			const existingItems = [
+				{ id: "cache-live", arrItemId: 1, itemType: "series", hasFile: true, data: null },
+				{ id: "cache-unseen", arrItemId: 99, itemType: "series", hasFile: true, data: null },
+			];
+			const { deps, instance, mockPrisma } = setupSync("SONARR", [], existingItems);
+			deps.streamLibraryItems = async function* () {
+				for (let id = 1; id <= 101; id++) yield makeRawItem({ id });
+				throw new Error("streamLibraryItems: expected a top-level JSON array");
+			};
+
+			const result = await syncInstance(deps, instance);
+
+			expect(result.success).toBe(false);
+			expect(result.itemsRemoved).toBe(0);
+			expect(mockPrisma.libraryCache.deleteMany).not.toHaveBeenCalled();
 		});
 
 		// Pins the v2.18.5 cursor-paginated existing-items load (issue #427
