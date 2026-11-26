@@ -70,7 +70,8 @@ const mapping = {
 async function createApp(prisma: unknown, deploymentExecutor: unknown) {
 	const database = prisma as Record<string, unknown>;
 	database.libraryCleanupConfig ??= {
-		upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
+		findUnique: vi.fn().mockResolvedValue(null),
+		create: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
 		updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 	};
 	const app = Fastify({ logger: false });
@@ -374,7 +375,8 @@ describe("deployment authority writer locking", () => {
 			const deleteMappings = vi.fn();
 			const prisma = {
 				libraryCleanupConfig: {
-					upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
+					findUnique: vi.fn().mockResolvedValue(null),
+					create: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
 					updateMany: vi.fn().mockResolvedValue({ count: 0 }),
 				},
 				serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },

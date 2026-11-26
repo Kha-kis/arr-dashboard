@@ -111,7 +111,8 @@ beforeEach(async () => {
 		),
 		labelSyncMutationAttempt: { findMany: vi.fn().mockResolvedValue([]) },
 		libraryCleanupConfig: {
-			upsert: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
+			findUnique: vi.fn().mockResolvedValue(null),
+			create: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
 			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
 		},
 		serviceInstance: {
