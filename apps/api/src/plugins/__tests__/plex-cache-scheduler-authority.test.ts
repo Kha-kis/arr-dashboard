@@ -743,6 +743,50 @@ describe("Plex scheduler publication authority", () => {
 		expectSanitizedTelemetry(entry!);
 	});
 
+	it.each([
+		{ availability: "current", evidence: "complete", ageHours: 1, warn: false },
+		{ availability: "partial", evidence: "partial", ageHours: 1, warn: false },
+		{ availability: "partial", evidence: "positive-only", ageHours: 1, warn: false },
+		{ availability: "last-known", evidence: "positive-only", ageHours: 13, warn: true },
+		{ availability: "last-known", evidence: "positive-only", ageHours: 1, warn: true },
+	])(
+		"uses freshness for the routine stale notification ($availability, $evidence, $ageHours hours)",
+		async ({ availability, evidence, ageHours, warn }) => {
+			const observedAt = new Date(Date.now() - ageHours * 60 * 60_000);
+			(app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+				instance,
+			]);
+			(app.prisma.cacheRefreshStatus.findMany as ReturnType<typeof vi.fn>).mockResolvedValueOnce([
+				{ lastRefreshedAt: observedAt, instance },
+			]);
+			mocks.loadGenerationObservationsForOwnedInstances.mockResolvedValue([
+				{
+					available: true,
+					providerStatus: {
+						availability,
+						evidence,
+						observedAt: observedAt.toISOString(),
+						ageSeconds: ageHours * 3600,
+						latestAttempt:
+							availability === "last-known" && ageHours === 1 ? "failed" : "successful",
+						reasonCodes: ageHours > 12 ? ["positive-only", "publication-stale"] : [],
+					},
+					evidence: {
+						publicationLevel: evidence === "complete" ? "authoritative" : "positive-only",
+					},
+				},
+			]);
+
+			await vi.advanceTimersByTimeAsync(5 * 60_000);
+
+			const notify = app.notificationService.notify as unknown as ReturnType<typeof vi.fn>;
+			const staleCalls = notify.mock.calls.filter(
+				([event]) => event.eventType === "CACHE_REFRESH_STALE",
+			);
+			expect(staleCalls).toHaveLength(warn ? 1 : 0);
+		},
+	);
+
 	it("logs generic stale state and notifications without instance names", async () => {
 		const staleInstance = { ...instance, label: "PRIVATE_PLEX_MARKER" };
 		(app.prisma.serviceInstance.findMany as ReturnType<typeof vi.fn>).mockResolvedValueOnce([

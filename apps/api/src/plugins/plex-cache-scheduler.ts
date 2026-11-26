@@ -426,10 +426,11 @@ const plexCacheSchedulerPlugin = fastifyPlugin(
 										maxAgeMs: 12 * 60 * 60 * 1000,
 									},
 								);
+								const availability = observation?.providerStatus?.availability;
 								if (
 									entry.lastRefreshedAt < staleThreshold ||
 									!observation?.available ||
-									observation.providerStatus?.availability !== "current"
+									(availability !== "current" && availability !== "partial")
 								) {
 									staleEntries.push(entry);
 								}
