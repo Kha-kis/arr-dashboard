@@ -19,12 +19,13 @@ describe("Library poster cache-key projection", () => {
 		).toBeUndefined();
 	});
 
-	it.each(["series", "artist", "author"] as const)(
-		"builds a fixed %s root cover path",
-		(itemType) => {
-			expect(libraryPosterPath(itemType, 42, "{}")).toBe("/MediaCover/42/poster.jpg");
-		},
-	);
+	it.each([
+		["series", "/MediaCover/42/poster.jpg"],
+		["artist", "/api/v1/mediacover/artist/42/poster.jpg"],
+		["author", "/MediaCover/42/poster.jpg"],
+	] as const)("builds a fixed %s root cover path", (itemType, path) => {
+		expect(libraryPosterPath(itemType, 42, "{}")).toBe(path);
+	});
 
 	it.each([
 		["movie", "/api/v3/mediacover/42/poster-500.jpg"],
@@ -38,13 +39,14 @@ describe("Library poster cache-key projection", () => {
 	it.each(["artist", "author"] as const)(
 		"retains only recognized raster suffixes for %s",
 		(itemType) => {
+			const prefix = itemType === "artist" ? "/api/v1/mediacover/artist/42" : "/MediaCover/42";
 			expect(
 				libraryPosterPath(
 					itemType,
 					42,
 					JSON.stringify({ poster: "https://synthetic.test/x.PNG?token=synthetic" }),
 				),
-			).toBe("/MediaCover/42/poster.PNG");
+			).toBe(prefix + "/poster.PNG");
 			for (const poster of [
 				"https://synthetic.test/x.svg",
 				"../../private",
@@ -52,11 +54,20 @@ describe("Library poster cache-key projection", () => {
 				"https://synthetic.test/x.jpg/../../other",
 			])
 				expect(libraryPosterPath(itemType, 42, JSON.stringify({ poster }))).toBe(
-					"/MediaCover/42/poster.jpg",
+					prefix + "/poster.jpg",
 				);
-			expect(libraryPosterPath(itemType, 42, "not JSON")).toBe("/MediaCover/42/poster.jpg");
+			expect(libraryPosterPath(itemType, 42, "not JSON")).toBe(prefix + "/poster.jpg");
 		},
 	);
+	it.each(["jpeg", "webp", "avif"])("preserves the existing artist path for %s", (suffix) => {
+		expect(
+			libraryPosterPath(
+				"artist",
+				42,
+				JSON.stringify({ poster: "https://example.test/poster." + suffix }),
+			),
+		).toBe("/MediaCover/42/poster." + suffix);
+	});
 });
 
 describe("bounded raster poster reads", () => {

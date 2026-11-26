@@ -1,14 +1,17 @@
 import type { DashboardStatisticsResponse } from "@arr/shared";
-import { afterEach, describe, expect, it } from "vitest";
+import Database from "better-sqlite3";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	closeScopedWriteFixtures,
 	createScopedWriteFixture,
 	interceptScopedWriteCompetition,
 	snapshotProtectedRows,
 } from "../../__tests__/scoped-write-intent-fixture.js";
+import { Prisma, type PrismaClient } from "../../prisma.js";
 import { emptySonarrStatistics } from "../../statistics/dashboard-statistics.js";
 import {
 	claimDashboardRefresh,
+	failDashboardRefresh,
 	fingerprintDashboardSources,
 	publishDashboardSnapshot,
 	readDashboardSnapshot,
@@ -17,8 +20,8 @@ import {
 
 afterEach(closeScopedWriteFixtures);
 
-async function fixture() {
-	const f = await createScopedWriteFixture();
+async function fixture(journalMode: "WAL" | "DELETE" = "WAL") {
+	const f = await createScopedWriteFixture({ journalMode });
 	const source = await f.plain.serviceInstance.create({
 		data: {
 			id: "synthetic-arr",
@@ -183,4 +186,134 @@ describe("Statistics write progress during guarded WAL competition", { timeout: 
 		).toEqual({ availability: "current", observedAt: f.now, data: f.payload, refreshDue: false });
 		expect(f.losses).toEqual([]);
 	});
+});
+
+describe("Statistics failed-claim settlement under a competing writer", { timeout: 15_000 }, () => {
+	it.each(["WAL", "DELETE"] as const)(
+		"settles the exact claim without pinning a %s read snapshot",
+		async (mode) => {
+			const f = await fixture(mode);
+			expect(f.writer.pragma("journal_mode", { simple: true })).toBe(mode.toLowerCase());
+			const userId = "synthetic-user";
+			const token = "active-claim";
+			const where = { userId };
+			const prisma = f.client.prisma;
+			await expect(
+				f.runtime.runOperation(() =>
+					claimDashboardRefresh(prisma, userId, f.fingerprint, token, f.now),
+				),
+			).resolves.toBe(true);
+			const before = await f.plain.dashboardStatisticsSnapshot.findUniqueOrThrow({ where });
+			const protectedRows = snapshotProtectedRows(f);
+			const writes: Array<{ inTransaction: boolean; outcome: string }> = [];
+			let writerOutcome: string | undefined;
+			const prepare = Database.prototype.prepare;
+			vi.spyOn(Database.prototype, "prepare").mockImplementation(function (
+				this: Database.Database,
+				sql: string,
+			) {
+				const statement = prepare.call(this, sql);
+				if (
+					this.name !== f.path ||
+					!/^\s*UPDATE\b/iu.test(sql) ||
+					!sql.includes("dashboard_statistics_snapshots")
+				)
+					return statement;
+				const database = this;
+				for (const name of ["all", "get", "run"] as const) {
+					const execute = statement[name];
+					Reflect.set(statement, name, function (this: typeof statement, ...args: unknown[]) {
+						if (f.writer.inTransaction) {
+							try {
+								f.writer.exec("COMMIT");
+								writerOutcome = "committed";
+							} catch (error) {
+								if (!(error instanceof Database.SqliteError) || error.code !== "SQLITE_BUSY")
+									throw error;
+								writerOutcome = error.code;
+							}
+						}
+						const inTransaction = database.inTransaction;
+						try {
+							const value = Reflect.apply(execute, this, args);
+							writes.push({ inTransaction, outcome: "completed" });
+							return value;
+						} catch (error) {
+							writes.push({
+								inTransaction,
+								outcome: error instanceof Database.SqliteError ? error.code : "unknown",
+							});
+							throw error;
+						}
+					});
+				}
+				return statement;
+			});
+			f.writer.exec("BEGIN IMMEDIATE; UPDATE CompetitionProbe SET value=1 WHERE id=1");
+			const settle = (owner = userId, fingerprint = f.fingerprint, claim = token) =>
+				f.runtime.runOperation(() =>
+					failDashboardRefresh(prisma, owner, fingerprint, claim, f.now, "timeout"),
+				);
+			const result = await settle().then(
+				(value) => ({ value }),
+				(error: unknown) => ({
+					code: error && typeof error === "object" && "code" in error ? error.code : "unknown",
+				}),
+			);
+			expect({ result, writerOutcome, writeCount: writes.length, firstWrite: writes[0] }).toEqual({
+				result: { value: true },
+				writerOutcome: "committed",
+				writeCount: 1,
+				firstWrite: { inTransaction: false, outcome: "completed" },
+			});
+			expect(f.writer.prepare("SELECT value FROM CompetitionProbe WHERE id=1").get()).toEqual({
+				value: 1,
+			});
+			expect(snapshotProtectedRows(f)).toEqual(protectedRows);
+			const after = await f.plain.dashboardStatisticsSnapshot.findUniqueOrThrow({ where });
+			expect(after).toMatchObject({
+				userId,
+				sourceFingerprint: before.sourceFingerprint,
+				payload: before.payload,
+				result: before.result,
+				observedAt: before.observedAt,
+				claimFingerprint: null,
+				claimToken: null,
+				leaseUntil: null,
+				retryFingerprint: f.fingerprint,
+				retryAt: new Date(f.now.getTime() + 60_000),
+				lastFailureCategory: "timeout",
+			});
+			const replacement = {
+				claimFingerprint: f.fingerprint,
+				claimToken: "newer-claim",
+				leaseUntil: new Date(f.now.getTime() + 120_000),
+			};
+			await f.plain.dashboardStatisticsSnapshot.update({ where, data: replacement });
+			await expect(settle("unknown-user", f.fingerprint, replacement.claimToken)).resolves.toBe(
+				false,
+			);
+			await expect(settle(userId, "old-source", replacement.claimToken)).resolves.toBe(false);
+			await expect(settle()).resolves.toBe(false);
+			expect(await f.plain.dashboardStatisticsSnapshot.findUniqueOrThrow({ where })).toMatchObject(
+				replacement,
+			);
+			expect(f.losses).toEqual([]);
+		},
+	);
+});
+
+it.each([
+	Object.assign(new Error("untyped lookalike"), { code: "P2025" }),
+	new Prisma.PrismaClientKnownRequestError("uncertain settlement", {
+		code: "P1008",
+		clientVersion: "test",
+	}),
+])("propagates an uncertain settlement without replay (%s)", async (error) => {
+	const update = vi.fn().mockRejectedValue(error);
+	const prisma = { dashboardStatisticsSnapshot: { update } } as unknown as PrismaClient;
+	await expect(
+		failDashboardRefresh(prisma, "owner", "fingerprint", "token", new Date(), "timeout"),
+	).rejects.toBe(error);
+	expect(update).toHaveBeenCalledTimes(1);
 });

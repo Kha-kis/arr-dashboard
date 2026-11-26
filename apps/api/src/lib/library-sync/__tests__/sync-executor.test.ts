@@ -975,6 +975,65 @@ describe("syncInstance", () => {
 	// --- Item removal detection ---------------------------------------------
 
 	describe("Stale item removal", () => {
+		it.each([undefined, 0, "not-an-id", "42-trailing", -1, 1.25, 2147483648])(
+			"preserves prior cache when the provider row lacks an authoritative identity (%s)",
+			async (id) => {
+				const { deps, instance, mockPrisma } = setupSync(
+					"SONARR",
+					[makeRawItem({ id })],
+					[{ id: "cache-1", arrItemId: 42, itemType: "series", hasFile: true, data: null }],
+				);
+
+				const result = await syncInstance(deps, instance);
+
+				expect(result.success).toBe(false);
+				expect(result.itemsRemoved).toBe(0);
+				expect(result.itemsAdded).toBe(0);
+				expect(result.itemsUpdated).toBe(0);
+				expect(mockPrisma.libraryCache.deleteMany).not.toHaveBeenCalled();
+			},
+		);
+
+		it("keeps committed positive records and skips pruning on a late invalid identity", async () => {
+			const expected = Array.from({ length: 100 }, (_, index) => makeRawItem({ id: index + 1 }));
+			const { deps, instance, mockPrisma } = setupSync(
+				"SONARR",
+				[...expected, makeRawItem({ id: undefined })],
+				[
+					{ id: "cache-kept", arrItemId: 42, itemType: "series", hasFile: true, data: null },
+					{ id: "cache-unseen", arrItemId: 1000, itemType: "series", hasFile: true, data: null },
+				],
+			);
+
+			const result = await syncInstance(deps, instance);
+
+			expect(result.success).toBe(false);
+			expect(result.itemsProcessed).toBe(100);
+			expect(result.itemsAdded).toBe(99);
+			expect(result.itemsUpdated).toBe(1);
+			expect(result.itemsRemoved).toBe(0);
+			expect(mockPrisma.libraryCache.deleteMany).not.toHaveBeenCalled();
+		});
+
+		it("retains compatible numeric string identity for a complete inventory", async () => {
+			const { deps, instance, mockPrisma } = setupSync(
+				"SONARR",
+				[makeRawItem({ id: "42" })],
+				[
+					{ id: "cache-1", arrItemId: 42, itemType: "series", hasFile: true, data: null },
+					{ id: "cache-2", arrItemId: 99, itemType: "series", hasFile: true, data: null },
+				],
+			);
+
+			const result = await syncInstance(deps, instance);
+
+			expect(result.success).toBe(true);
+			expect(result.itemsUpdated).toBe(1);
+			expect(mockPrisma.libraryCache.deleteMany).toHaveBeenCalledWith({
+				where: { id: { in: ["cache-2"] } },
+			});
+		});
+
 		it("removes items in cache that are not in the ARR response", async () => {
 			const rawItems = [makeRawItem({ id: 1 })];
 			const existingItems = [
