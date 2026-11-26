@@ -34,6 +34,7 @@ vi.mock("../../lib/services/tag-manager.js", () => ({
 	updateInstanceTags: (...args: unknown[]) => mockUpdateInstanceTags(...args),
 }));
 
+import { Prisma } from "../../lib/prisma.js";
 import Fastify from "fastify";
 import { registerServiceRoutes } from "../services.js";
 import {
@@ -95,8 +96,52 @@ let app: ReturnType<typeof Fastify>;
 let mockPrisma: any;
 let injectAuthenticated: ReturnType<typeof createInjectAuthenticated>;
 
+function createCleanupLeaseMock() {
+	let row: {
+		id: string;
+		userId: string;
+		runClaimToken: string | null;
+		runClaimedAt: Date | null;
+	} | null = null;
+	return {
+		findUnique: vi.fn(async ({ where }: any) => (row?.userId === where.userId ? { ...row } : null)),
+		create: vi.fn(async ({ data }: any) => {
+			row = {
+				id: "cleanup-config-1",
+				userId: data.userId,
+				runClaimToken: null,
+				runClaimedAt: null,
+			};
+			return { ...row };
+		}),
+		update: vi.fn(async ({ where, data }: any) => {
+			const available = where.OR?.some((condition: any) => {
+				if ("runClaimToken" in condition) return row?.runClaimToken === null;
+				if ("runClaimedAt" in condition && condition.runClaimedAt === null)
+					return row?.runClaimedAt === null;
+				if (condition.runClaimedAt?.lt instanceof Date)
+					return row?.runClaimedAt instanceof Date && row.runClaimedAt < condition.runClaimedAt.lt;
+				return false;
+			});
+			const matches =
+				row?.id === where.id &&
+				row?.userId === where.userId &&
+				(where.OR ? available : row?.runClaimToken === where.runClaimToken);
+			if (!matches || !row) {
+				throw new Prisma.PrismaClientKnownRequestError("Synthetic cleanup lease not found", {
+					code: "P2025",
+					clientVersion: "test",
+				});
+			}
+			Object.assign(row, data);
+			return { id: row.id };
+		}),
+	};
+}
+
 beforeEach(async () => {
 	vi.clearAllMocks();
+	const cleanupLease = createCleanupLeaseMock();
 
 	mockPrisma = {
 		$executeRaw: vi.fn().mockResolvedValue(1),
@@ -110,11 +155,7 @@ beforeEach(async () => {
 			callback(mockPrisma),
 		),
 		labelSyncMutationAttempt: { findMany: vi.fn().mockResolvedValue([]) },
-		libraryCleanupConfig: {
-			findUnique: vi.fn().mockResolvedValue(null),
-			create: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
-			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
-		},
+		libraryCleanupConfig: cleanupLease,
 		serviceInstance: {
 			findMany: vi
 				.fn()
