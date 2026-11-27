@@ -14,6 +14,7 @@ import {
 import { createArrServiceFingerprint } from "../../arr/service-fingerprint.js";
 import { SessionService } from "../../auth/session.js";
 import { createEpisodeFileInventoryReceipt } from "../../library-sync/episode-file-coverage.js";
+import { invalidateTorrentListCache } from "../../qui/torrent-list-cache.js";
 import { createRuntimeSessionMetadataPrismaClient } from "../restore-runtime-client.js";
 
 // Only external filesystem/provider work is synthetic. Session signing,
@@ -47,6 +48,11 @@ vi.mock("../../library-sync/infohash-backfill-by-inode.js", () => ({
 }));
 vi.mock("../../qui/client-factory.js", () => ({
 	createQuiClient: () => ({
+		// These synthetic files each have one current, verified torrent association.
+		listTorrentInventory: async () => ({
+			torrents: [...new Set(external.paths)].map((hash) => ({ hash, instanceId: 1 })),
+			complete: true,
+		}),
 		getTorrentByHash: async () => ({ instanceId: 1 }),
 		getTrackers: async () => {
 			external.trackerReads++;
@@ -55,7 +61,6 @@ vi.mock("../../qui/client-factory.js", () => ({
 		},
 	}),
 }));
-vi.mock("../../qui/torrent-list-cache.js", () => ({ getCachedAllTorrents: async () => [] }));
 
 afterEach(closeScopedWriteFixtures);
 
@@ -122,6 +127,7 @@ async function seedItems(f: ScopedWriteFixture, items: Item[]) {
 }
 
 async function createApp(f: ScopedWriteFixture) {
+	invalidateTorrentListCache();
 	external.paths = [];
 	external.trackerReads = 0;
 	external.arrReads = 0;
