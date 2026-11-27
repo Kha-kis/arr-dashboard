@@ -741,7 +741,7 @@ describe("executeQueueCleaner — integration", () => {
 				stalledEnabled: false,
 				lastSeedProtection: true,
 				removeFromClient: false,
-				blocklistOnRemove: true,
+				addToBlocklist: true,
 			});
 			const preview = await executeEnhancedPreview(app, instance, config);
 			const dry = await executeQueueCleaner(app, instance, { ...config, dryRunMode: true });
