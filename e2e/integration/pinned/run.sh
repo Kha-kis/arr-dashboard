@@ -1,5 +1,7 @@
 #!/bin/sh
 set -eu
+# This lane is noninteractive and must leave the caller's input untouched.
+exec </dev/null
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 # No caller-supplied project override: every run gets a fresh 96-bit name.
 COMPOSE_PROJECT_NAME=e2e-pinned-$(date -u +%Y%m%d%H%M%S)-$(openssl rand -hex 12)
