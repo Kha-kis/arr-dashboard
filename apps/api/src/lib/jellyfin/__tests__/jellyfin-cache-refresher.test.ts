@@ -1852,6 +1852,51 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 		},
 	);
 
+	it.each(["matching", "conflicting"] as const)(
+		"checks %s parent links for the same Resume season across users",
+		async (caseType) => {
+			const first = makeSeriesItem({ id: "parent-first", tmdbId: 100 });
+			const second = makeSeriesItem({ id: "parent-second", tmdbId: 101 });
+			const unaffected = makeSeriesItem({ id: "unrelated-series", tmdbId: 102 });
+			const client = makeMockClient([first, second, unaffected]);
+			vi.mocked(client.getUsers).mockResolvedValue([
+				{ id: "user-1", name: "User One" },
+				{ id: "user-2", name: "User Two" },
+			]);
+			const conflict = caseType === "conflicting";
+			const season = makeSeriesItem({ id: "season-shared", type: "Season", seriesId: first.id });
+			vi.mocked(client.getResumeItems)
+				.mockResolvedValueOnce([season])
+				.mockResolvedValueOnce([
+					{ ...season, seriesId: conflict ? second.id : first.id },
+					unaffected,
+				]);
+
+			const result = await collectJellyfinCacheLiveEvidence(client, "inst-1", silentLog);
+			expect(result).toMatchObject({ complete: !conflict, errors: 0 });
+			expect(result.snapshot?.rows).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({ jellyfinId: first.id, onDeck: !conflict }),
+					expect.objectContaining({ jellyfinId: second.id, onDeck: false }),
+					expect.objectContaining({ jellyfinId: unaffected.id, onDeck: true }),
+				]),
+			);
+			expect(result.receipt).toMatchObject({
+				domains: expect.arrayContaining([
+					expect.objectContaining({
+						domain: "on-deck",
+						evidence: conflict ? "positive-only" : "complete",
+						valueSemantics: conflict ? "lower-bound" : "exact",
+						units: [
+							expect.objectContaining({ sourceBindings: conflict ? 0 : 1 }),
+							expect.objectContaining({ sourceBindings: conflict ? 1 : 2 }),
+						],
+					}),
+				]),
+			});
+		},
+	);
+
 	it("keeps mapped rows with two users and unsupported Resume seasons", async () => {
 		const movies = Array.from({ length: 862 }, (_, id) =>
 			makeMovieItem({ id: `movie-${id}`, tmdbId: id + 1 }),
