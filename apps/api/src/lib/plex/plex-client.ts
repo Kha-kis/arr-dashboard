@@ -141,6 +141,8 @@ export interface PlexHistoryItem {
 	ratingKey: string;
 	parentRatingKey?: string;
 	grandparentRatingKey?: string;
+	/** True only for a blank direct show ID recovered from a canonical same-level key. */
+	grandparentKeyFallback?: true;
 	title: string;
 	grandparentTitle?: string;
 	type: string; // "movie" | "episode" | "track"
@@ -313,6 +315,11 @@ function extractRatingKey(path: string | undefined): string | undefined {
 	if (!path) return undefined;
 	const match = path.match(/\/library\/metadata\/(\d+)/);
 	return match?.[1];
+}
+
+/** A history grandparent path may stand in for a blank direct show ID only in this exact form. */
+function canonicalHistoryShowId(path: string | undefined): string | undefined {
+	return path?.match(/^\/library\/metadata\/([1-9]\d*)$/)?.[1];
 }
 
 export type PlexReadPhase =
@@ -1110,11 +1117,19 @@ export class PlexClient {
 					throw new Error("Plex history returned a duplicate row while paging");
 				}
 				if (item.historyKey) seenHistoryRows.add(item.historyKey);
+				const canonicalShowId =
+					item.type === "episode" ? canonicalHistoryShowId(item.grandparentKey) : undefined;
+				const directShowId = item.grandparentRatingKey;
+				const blankDirectShowId = directShowId !== undefined && directShowId.trim() === "";
+				const useCanonicalShowId = blankDirectShowId && canonicalShowId !== undefined;
 				allItems.push({
 					historyKey: item.historyKey,
 					ratingKey: item.ratingKey,
 					parentRatingKey: item.parentRatingKey ?? extractRatingKey(item.parentKey),
-					grandparentRatingKey: item.grandparentRatingKey ?? extractRatingKey(item.grandparentKey),
+					grandparentRatingKey: useCanonicalShowId
+						? canonicalShowId
+						: (directShowId ?? extractRatingKey(item.grandparentKey)),
+					...(useCanonicalShowId ? { grandparentKeyFallback: true as const } : {}),
 					title: item.title,
 					grandparentTitle: item.grandparentTitle,
 					type: item.type,
@@ -1146,6 +1161,7 @@ export class PlexClient {
 						item.ratingKey,
 						item.parentRatingKey ?? null,
 						item.grandparentRatingKey ?? null,
+						item.grandparentKeyFallback === true,
 						item.type,
 						item.viewedAt,
 						item.accountID,

@@ -27,8 +27,8 @@ import { createQuiClient } from "../../lib/qui/client-factory.js";
 import { getDiscoveryAvailability, runDiscoveryBatch } from "../../lib/qui/cross-seed-discovery.js";
 import { listQuiInstances } from "../../lib/qui/instance-helpers.js";
 import {
-	getCachedAllTorrents,
 	getTorrentListObservation,
+	TORRENT_LIST_CACHE_TTL_MS,
 } from "../../lib/qui/torrent-list-cache.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";
@@ -784,7 +784,7 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 		{
 			status: "available" | "partial";
 			summaries: Record<string, LibrarySeedingSummaryEntry>;
-			builtAt: number;
+			validUntil: number;
 		}
 	>();
 	// A partial summary is retried every minute. Reuse successful, recently
@@ -1036,11 +1036,7 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 			}
 		}
 		const cached = librarySummaryCache.get(cacheKey);
-		if (
-			cached &&
-			Date.now() - cached.builtAt <
-				(cached.status === "available" ? LIBRARY_SUMMARY_TTL_MS : LIBRARY_PARTIAL_SUMMARY_TTL_MS)
-		) {
+		if (cached && Date.now() < cached.validUntil) {
 			return reply.send({ status: cached.status, summaries: cached.summaries });
 		}
 		const summaryStartedAt = Date.now();
@@ -1304,8 +1300,10 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 			ownedCollection.authority === cacheKey &&
 			collections.get(collectionSlot) === ownedCollection;
 		let oldestObservationAt = Date.now();
+		let inventoryValidUntil = Number.POSITIVE_INFINITY;
 		for (const { quiInstance, itemHashes, allHashes } of scopes) {
-			// Resolve per-hash tracker hostnames. Originally this loop made TWO
+			// Resolve tracker hosts for each verified hash and native instance pair.
+			// Originally this loop made TWO
 			// qui round-trips per hash: `getTorrentByHash` purely to look up
 			// which qBit instance hosts that hash (so `getTrackers` knows which
 			// instance to query), then `getTrackers` itself. With the SWR cache
@@ -1323,7 +1321,7 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 			// Budget elapsed work monotonically; wall-clock changes must not alter this allowance.
 			const trackerEvidenceStartedAt = performance.now();
 			const trackerDeadlineAt = trackerEvidenceStartedAt + trackerBudgetRemainingMs;
-			const hashToHosts = new Map<string, string[]>();
+			const hashToHosts = new Map<string, Set<string>>();
 			try {
 				const client = createQuiClient(app, quiInstance);
 				if (!ownsCollection() || performance.now() >= trackerDeadlineAt) {
@@ -1331,10 +1329,10 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 					coverageComplete = false;
 					break;
 				}
-				let hashToInstance: Map<string, number>;
+				const instancesByHash = new Map<string, Set<number>>();
 				try {
 					const listResult = await awaitWithinDeadline(
-						observeRead(getCachedAllTorrents(quiInstance.id, client)),
+						observeRead(getTorrentListObservation(quiInstance.id, client)),
 						trackerDeadlineAt,
 					);
 					if (!listResult.settled) {
@@ -1342,14 +1340,27 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 						coverageComplete = false;
 						break;
 					}
-					const cachedTorrents = listResult.value;
-					hashToInstance = new Map(
-						cachedTorrents
-							.filter(
-								(t): t is typeof t & { instanceId: number } => typeof t.instanceId === "number",
-							)
-							.map((t) => [t.hash.toLowerCase(), t.instanceId]),
-					);
+					const observation = listResult.value;
+					if (observation.availability === "current" && observation.complete) {
+						inventoryValidUntil = Math.min(
+							inventoryValidUntil,
+							observation.fetchedAtMs + TORRENT_LIST_CACHE_TTL_MS,
+						);
+					} else {
+						coverageComplete = false;
+					}
+					if (observation.availability === "unavailable" && observation.failure)
+						throw observation.failure;
+					for (const torrent of observation.torrents) {
+						if (typeof torrent.instanceId !== "number") continue;
+						const key = torrent.hash.toLowerCase();
+						let instances = instancesByHash.get(key);
+						if (!instances) {
+							instances = new Set();
+							instancesByHash.set(key, instances);
+						}
+						instances.add(torrent.instanceId);
+					}
 				} catch (err) {
 					// Individual lookups may still recover positive hosts, but without
 					// the complete torrent list the result cannot be exact.
@@ -1358,33 +1369,41 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 						{ err, quiInstanceId: quiInstance.id },
 						"qui library-seeding-summary: torrent-list cache fetch failed; falling back to per-hash lookups",
 					);
-					hashToInstance = new Map();
+					instancesByHash.clear();
 				}
 
-				const outcomeKey = (hash: string) =>
-					JSON.stringify([
-						quiInstance.id,
-						hash.toLowerCase(),
-						hashToInstance.get(hash.toLowerCase()) ?? null,
-					]);
-				const hashArr = Array.from(allHashes).filter(
-					(hash) => !ownedCollection.outcomes.has(outcomeKey(hash)),
+				const outcomeKey = (hash: string, instanceId: number | null) =>
+					JSON.stringify([quiInstance.id, hash.toLowerCase(), instanceId]);
+				const targets: Array<{ hash: string; instanceId: number | null }> = [];
+				for (const hash of allHashes) {
+					const instances = instancesByHash.get(hash.toLowerCase());
+					if (instances) {
+						for (const instanceId of instances) targets.push({ hash, instanceId });
+					} else {
+						// A single lookup can add positive evidence but cannot
+						// establish every association that might use this hash.
+						coverageComplete = false;
+						targets.push({ hash, instanceId: null });
+					}
+				}
+				const pendingTargets = targets.filter(
+					({ hash, instanceId }) => !ownedCollection.outcomes.has(outcomeKey(hash, instanceId)),
 				);
 				const partialBeforeTrackerFetch = !coverageComplete;
 				// Concurrency cap: qui can typically handle ~50 parallel requests
 				// but we stay conservative at 32 to leave headroom for the
 				// existing cluster endpoint that's running for any open panel.
 				const CONCURRENCY = 32;
-				for (let i = 0; i < hashArr.length; i += CONCURRENCY) {
+				for (let i = 0; i < pendingTargets.length; i += CONCURRENCY) {
 					if (!ownsCollection() || performance.now() >= trackerDeadlineAt) {
 						trackerEvidencePending = true;
 						coverageComplete = false;
 						break;
 					}
-					const batch = hashArr.slice(i, i + CONCURRENCY);
+					const batch = pendingTargets.slice(i, i + CONCURRENCY);
 					const batchWork = Promise.all(
-						batch.map((hash) => {
-							const key = outcomeKey(hash);
+						batch.map(({ hash, instanceId: knownInstanceId }) => {
+							const key = outcomeKey(hash, knownInstanceId);
 							if (ownedCollection.outcomes.has(key)) return Promise.resolve();
 							const pending = ownedCollection.pending.get(key);
 							if (pending) return pending;
@@ -1399,8 +1418,8 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 										// Look up which qBit instance hosts this hash. The cache
 										// covers the common case in zero round-trips; cache miss
 										// falls back to the original cross-instance search.
-										let instanceId = hashToInstance.get(hash.toLowerCase());
-										if (instanceId === undefined) {
+										let instanceId = knownInstanceId;
+										if (instanceId === null) {
 											const torrent = await client.getTorrentByHash(hash);
 											if (!torrent || typeof torrent.instanceId !== "number") {
 												if (ownsCollection())
@@ -1442,7 +1461,7 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 										if (ownsCollection())
 											ownedCollection.outcomes.set(key, {
 												hosts: trackerEvidence.hosts,
-												exact: trackerEvidence.freshForRequest,
+												exact: knownInstanceId !== null && trackerEvidence.freshForRequest,
 												observedAt,
 											});
 									} catch (err) {
@@ -1451,7 +1470,7 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 										// `debug` rather than `warn` because this can fire
 										// dozens of times per page; the aggregate "all hashes
 										// failed" case would still be visible via the empty
-										// `hashToInstance` warn above.
+										// `instancesByHash` warn above.
 										request.log.debug(
 											{ err, hash },
 											"qui library-seeding-summary: tracker fetch failed for hash",
@@ -1475,8 +1494,8 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 						break;
 					}
 				}
-				for (const hash of allHashes) {
-					const outcome = ownedCollection.outcomes.get(outcomeKey(hash));
+				for (const { hash, instanceId } of targets) {
+					const outcome = ownedCollection.outcomes.get(outcomeKey(hash, instanceId));
 					if (!outcome) {
 						trackerEvidencePending = true;
 						coverageComplete = false;
@@ -1485,7 +1504,12 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 					oldestObservationAt = Math.min(oldestObservationAt, outcome.observedAt);
 					if (!outcome.exact || Date.now() - outcome.observedAt >= LIBRARY_SUMMARY_TTL_MS)
 						coverageComplete = false;
-					hashToHosts.set(hash, outcome.hosts);
+					let hosts = hashToHosts.get(hash);
+					if (!hosts) {
+						hosts = new Set();
+						hashToHosts.set(hash, hosts);
+					}
+					for (const host of outcome.hosts) hosts.add(host);
 				}
 			} finally {
 				const elapsed = performance.now() - trackerEvidenceStartedAt;
@@ -1518,6 +1542,7 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 		}
 
 		if (ownedCollection.invalidated || admissionClosed) trackerEvidencePending = true;
+		if (Date.now() >= inventoryValidUntil) coverageComplete = false;
 		const status = trackerEvidencePending ? "building" : coverageComplete ? "available" : "partial";
 		request.log.info(
 			{
@@ -1534,7 +1559,11 @@ export function registerLibraryRoutes(app: FastifyInstance): void {
 			"qui library-seeding-summary: aggregate phase timing",
 		);
 		if (status !== "building" && ownsCollection()) {
-			librarySummaryCache.set(cacheKey, { status, summaries, builtAt: oldestObservationAt });
+			const validUntil =
+				status === "available"
+					? Math.min(inventoryValidUntil, oldestObservationAt + LIBRARY_SUMMARY_TTL_MS)
+					: oldestObservationAt + LIBRARY_PARTIAL_SUMMARY_TTL_MS;
+			librarySummaryCache.set(cacheKey, { status, summaries, validUntil });
 			collections.delete(collectionSlot);
 		}
 		return reply.send({ status, summaries });
