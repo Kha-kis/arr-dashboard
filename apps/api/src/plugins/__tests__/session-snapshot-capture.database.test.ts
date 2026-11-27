@@ -7,12 +7,12 @@ import Fastify, { type FastifyInstance } from "fastify";
 import fp from "fastify-plugin";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestPrismaClient } from "../../lib/__tests__/test-prisma.js";
-import { synchronizeSqliteRuntimeSchema } from "../../lib/backup/runtime-schema-sqlite.js";
+import { Encryptor } from "../../lib/auth/encryption.js";
 import {
 	registerRestoreBootstrapPlugin,
 	registerRestoreRuntimeActivation,
 } from "../../lib/backup/restore-runtime-bootstrap.js";
-import { Encryptor } from "../../lib/auth/encryption.js";
+import { synchronizeSqliteRuntimeSchema } from "../../lib/backup/runtime-schema-sqlite.js";
 import { JellyfinClient, type JellyfinSession } from "../../lib/jellyfin/jellyfin-client.js";
 import { PlexClient, type PlexSessionItem } from "../../lib/plex/plex-client.js";
 import type { PrismaClient, ServiceType } from "../../lib/prisma.js";
@@ -156,6 +156,7 @@ async function boot(
 	let prisma = createTestPrismaClient(dbPath);
 	const app = Fastify({ logger: false });
 	const warnings = vi.spyOn(app.log, "warn");
+	const information = vi.spyOn(app.log, "info");
 	let db = new Database(dbPath);
 	chmodSync(dbPath, 0o600);
 	const resource = { directory, prisma, app, db };
@@ -295,7 +296,7 @@ async function boot(
 			)
 		).filter((row) => !before.has(row.id));
 	}
-	return { app, prisma, db, legacy, modes, reads, tautulli, tick, warnings, run };
+	return { app, prisma, db, legacy, modes, reads, tautulli, tick, warnings, information, run };
 }
 
 beforeEach(() => {
@@ -318,6 +319,114 @@ afterEach(async () => {
 });
 
 describe("actual SessionSnapshot scheduler persistence on populated disposable SQLite", () => {
+	it("reports a conservative new-device pause once and clears it only after a complete rebuild", async () => {
+		const plex = [plexSessions()[1]!];
+		const fixture = await boot(plex, [jellyfinSessions()[1]!]);
+		const notify = vi.spyOn(fixture.app.notificationService, "notify");
+		const pauses = () =>
+			fixture.warnings.mock.calls.filter(
+				([, message]) => message === "New-device alerts paused while session history is incomplete",
+			);
+		const resumes = () =>
+			fixture.information.mock.calls.filter(
+				([, message]) => message === "New-device alerts resumed after session history verification",
+			);
+		const noveltyEvents = () =>
+			notify.mock.calls
+				.map(([event]) => event.eventType)
+				.filter((type) => type === "PLEX_NEW_DEVICE" || type === "JELLYFIN_NEW_DEVICE");
+
+		expect(await fixture.tick()).toHaveLength(4);
+		expect(pauses()).toEqual([
+			[
+				{ reason: "history-incomplete", observedAt: "2026-10-05T00:00:00.000Z" },
+				"New-device alerts paused while session history is incomplete",
+			],
+		]);
+		expect(noveltyEvents()).toEqual([]);
+
+		vi.setSystemTime(new Date("2026-10-05T00:05:00Z"));
+		expect(await fixture.tick()).toHaveLength(4);
+		vi.setSystemTime(new Date("2026-10-05T06:00:01Z"));
+		expect(await fixture.tick()).toHaveLength(4);
+		expect(pauses()).toHaveLength(1);
+		expect(resumes()).toHaveLength(0);
+
+		await fixture.run(() =>
+			fixture.prisma.sessionSnapshot.update({
+				where: { id: fixture.legacy.id },
+				data: { sessionsJson: JSON.stringify([{ platform: "Retained synthetic platform" }]) },
+			}),
+		);
+		vi.setSystemTime(new Date("2026-10-05T06:05:01Z"));
+		await fixture.tick();
+		expect(resumes()).toHaveLength(0);
+
+		const readServiceInstances = vi.spyOn(fixture.prisma.serviceInstance, "findMany");
+		readServiceInstances.mockRejectedValueOnce(new Error("Synthetic history read failure"));
+		vi.setSystemTime(new Date("2026-10-05T12:00:02Z"));
+		expect(await fixture.tick()).toHaveLength(4);
+		expect(pauses()).toHaveLength(2);
+		expect(pauses()[1]).toEqual([
+			{ reason: "history-read-failed", observedAt: "2026-10-05T12:00:02.000Z" },
+			"New-device alerts paused while session history is incomplete",
+		]);
+		expect(resumes()).toHaveLength(0);
+		expect(noveltyEvents()).toEqual([]);
+
+		readServiceInstances.mockRejectedValueOnce(
+			new Error("Repeated synthetic history read failure"),
+		);
+		vi.setSystemTime(new Date("2026-10-05T12:05:02Z"));
+		expect(await fixture.tick()).toHaveLength(4);
+		expect(pauses()).toHaveLength(2);
+		expect(resumes()).toHaveLength(0);
+
+		plex[0] = {
+			...plex[0]!,
+			player: { ...plex[0]!.player!, platform: "New synthetic platform" },
+		};
+		vi.setSystemTime(new Date("2026-10-05T12:10:02Z"));
+		expect(await fixture.tick()).toHaveLength(4);
+		expect(resumes()).toEqual([
+			[
+				{ observedAt: "2026-10-05T12:10:02.000Z" },
+				"New-device alerts resumed after session history verification",
+			],
+		]);
+		expect(noveltyEvents()).toEqual(["PLEX_NEW_DEVICE"]);
+		vi.setSystemTime(new Date("2026-10-05T12:15:02Z"));
+		await fixture.tick();
+		expect(pauses()).toHaveLength(2);
+		expect(resumes()).toHaveLength(1);
+		expect(noveltyEvents()).toEqual(["PLEX_NEW_DEVICE"]);
+	}, 60_000);
+	it("identifies an exhausted scan budget without claiming novelty or availability", async () => {
+		const fixture = await boot([plexSessions()[1]!], [jellyfinSessions()[1]!]);
+		await fixture.run(() =>
+			fixture.prisma.sessionSnapshot.createMany({
+				data: Array.from({ length: 10_000 }, (_, index) => ({
+					id: `synthetic-cap-${String(index).padStart(5, "0")}`,
+					instanceId: "plex-a",
+					concurrentStreams: 1,
+					totalBandwidth: 0,
+					sessionsJson: JSON.stringify([{ platform: "Retained synthetic platform" }]),
+				})),
+			}),
+		);
+		const notify = vi.spyOn(fixture.app.notificationService, "notify");
+
+		expect(await fixture.tick()).toHaveLength(4);
+		expect(fixture.warnings).toHaveBeenCalledWith(
+			{ reason: "history-scan-limit", observedAt: "2026-10-05T00:00:00.000Z" },
+			"New-device alerts paused while session history is incomplete",
+		);
+		expect(notify.mock.calls.map(([event]) => event.eventType)).not.toContain("PLEX_NEW_DEVICE");
+		expect(notify.mock.calls.map(([event]) => event.eventType)).not.toContain(
+			"JELLYFIN_NEW_DEVICE",
+		);
+		expect(await fixture.run(() => fixture.prisma.sessionSnapshot.count())).toBe(10_005);
+	}, 60_000);
 	it("retains original rows and separates reused actor IDs after persisted source replacement", async () => {
 		const fixture = await boot([plexSessions()[1]!], [jellyfinSessions()[1]!]);
 		const original = await fixture.tick();
