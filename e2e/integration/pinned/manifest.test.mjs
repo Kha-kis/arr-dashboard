@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import { selectPlatformManifestDigest, verifyRegistryIdentity } from "./manifest-verify.mjs";
 const manifest = JSON.parse(readFileSync(new URL("./images.json", import.meta.url)));
 test("providers are immutable and AMD64 identities are recorded", () => {
   assert.equal(manifest.platform, "linux/amd64");
@@ -18,4 +19,20 @@ test("providers are immutable and AMD64 identities are recorded", () => {
 });
 test("scenario requires real provider assertions", () => {
   assert.deepEqual(manifest.scenario.assertions, ["health-endpoint-200", "public-system-info-version-10.11.11"]);
+});
+
+const fakeDigest = (char) => `sha256:${char.repeat(64)}`;
+test("AMD64 manifest selection rejects ambiguity and declaration drift", () => {
+  const expected = {
+    manifestDigest: fakeDigest("a"),
+    referenceDigest: fakeDigest("a"),
+    selectedPlatformManifestDigest: fakeDigest("b"),
+    configDigest: fakeDigest("c"),
+  };
+  const descriptor = { digest: fakeDigest("b"), platform: { os: "linux", architecture: "amd64" } };
+  const indexRaw = JSON.stringify({ manifests: [descriptor, { digest: fakeDigest("d"), platform: { os: "linux", architecture: "arm64" } }] });
+  assert.equal(selectPlatformManifestDigest(indexRaw, expected), expected.selectedPlatformManifestDigest);
+  assert.throws(() => selectPlatformManifestDigest(JSON.stringify({ manifests: [descriptor, descriptor] }), expected), /exactly one/);
+  assert.throws(() => selectPlatformManifestDigest(indexRaw, { ...expected, selectedPlatformManifestDigest: fakeDigest("e") }), /manifest digest mismatch/);
+  assert.throws(() => verifyRegistryIdentity({ indexRaw, childRaw: JSON.stringify({ config: { digest: fakeDigest("f") } }), expected }), /config digest mismatch/);
 });
