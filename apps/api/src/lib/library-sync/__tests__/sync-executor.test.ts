@@ -382,6 +382,25 @@ describe("syncInstance", () => {
 		);
 	});
 
+	it("treats malformed old movie data as an unknown file fingerprint", async () => {
+		const raw = makeRawItem({
+			hasFile: true,
+			path: "/synthetic",
+			movieFile: { relativePath: "current.mkv", size: 1 },
+		});
+		const { deps, instance, mockPrisma } = setupSync(
+			"RADARR",
+			[raw],
+			[{ id: "cache-1", arrItemId: 1, itemType: "movie", hasFile: true, data: "{" }],
+		);
+
+		const result = await syncInstance(deps, instance);
+		expect(result.success).toBe(true);
+		expect(mockPrisma._txUpdates[0]?.data).toEqual(
+			expect.objectContaining({ infoHash: null, pathBackfillRetryAfter: null }),
+		);
+	});
+
 	it("keeps a deferred movie miss deferred when Radarr reports the same file", async () => {
 		const raw = makeRawItem({
 			hasFile: true,
