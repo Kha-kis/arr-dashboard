@@ -142,11 +142,19 @@ export function extractMovieFingerprint(rawData: string): MovieFileFingerprint |
 	};
 }
 
+/** Compare a pre-extracted old fingerprint without retaining its full cache JSON. */
+export function movieCorrelationFingerprintChanged(
+	previous: ReturnType<typeof extractMovieFingerprint>,
+	current: string,
+): boolean {
+	return JSON.stringify(previous) !== JSON.stringify(extractMovieFingerprint(current));
+}
+
 /** An ARR file replacement invalidates both a deferred miss and an old hash. */
 export function movieCorrelationInputChanged(previous: string | null, current: string): boolean {
-	return (
-		JSON.stringify(previous ? extractMovieFingerprint(previous) : null) !==
-		JSON.stringify(extractMovieFingerprint(current))
+	return movieCorrelationFingerprintChanged(
+		previous ? extractMovieFingerprint(previous) : null,
+		current,
 	);
 }
 

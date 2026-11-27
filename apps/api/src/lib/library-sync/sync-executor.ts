@@ -20,7 +20,10 @@ import { toNumber } from "../library/type-converters.js";
 import { arrPolicyEvidenceFromRaw } from "../library-cleanup/arr-policy-evidence.js";
 import { withSqliteTransactionWriteIntent } from "../sqlite-transaction-intent.js";
 import { getErrorMessage } from "../utils/error-message.js";
-import { movieCorrelationInputChanged } from "./infohash-backfill-by-path.js";
+import {
+	extractMovieFingerprint,
+	movieCorrelationFingerprintChanged,
+} from "./infohash-backfill-by-path.js";
 
 // ============================================================================
 // Types
@@ -363,7 +366,17 @@ export async function syncInstance(
 		// AND the deletion-id list at end of sync, so we collect the minimal
 		// fields for both passes here.
 		const SYNC_QUERY_BATCH_SIZE = 500;
-		const existingMap = new Map<string, { id: string; hasFile: boolean; data: string | null }>();
+		// Parse the old JSON while each cursor page is in scope. Retain only the
+		// metadata needed for tag deltas and movie-file correlation.
+		const existingMap = new Map<
+			string,
+			{
+				id: string;
+				hasFile: boolean;
+				oldTags?: number[];
+				movieFingerprint?: ReturnType<typeof extractMovieFingerprint>;
+			}
+		>();
 		// Mirrors `existingItems` from the prior shape — the post-sync
 		// deletion pass at the bottom of this function reads
 		// (id, arrItemId, itemType) to compute the stale-row diff.
@@ -386,10 +399,14 @@ export async function syncInstance(
 				});
 				if (batch.length === 0) break;
 				for (const item of batch) {
+					const oldData = "data" in item ? ((item as { data: string | null }).data ?? null) : null;
 					existingMap.set(`${item.arrItemId}-${item.itemType}`, {
 						id: item.id,
 						hasFile: item.hasFile,
-						data: "data" in item ? ((item as { data: string | null }).data ?? null) : null,
+						...(tagDeltaService ? { oldTags: parseTagsFromCacheData(oldData) } : {}),
+						...(instance.service === "RADARR"
+							? { movieFingerprint: oldData ? extractMovieFingerprint(oldData) : null }
+							: {}),
 					});
 					existingForDeletion.push({
 						id: item.id,
@@ -464,7 +481,10 @@ export async function syncInstance(
 							if (
 								service === "radarr" &&
 								item.type === "movie" &&
-								movieCorrelationInputChanged(existing.data, serializedItem)
+								movieCorrelationFingerprintChanged(
+									existing.movieFingerprint ?? null,
+									serializedItem,
+								)
 							) {
 								updateData.infoHash = null;
 								updateData.infoHashSource = null;
@@ -485,7 +505,7 @@ export async function syncInstance(
 							}
 
 							if (tagIdToName.size > 0) {
-								const oldTags = parseTagsFromCacheData(existing.data);
+								const oldTags = existing.oldTags ?? [];
 								const newTags = coerceTagIds((item.tags as unknown) ?? []);
 								const { added, removed } = diffTags(oldTags, newTags);
 								if (added.length > 0 || removed.length > 0) {
