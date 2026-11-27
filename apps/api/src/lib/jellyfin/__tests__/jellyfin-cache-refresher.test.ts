@@ -25,6 +25,7 @@ import type {
 import {
 	encodeJellyfinLibraryGenerationMetadata,
 	fingerprintJellyfinLibraryRows,
+	hasAuthoritativeJellyfinLibraryReceipt,
 } from "../jellyfin-generation-metadata.js";
 
 const publication = vi.hoisted(() => ({ client: undefined as JellyfinClient | undefined }));
@@ -1716,6 +1717,140 @@ describe("refreshJellyfinCache — lastWatchedAt aggregation", () => {
 			]),
 		);
 	});
+
+	it("accounts for a Jellyfin Resume season only through its current series parent", async () => {
+		const series = makeSeriesItem({ id: "season-parent", played: true, playCount: 2 });
+		const otherSeries = makeSeriesItem({ id: "other-series", tmdbId: 1234 });
+		const movie = makeMovieItem({ id: "current-movie" });
+		const client = makeMockClient([series, otherSeries, movie]);
+		vi.mocked(client.getResumeItems).mockResolvedValue([
+			makeSeriesItem({ id: "resume-season", type: "Season", seriesId: series.id }),
+			movie,
+		]);
+		vi.mocked(client.getNextUp).mockResolvedValue([
+			makeSeriesItem({ id: "next-episode", type: "Episode", seriesId: otherSeries.id }),
+		]);
+
+		const result = await collectJellyfinCacheLiveEvidence(client, "inst-1", silentLog);
+
+		expect(result).toMatchObject({ complete: true, errors: 0, errorMessages: [] });
+		expect(result.snapshot?.rows).toHaveLength(3);
+		expect(result.snapshot?.rows).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ jellyfinId: series.id, onDeck: true, watchCount: 2 }),
+				expect.objectContaining({ jellyfinId: otherSeries.id, onDeck: true }),
+				expect.objectContaining({ jellyfinId: movie.id, onDeck: true }),
+			]),
+		);
+		expect(result.receipt).toMatchObject({
+			evidence: "complete",
+			domains: expect.arrayContaining([
+				expect.objectContaining({
+					domain: "on-deck",
+					evidence: "complete",
+					valueSemantics: "exact",
+					units: [
+						expect.objectContaining({
+							rawObserved: 3,
+							sourceBindings: 3,
+							canonicalEntities: 3,
+							acceptedSkips: [],
+						}),
+					],
+				}),
+				expect.objectContaining({ domain: "watch-count", evidence: "positive-only" }),
+			]),
+		});
+		expect(result.receipt && hasAuthoritativeJellyfinLibraryReceipt(result.receipt)).toBe(true);
+		// Exact library and on-deck evidence does not make watch counts exact.
+		expect(evaluateProviderCoverageReceipt(result.receipt)).toMatchObject({
+			valid: true,
+			complete: false,
+			publishedCanonicalEntities: 3,
+		});
+	});
+
+	it.each([
+		{
+			name: "missing",
+			itemId: "resume-season",
+			seriesId: undefined,
+			provider: "jellyfin",
+			reason: "missing-stable-key",
+		},
+		{
+			name: "blank",
+			itemId: "resume-season",
+			seriesId: " ",
+			provider: "jellyfin",
+			reason: "missing-stable-key",
+		},
+		{
+			name: "foreign",
+			itemId: "resume-season",
+			seriesId: "unknown-series",
+			provider: "jellyfin",
+			reason: "missing-supported-mapping",
+		},
+		{
+			name: "movie",
+			itemId: "resume-season",
+			seriesId: "current-movie",
+			provider: "jellyfin",
+			reason: "missing-supported-mapping",
+		},
+		{
+			name: "Emby",
+			itemId: "resume-season",
+			seriesId: "current-series",
+			provider: "emby",
+			reason: "unsupported-provider-object",
+		},
+		{
+			name: "blank season identity",
+			itemId: " ",
+			seriesId: "current-series",
+			provider: "jellyfin",
+			reason: "missing-stable-key",
+		},
+		{
+			name: "colliding season identity",
+			itemId: "current-series",
+			seriesId: "current-series",
+			provider: "jellyfin",
+			reason: "missing-supported-mapping",
+		},
+	] as const)(
+		"keeps unresolved or unsupported $name Resume season partial",
+		async ({ itemId, seriesId, provider, reason }) => {
+			const client = makeMockClient([
+				makeSeriesItem({ id: "current-series" }),
+				makeMovieItem({ id: "current-movie" }),
+			]);
+			vi.mocked(client.getResumeItems).mockResolvedValue([
+				makeSeriesItem({ type: "Season", id: itemId, seriesId }),
+			]);
+
+			const result = await collectJellyfinCacheLiveEvidence(client, "inst-1", silentLog, {
+				provider,
+			});
+
+			expect(result).toMatchObject({ complete: false, errors: 0 });
+			expect(result.snapshot?.rows).toHaveLength(2);
+			expect(result.snapshot?.rows.every((row) => !row.onDeck)).toBe(true);
+			expect(result.receipt?.evidence).toBe("positive-only");
+			expect(result.receipt?.units).toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						scopeKey: "user:user-1/on-deck",
+						rawObserved: 1,
+						sourceBindings: 0,
+						acceptedSkips: [{ reason, count: 1 }],
+					}),
+				]),
+			);
+		},
+	);
 
 	it("keeps mapped rows with two users and unsupported Resume seasons", async () => {
 		const movies = Array.from({ length: 862 }, (_, id) =>

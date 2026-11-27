@@ -941,21 +941,30 @@ export async function collectJellyfinCacheLiveEvidence(
 				const onDeckCanonicalKeys = new Set<string>();
 				for (const item of [...resumeItems, ...nextUp]) {
 					onDeckUnit.rawObserved++;
-					if (item.type !== "Movie" && item.type !== "Series" && item.type !== "Episode") {
+					const jellyfinSeason = provider === "jellyfin" && item.type === "Season";
+					if (
+						!jellyfinSeason &&
+						item.type !== "Movie" &&
+						item.type !== "Series" &&
+						item.type !== "Episode"
+					) {
 						complete = false;
 						addCoverageSkip(onDeckUnit, "unsupported-provider-object");
 						continue;
 					}
 					const jellyfinId =
 						item.type === "Movie" || item.type === "Series" ? item.id : item.seriesId;
-					if (!jellyfinId?.trim()) {
+					if (!jellyfinId?.trim() || (jellyfinSeason && !item.id.trim())) {
 						complete = false;
 						addCoverageSkip(onDeckUnit, "missing-stable-key");
 						continue;
 					}
 					let matched = false;
 					for (const agg of aggregations.values()) {
-						if (agg.sourceIds.has(jellyfinId)) {
+						if (
+							agg.sourceIds.has(jellyfinId) &&
+							(!jellyfinSeason || (agg.mediaType === "series" && !sourceIdentity.has(item.id)))
+						) {
 							agg.onDeck = true;
 							matched = true;
 							onDeckUnit.sourceBindings++;

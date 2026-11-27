@@ -16,6 +16,7 @@ import {
 	validateOwnedJellyfinLibraryDisplaySnapshot,
 } from "../jellyfin-evidence-repository.js";
 import {
+	decodeJellyfinLibraryGenerationMetadata,
 	encodeJellyfinEpisodeGenerationMetadata,
 	encodeJellyfinLibraryGenerationMetadata,
 	fingerprintJellyfinEpisodeRows,
@@ -729,6 +730,65 @@ describe("readOwnedJellyfinObservation", () => {
 				]),
 			},
 		});
+	});
+
+	it("does not grant cleanup authority from exact on-deck evidence with lower-bound watch counts", async () => {
+		const instance = makeInstance();
+		const rows = [libraryRow()];
+		const decoded = decodeJellyfinLibraryGenerationMetadata(
+			v2PositiveOnlyLibraryMetadata(instance, rows),
+		);
+		if (!decoded.ok || decoded.metadata.coverageReceipt.version !== 2) {
+			throw new Error("Expected a V2 coverage fixture");
+		}
+		const receipt = decoded.metadata.coverageReceipt;
+		const completeUnit = {
+			...receipt.units[0]!,
+			expectedRawCount: 1,
+			rawObserved: 1,
+			sourceBindings: 1,
+			canonicalEntities: 1,
+		};
+		const metadata = encodeJellyfinLibraryGenerationMetadata({
+			...decoded.metadata,
+			publicationLevel: "authoritative",
+			completeness: "complete",
+			coverageReceipt: {
+				...receipt,
+				evidence: "complete",
+				units: [completeUnit],
+				domains: receipt.domains.map((domain) =>
+					domain.domain === "watch-count" || domain.domain === "watch-attribution"
+						? domain
+						: {
+								...domain,
+								evidence: "complete",
+								valueSemantics: "exact",
+								units: [{ ...completeUnit, scopeKey: domain.units[0]!.scopeKey }],
+							},
+				),
+			},
+		});
+		const input = {
+			prisma: makePrisma({
+				instance,
+				statuses: { jellyfin: status("jellyfin", metadata, rows.length) },
+				rows,
+			}).prisma,
+			userId: "user-1",
+			instanceId: "jellyfin-1",
+			cacheType: "jellyfin" as const,
+			now,
+		};
+
+		const display = await readOwnedJellyfinObservation({ ...input, mode: "display" });
+		expect(display).toMatchObject({
+			available: true,
+			rows,
+			providerStatus: { availability: "partial" },
+		});
+		const cleanup = await readOwnedJellyfinObservation({ ...input, mode: "mutation" });
+		expect(cleanup).toMatchObject({ mutationAvailable: false, rows: [] });
 	});
 
 	it.each(["JELLYFIN", "EMBY"] as const)(
