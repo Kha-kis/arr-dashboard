@@ -20,7 +20,8 @@
 		"db:push": "prisma db push --schema prisma/schema.prisma",
 		"db:sync": "prisma db push --schema prisma/schema.prisma --skip-generate",
 		"reset-admin-password": "node --import dotenv/config dist/reset-admin-password.js",
-		"reset-oidc": "tsx scripts/reset-oidc.ts"
+		"reset-oidc": "tsx scripts/reset-oidc.ts",
+		"test:properties": "vitest run --config vitest.properties.config.ts"
 	},
 	"dependencies": {
 		"@arr/shared": "workspace:*",
@@ -57,6 +58,7 @@
 		"@types/nodemailer": "^8.0.1",
 		"@types/pg": "^8.20.0",
 		"@types/web-push": "^3.6.4",
+		"fast-check": "3.23.2",
 		"tsup": "^8.5.1",
 		"tsx": "^4.23.1",
 		"typescript": "^6.0.3",
