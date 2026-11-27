@@ -47,6 +47,8 @@ const NEW_DEVICE_LOOKBACK_DAYS = 30;
 const MAX_IDLE_EXCLUSION_SCOPES = 24;
 const MAX_HISTORICAL_IDLE_RECEIPTS = 24;
 
+type HistoryPauseReason = "history-incomplete" | "history-scan-limit" | "history-read-failed";
+
 function notificationDeviceLabel(platform: unknown, fallback?: unknown): string | undefined {
 	const primary = typeof platform === "string" ? platform.trim() : "";
 	return primary || (typeof fallback === "string" ? fallback.trim() || undefined : undefined);
@@ -103,6 +105,7 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 		let platformRebuild: Promise<PlatformBaseline> | null = null;
 		let observedDuringRebuild: Set<string> | null = null;
 		let platformCacheBuiltAt = 0;
+		let reportedHistoryPause: HistoryPauseReason | undefined;
 		const PLATFORM_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // Rebuild every 6 hours
 
 		/** Resolve history before either provider can persist the current tick. */
@@ -119,6 +122,7 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 			platformRebuild = (async () => {
 				const platforms = new Set<string>();
 				let complete = true;
+				let pauseReason: HistoryPauseReason | undefined;
 				try {
 					const platformCutoff = new Date(
 						Date.now() - NEW_DEVICE_LOOKBACK_DAYS * 24 * 60 * 60 * 1000,
@@ -256,6 +260,9 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 						cursor = batch[batch.length - 1]!.id;
 					}
 					complete &&= exhausted;
+					if (!complete) {
+						pauseReason = exhausted ? "history-incomplete" : "history-scan-limit";
+					}
 					if (parseFailures > 0)
 						app.log.warn(
 							{ parseFailures },
@@ -264,6 +271,7 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 					platformCacheBuiltAt = Date.now();
 				} catch (err) {
 					complete = false;
+					pauseReason = "history-read-failed";
 					app.log.warn({ err }, "Session snapshot: failed to rebuild known-platforms cache");
 				}
 				// Incomplete history retains positive knowledge, but cannot prove novelty.
@@ -271,6 +279,21 @@ const sessionSnapshotSchedulerPlugin = fastifyPlugin(
 				for (const platform of observed) platforms.add(platform);
 				baseline.platforms = platforms;
 				baseline.complete = complete;
+				if (!admissionClosed && pauseReason !== reportedHistoryPause) {
+					const observedAt = new Date().toISOString();
+					if (pauseReason) {
+						app.log.warn(
+							{ reason: pauseReason, observedAt },
+							"New-device alerts paused while session history is incomplete",
+						);
+					} else {
+						app.log.info(
+							{ observedAt },
+							"New-device alerts resumed after session history verification",
+						);
+					}
+					reportedHistoryPause = pauseReason;
+				}
 				return baseline;
 			})();
 			try {
