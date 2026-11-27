@@ -124,6 +124,15 @@ describe("streamLibraryItems", () => {
 		expect(items[2]).toMatchObject({ id: 3, title: "C" });
 	});
 
+	it("rejects a non-array JSON root before yielding cache candidates", async () => {
+		const factory = makeFactory(
+			streamingResponse(['{"item":{"id":99,"title":"not an inventory"}}']),
+		);
+		const iterator = streamLibraryItems(factory, makeMockInstance("SONARR"), makeMockLog());
+
+		await expect(iterator.next()).rejects.toThrow(/top-level JSON array/);
+	});
+
 	it("parses correctly when chunks split mid-object", async () => {
 		const body = JSON.stringify([
 			{ id: 1, name: "Artist One" },
@@ -195,19 +204,18 @@ describe("streamLibraryItems", () => {
 		);
 	});
 
-	it("skips non-object top-level values (defensive — primitives in an array)", async () => {
-		// Real *arr endpoints never return mixed arrays, but be defensive: we
-		// only emit Records, not numbers/strings/nulls. This guards against a
-		// future endpoint shape change yielding garbage.
-		const body = JSON.stringify([{ id: 1, title: "A" }, 42, "skip me", null]);
-		const factory = makeFactory(streamingResponse([body]));
-		const items = await collect(
-			streamLibraryItems(factory, makeMockInstance("LIDARR"), makeMockLog()),
-		);
+	it.each([42, "skip me", null, [{ id: 2, title: "nested" }]])(
+		"rejects a malformed direct array entry before yielding candidates (%s)",
+		async (invalidEntry) => {
+			const body = JSON.stringify([{ id: 1, title: "A" }, invalidEntry]);
+			const factory = makeFactory(streamingResponse([body]));
+			const iterator = streamLibraryItems(factory, makeMockInstance("LIDARR"), makeMockLog());
 
-		expect(items).toHaveLength(1);
-		expect(items[0]).toMatchObject({ id: 1, title: "A" });
-	});
+			await expect(iterator.next()).rejects.toThrow(
+				/expected an object in the top-level JSON array/,
+			);
+		},
+	);
 
 	it("yields nothing for an empty array without error", async () => {
 		const factory = makeFactory(streamingResponse(["[]"]));

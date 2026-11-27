@@ -21,7 +21,7 @@
  * the buffer-then-parse pattern is fine.
  */
 
-import { JSONParser } from "@streamparser/json";
+import { JSONParser, TokenType } from "@streamparser/json";
 import type { FastifyBaseLogger } from "fastify";
 
 import type { ServiceInstance } from "../../lib/prisma.js";
@@ -108,14 +108,30 @@ export async function* streamLibraryItems(
 	const queue: Array<Record<string, unknown>> = [];
 	let parserError: Error | null = null;
 	let itemCount = 0;
+	let rootTokenSeen = false;
+
+	// ARR bulk-list responses are top-level arrays. Check the first tokenizer
+	// token to reject other roots without buffering the response, including an
+	// empty object that would otherwise look like an empty inventory.
+	parser.onToken = ({ token }) => {
+		if (rootTokenSeen) return;
+		rootTokenSeen = true;
+		if (token !== TokenType.LEFT_BRACKET) {
+			parserError = new Error("streamLibraryItems: expected a top-level JSON array");
+		}
+	};
 
 	parser.onValue = ({ value }) => {
-		// Skip primitives. The endpoints return arrays-of-objects; a primitive
-		// at the top level would be malformed input.
+		// Every direct array member must be a record. Skipping a malformed
+		// member could make a partial inventory look complete to the cache
+		// pruner. Let already committed batches stand, but fail the stream so
+		// the sync cannot prune unseen rows.
 		if (value !== null && typeof value === "object" && !Array.isArray(value)) {
 			queue.push(value as Record<string, unknown>);
 			itemCount++;
+			return;
 		}
+		parserError = new Error("streamLibraryItems: expected an object in the top-level JSON array");
 	};
 	parser.onError = (err) => {
 		parserError = err;
