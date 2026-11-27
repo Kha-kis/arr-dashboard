@@ -1,27 +1,27 @@
 {
-  "schemaVersion": 1,
-  "platform": "linux/amd64",
-  "images": {
-    "lidarr": {
-      "reference": "linuxserver/lidarr@sha256:c4285344c994b34e1ae7db8d57c1702dcfe88b8e10c98a0cdf0f74aba8b58b9c",
-      "version": "3.1.6.5079-ls50",
-      "upstreamVersion": "3.1.6.5079",
-      "buildVersionLabel": "Linuxserver.io version:- 3.1.6.5079-ls50 Build-date:- 2026-11-25T09:52:29+00:00",
-      "manifestDigest": "sha256:c4285344c994b34e1ae7db8d57c1702dcfe88b8e10c98a0cdf0f74aba8b58b9c",
-      "selectedPlatformManifestDigest": "sha256:019985f4289fcd04d830febac4120c4849be7787e8539ec5f1a38d101dbe5434",
-      "configDigest": "sha256:4d45a5a7a6cef67ee1ffd779074a715a621782762d0b858f24fac616582e603d"
-    },
-    "jellyfin": {
-      "reference": "jellyfin/jellyfin@sha256:0b901391a662862eddb5dc55d244d7883cbb6236ef5b9a6ea82abc78a89819f0",
-      "version": "10.11.11",
-      "manifestDigest": "sha256:0b901391a662862eddb5dc55d244d7883cbb6236ef5b9a6ea82abc78a89819f0",
-      "selectedPlatformManifestDigest": "sha256:0b901391a662862eddb5dc55d244d7883cbb6236ef5b9a6ea82abc78a89819f0",
-      "configDigest": "sha256:d57d4a0c18b3e51b913bd2f8f0f122eb7c7150ea37bb0e352df9cb329de11d24"
-    }
-  },
-  "scenario": {
-    "name": "jellyfin-public-info-and-health",
-    "assertions": ["health-endpoint-200", "public-system-info-version-10.11.11"],
-    "meaning": "Provider startup and identity only; dashboard compatibility is covered by the Jellyfin authority live matrix."
-  }
+	"schemaVersion": 1,
+	"platform": "linux/amd64",
+	"images": {
+		"lidarr": {
+			"reference": "linuxserver/lidarr@sha256:c4285344c994b34e1ae7db8d57c1702dcfe88b8e10c98a0cdf0f74aba8b58b9c",
+			"version": "3.1.6.5079-ls50",
+			"upstreamVersion": "3.1.6.5079",
+			"buildVersionLabel": "Linuxserver.io version:- 3.1.6.5079-ls50 Build-date:- 2026-11-25T09:52:29+00:00",
+			"manifestDigest": "sha256:c4285344c994b34e1ae7db8d57c1702dcfe88b8e10c98a0cdf0f74aba8b58b9c",
+			"selectedPlatformManifestDigest": "sha256:019985f4289fcd04d830febac4120c4849be7787e8539ec5f1a38d101dbe5434",
+			"configDigest": "sha256:4d45a5a7a6cef67ee1ffd779074a715a621782762d0b858f24fac616582e603d"
+		},
+		"jellyfin": {
+			"reference": "jellyfin/jellyfin@sha256:0b901391a662862eddb5dc55d244d7883cbb6236ef5b9a6ea82abc78a89819f0",
+			"version": "10.11.11",
+			"manifestDigest": "sha256:0b901391a662862eddb5dc55d244d7883cbb6236ef5b9a6ea82abc78a89819f0",
+			"selectedPlatformManifestDigest": "sha256:0b901391a662862eddb5dc55d244d7883cbb6236ef5b9a6ea82abc78a89819f0",
+			"configDigest": "sha256:d57d4a0c18b3e51b913bd2f8f0f122eb7c7150ea37bb0e352df9cb329de11d24"
+		}
+	},
+	"scenario": {
+		"name": "jellyfin-public-info-and-health",
+		"assertions": ["health-endpoint-200", "public-system-info-version-10.11.11"],
+		"meaning": "Provider startup and identity only; dashboard compatibility is covered by the Jellyfin authority live matrix."
+	}
 }

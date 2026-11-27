@@ -14,12 +14,24 @@ export function selectPlatformManifestDigest(indexRaw, expected, platform = "lin
 		);
 		assert.equal(matches.length, 1, "expected exactly one descriptor for target platform");
 		selected = matches[0];
-		assert.equal(selected.digest, expected.selectedPlatformManifestDigest, "platform manifest digest mismatch");
+		assert.equal(
+			selected.digest,
+			expected.selectedPlatformManifestDigest,
+			"platform manifest digest mismatch",
+		);
 	} else {
-		assert.equal(expected.manifestDigest, expected.selectedPlatformManifestDigest, "single manifest must be its selected platform manifest");
+		assert.equal(
+			expected.manifestDigest,
+			expected.selectedPlatformManifestDigest,
+			"single manifest must be its selected platform manifest",
+		);
 		selected = { digest: expected.selectedPlatformManifestDigest };
 	}
-	assert.equal(expected.manifestDigest, expected.referenceDigest, "top-level reference digest mismatch");
+	assert.equal(
+		expected.manifestDigest,
+		expected.referenceDigest,
+		"top-level reference digest mismatch",
+	);
 	return selected.digest;
 }
 
