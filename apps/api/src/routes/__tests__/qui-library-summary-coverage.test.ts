@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
 	buildIndex: vi.fn(),
 	getHashes: vi.fn(),
 	getCachedTorrents: vi.fn(),
+	getObservation: vi.fn(),
 	getTrackers: vi.fn(),
 	createClient: vi.fn(),
 }));
@@ -23,6 +24,8 @@ vi.mock("../../lib/library-sync/infohash-backfill-by-inode.js", () => ({
 }));
 vi.mock("../../lib/qui/torrent-list-cache.js", () => ({
 	getCachedAllTorrents: mocks.getCachedTorrents,
+	getTorrentListObservation: mocks.getObservation,
+	TORRENT_LIST_CACHE_TTL_MS: 5 * 60_000,
 }));
 vi.mock("../../lib/qui/client-factory.js", () => ({
 	createQuiClient: (...args: unknown[]) => mocks.createClient(...args),
@@ -70,6 +73,12 @@ beforeEach(async () => {
 		correlationComplete: true,
 	});
 	mocks.getCachedTorrents.mockResolvedValue([{ hash: "synthetic-hash", instanceId: 3 }]);
+	mocks.getObservation.mockImplementation(async () => ({
+		availability: "current",
+		torrents: await mocks.getCachedTorrents(),
+		complete: true,
+		fetchedAtMs: Date.now(),
+	}));
 	mocks.getTrackers.mockResolvedValue([{ url: "https://tracker.invalid/announce" }]);
 	movieRow = vi.fn().mockResolvedValue({
 		data: JSON.stringify({ path: "/synthetic", movieFile: { relativePath: "file" } }),
@@ -182,6 +191,75 @@ async function boundedPoll(requestedItem: typeof item | typeof seriesItem = item
 }
 
 describe("qUI Library tracker summary coverage", () => {
+	it("unions tracker hosts for the same verified hash across qBittorrent instances", async () => {
+		mocks.getCachedTorrents.mockResolvedValue([
+			{ hash: "synthetic-hash", instanceId: 3 },
+			{ hash: "synthetic-hash", instanceId: 7 },
+		]);
+		mocks.getTrackers.mockImplementation(async (instanceId: number) =>
+			instanceId === 3
+				? [{ url: "https://alpha.invalid/announce" }]
+				: [{ url: "https://beta.invalid/announce" }],
+		);
+		const response = await summary();
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toMatchObject({
+			status: "available",
+			summaries: {
+				"arr-1|movie:1": {
+					trackerCount: 2,
+					topHosts: ["alpha.invalid", "beta.invalid"],
+					hashCount: 1,
+				},
+			},
+		});
+		expect(mocks.getTrackers).toHaveBeenCalledTimes(2);
+	});
+
+	it.each([
+		["current", false],
+		["last-known", true],
+	] as const)(
+		"keeps %s inventory with completeness %s as partial evidence",
+		async (availability, complete) => {
+			mocks.getObservation.mockResolvedValue({
+				availability,
+				torrents: [{ hash: "synthetic-hash", instanceId: 3 }],
+				complete,
+				fetchedAtMs: Date.now(),
+			});
+			expect((await summary()).json()).toMatchObject({
+				status: "partial",
+				summaries: { "arr-1|movie:1": { trackerCount: 1, hashCount: 1 } },
+			});
+		},
+	);
+
+	it("does not reuse exact counts after the underlying inventory expires", async () => {
+		const sampledAt = Date.now();
+		let now = sampledAt;
+		const clock = vi.spyOn(Date, "now").mockImplementation(() => now);
+		const positive = {
+			torrents: [{ hash: "synthetic-hash", instanceId: 3 }],
+			complete: true,
+			fetchedAtMs: sampledAt,
+		};
+		try {
+			mocks.getObservation
+				.mockResolvedValueOnce({ ...positive, availability: "current" })
+				.mockResolvedValueOnce({ ...positive, availability: "last-known" });
+			expect((await summary()).json()).toMatchObject({ status: "available" });
+			now += 5 * 60_000 + 1;
+			expect((await summary()).json()).toMatchObject({
+				status: "partial",
+				summaries: { "arr-1|movie:1": { trackerCount: 1 } },
+			});
+			expect(mocks.getObservation).toHaveBeenCalledTimes(2);
+		} finally {
+			clock.mockRestore();
+		}
+	});
+
 	it("does not let an older handler adopt a newer generation's collection after file awaits", async () => {
 		vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout", "performance"] });
 		const evidence = {
