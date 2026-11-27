@@ -230,7 +230,12 @@ async function boot(options: FixtureOptions = {}) {
 		const update = prisma.session.update.bind(prisma.session);
 		const writes: { update: AwaitOnly<typeof prisma.session.update> } = prisma.session;
 		vi.spyOn(writes, "update").mockImplementation((args) => {
-			expect(args).toEqual({ where: { id: hash }, data: { lastAccessedAt: expect.any(Date) } });
+			expect(args).toEqual({
+				where: { id: hash, lastAccessedAt: { lt: expect.any(Date) } },
+				data: { lastAccessedAt: expect.any(Date) },
+				select: { id: true },
+			});
+			expect(args.where).toMatchObject({ lastAccessedAt: { lt: args.data.lastAccessedAt } });
 			return query("metadata", options.metadata?.[state.calls.metadata], () => update(args));
 		});
 	}
@@ -556,30 +561,26 @@ describe("session validation shutdown", () => {
 		await fixture.assertPersisted({ metadata: false });
 	});
 
-	it("drains both concurrent metadata updates across duplicate closes", async () => {
+	it("drains one coalesced concurrent metadata update across duplicate closes", async () => {
 		const first = deferred();
-		const second = deferred();
-		releases.push(first.resolve, second.resolve);
-		const fixture = await boot({ metadata: [first.promise, second.promise] });
+		releases.push(first.resolve);
+		const fixture = await boot({ metadata: [first.promise] });
 		const responses = await Promise.all([
 			fixture.app.inject({ url: "/synthetic", headers: { cookie: fixture.cookie } }),
 			fixture.app.inject({ url: "/synthetic", headers: { cookie: fixture.cookie } }),
 		]);
 		expect(responses.map((response) => response.statusCode)).toEqual([200, 200]);
-		expect(await waitForNative(() => fixture.state.pending === 2)).toBe(true);
-		expect(fixture.state.pending).toBe(2);
+		expect(await waitForNative(() => fixture.state.pending === 1)).toBe(true);
+		expect(fixture.state.pending).toBe(1);
 		const close = fixture.app.close();
 		const duplicateClose = fixture.app.close();
 		try {
 			await fixture.closing;
-			first.resolve();
-			expect(await waitForNative(() => fixture.state.pending === 1)).toBe(true);
 			await fixture.checkpoint();
 			expect(fixture.state.teardownCount).toBe(0);
 			expect(fixture.state.pending).toBe(1);
 		} finally {
 			first.resolve();
-			second.resolve();
 			await Promise.all([close, duplicateClose]);
 		}
 		expect(fixture.state.teardownCount).toBe(1);
