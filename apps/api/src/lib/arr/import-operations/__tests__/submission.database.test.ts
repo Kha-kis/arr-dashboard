@@ -16,6 +16,7 @@ import {
 } from "../../../queue-cleaner/import-receipt.js";
 import { queueItemFingerprint } from "../../../queue-cleaner/queue-observation.js";
 import { withImportConnectionWriteGuard } from "../connection-guards.js";
+import { submitTrackedQueueManualImport } from "../queue-submission.js";
 import { recordVerifiedImportFiles, releaseTerminalImportSources } from "../repository.js";
 import * as submission from "../submission.js";
 import { submitTrackedImport, type TrackedImportInput } from "../submission.js";
@@ -601,6 +602,57 @@ describe("automatic import uses the shared durable lifecycle", () => {
 			permit();
 		}
 	});
+});
+
+describe("Sonarr queue-based manual import", () => {
+	it.each([false, true])(
+		"keeps current queue identity before submission (changed=%s)",
+		async (changed) => {
+			const f = await fixture(services[0]);
+			if (!(f.client instanceof SonarrClient))
+				throw new Error("Expected a synthetic Sonarr client");
+			const item = {
+				id: 42,
+				downloadId: sources[0],
+				seriesId: 12,
+				episodeId: 13,
+				protocol: "usenet",
+				trackedDownloadState: "importPending",
+			};
+			const page = (seriesId: number) =>
+				({
+					page: 1,
+					pageSize: 1000,
+					totalRecords: 1,
+					records: [{ ...item, seriesId }],
+				}) as never;
+			const singleItem = vi
+				.spyOn(f.client.queue, "getById")
+				.mockRejectedValue(new Error("404 Not Found"));
+			const list = vi
+				.spyOn(f.client.queue, "get")
+				.mockResolvedValueOnce(page(12))
+				.mockResolvedValueOnce(page(12))
+				.mockResolvedValue(page(changed ? 99 : 12));
+
+			const result = submitTrackedQueueManualImport(f.context, {
+				userId: f.input.userId,
+				instanceId: f.input.instanceId,
+				service: "sonarr",
+				queueId: item.id,
+				downloadId: item.downloadId,
+			});
+			if (changed) {
+				await expect(result).rejects.toMatchObject({ statusCode: 409 });
+				expect(f.posts).not.toHaveBeenCalled();
+			} else {
+				await expect(result).resolves.toMatchObject({ commandId: 51 });
+				expect(f.posts).toHaveBeenCalledOnce();
+			}
+			expect(list).toHaveBeenCalledTimes(4);
+			expect(singleItem).not.toHaveBeenCalled();
+		},
+	);
 });
 
 describe("deliberate remaining-file admission", () => {
