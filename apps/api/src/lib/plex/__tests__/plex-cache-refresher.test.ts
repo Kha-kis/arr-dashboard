@@ -3640,3 +3640,210 @@ describe("collectPlexCacheLiveEvidence", () => {
 		});
 	});
 });
+
+it("keeps a corroborated blank episode show key as positive-only display evidence", async () => {
+	const client = receiptCollectionClient({
+		sections: [{ key: "7", title: "Shows", type: "show" }],
+		itemsBySection: {
+			"7": [{ ratingKey: "140", title: "Show", type: "show", Guid: [{ id: "tmdb://42" }] }],
+		},
+		history: [
+			{
+				historyKey: "/status/sessions/history/1",
+				ratingKey: "142",
+				grandparentRatingKey: "140",
+				grandparentKeyFallback: true,
+				librarySectionID: "7",
+				type: "episode",
+				title: "Episode",
+				viewedAt: 1_700_000_000,
+				accountID: 1,
+			},
+		],
+	});
+	const result = await collectPlexCacheLiveEvidence(client, "inst-1", silentLog);
+	expect(result.kind).toBe("positive-observation");
+	if (result.kind !== "positive-observation") return;
+	expect(result.observation.rows).toEqual([
+		expect.objectContaining({
+			ratingKey: "140",
+			mediaType: "series",
+			watchCount: 1,
+			watchedByUsers: '["Alice"]',
+		}),
+	]);
+	expect(
+		result.receipt.domains.find((domain) => domain.domain === "watch-attribution"),
+	).toMatchObject({
+		evidence: "positive-only",
+		valueSemantics: "lower-bound",
+	});
+	expect(result.observation.partialReasons).toContainEqual({
+		code: "historyItemsWithoutUsableMediaKey",
+		count: 1,
+	});
+	expect(result.observation.observedTargets).toEqual([
+		expect.objectContaining({ sectionId: "7", mediaType: "series", ratingKey: "140" }),
+	]);
+	expect(evaluateProviderCoverageReceipt(result.receipt)).toMatchObject({
+		valid: true,
+		complete: false,
+	});
+});
+
+it.each([
+	["different section", "8", "show", "140", 1],
+	["missing section", undefined, "show", "140", 1],
+	["movie ID", "7", "movie", "140", 1],
+	["removed show", "7", "show", "999", 1],
+	["unknown account", "7", "show", "140", 99],
+] as const)(
+	"does not attribute a canonical fallback with %s",
+	async (_reason, sectionId, type, currentRatingKey, accountID) => {
+		const client = receiptCollectionClient({
+			sections: [{ key: "7", title: "Library", type }],
+			itemsBySection: {
+				"7": [
+					{
+						ratingKey: currentRatingKey,
+						title: "Current",
+						type,
+						Guid: [{ id: "tmdb://42" }],
+					},
+				],
+			},
+			history: [
+				{
+					historyKey: "/status/sessions/history/1",
+					ratingKey: "142",
+					grandparentRatingKey: "140",
+					grandparentKeyFallback: true,
+					...(sectionId ? { librarySectionID: sectionId } : {}),
+					type: "episode",
+					title: "Episode",
+					viewedAt: 1_700_000_000,
+					accountID,
+				},
+			],
+		});
+		const result = await collectPlexCacheLiveEvidence(client, "inst-1", silentLog);
+		expect(result.kind).toBe("positive-observation");
+		if (result.kind !== "positive-observation") return;
+		expect(result.observation.rows).toEqual([
+			expect.objectContaining({
+				watchCount: 0,
+				watchedByUsers: "[]",
+			}),
+		]);
+		expect(
+			result.receipt.domains.find((domain) => domain.domain === "watch-attribution"),
+		).toMatchObject({
+			evidence: "unknown",
+			valueSemantics: "unknown",
+		});
+	},
+);
+
+it("withholds fallback attribution when the current show inventory changes on reread", async () => {
+	const show = { ratingKey: "140", title: "Show", type: "show", Guid: [{ id: "tmdb://42" }] };
+	const client = receiptCollectionClient({
+		sections: [{ key: "7", title: "Shows", type: "show" }],
+		itemsBySection: { "7": [show] },
+		history: [
+			{
+				historyKey: "/status/sessions/history/1",
+				ratingKey: "142",
+				grandparentRatingKey: "140",
+				grandparentKeyFallback: true,
+				librarySectionID: "7",
+				type: "episode",
+				title: "Episode",
+				viewedAt: 1_700_000_000,
+				accountID: 1,
+			},
+		],
+	});
+	vi.mocked(client.getLibraryItemsWithCoverage)
+		.mockResolvedValueOnce(completeCoverage([show]))
+		.mockResolvedValueOnce(completeCoverage([{ ...show, ratingKey: "143" }]));
+	const result = await collectPlexCacheLiveEvidence(client, "inst-1", silentLog);
+	expect(result.kind).toBe("unpublished");
+});
+
+it("grants the same positive-only replacement path before and after blank-key recovery", async () => {
+	const makeClient = (grandparentRatingKey: string, recovered: boolean) =>
+		receiptCollectionClient({
+			sections: [{ key: "7", title: "Shows", type: "show" }],
+			itemsBySection: {
+				"7": [{ ratingKey: "140", title: "Show", type: "show", Guid: [{ id: "tmdb://42" }] }],
+			},
+			history: [
+				{
+					historyKey: "/status/sessions/history/1",
+					ratingKey: "142",
+					grandparentRatingKey,
+					...(recovered ? { grandparentKeyFallback: true } : {}),
+					librarySectionID: "7",
+					type: "episode",
+					title: "Episode",
+					viewedAt: 1_700_000_000,
+					accountID: 1,
+				},
+			],
+		});
+	const baseline = await collectSettledPlexCacheLiveEvidence(
+		makeClient("", false),
+		"inst-1",
+		silentLog,
+	);
+	const candidate = await collectSettledPlexCacheLiveEvidence(
+		makeClient("140", true),
+		"inst-1",
+		silentLog,
+	);
+	expect(baseline.kind).toBe("positive-observation");
+	expect(candidate.kind).toBe("positive-observation");
+	if (baseline.kind !== "positive-observation" || candidate.kind !== "positive-observation") return;
+	expect(baseline.observation.partialReasons).toEqual(candidate.observation.partialReasons);
+	expect(baseline.observation.observedTargets).toEqual(candidate.observation.observedTargets);
+	expect(baseline.receipt.evidence).toBe("positive-only");
+	expect(candidate.receipt.evidence).toBe("positive-only");
+	expect(baseline.observation.rows).toEqual([
+		expect.objectContaining({ ratingKey: "140", watchCount: 0, watchedByUsers: "[]" }),
+	]);
+	expect(candidate.observation.rows).toEqual([
+		expect.objectContaining({ ratingKey: "140", watchCount: 1, watchedByUsers: '["Alice"]' }),
+	]);
+});
+
+it("keeps known Personal Media history outside the new blank-key fallback", async () => {
+	const client = receiptCollectionClient({
+		sections: [
+			{ key: "7", title: "Shows", type: "show" },
+			{ key: "personal", title: "Personal", type: "show", agent: "tv.plex.agents.none" },
+		],
+		itemsBySection: {
+			"7": [{ ratingKey: "140", title: "Show", type: "show", Guid: [{ id: "tmdb://42" }] }],
+			personal: [{ ratingKey: "personal-show", title: "Personal", type: "show", Guid: [] }],
+		},
+		history: [
+			{
+				historyKey: "/status/sessions/history/1",
+				ratingKey: "142",
+				grandparentRatingKey: "140",
+				grandparentKeyFallback: true,
+				librarySectionID: "personal",
+				type: "episode",
+				title: "Episode",
+				viewedAt: 1_700_000_000,
+				accountID: 1,
+			},
+		],
+	});
+	const result = await collectPlexCacheLiveEvidence(client, "inst-1", silentLog);
+	expect(result.kind).toBe("authoritative-snapshot");
+	if (result.kind !== "authoritative-snapshot") return;
+	expect(result.snapshot.rows).toEqual([
+		expect.objectContaining({ ratingKey: "140", watchCount: 0, watchedByUsers: "[]" }),
+	]);
+});
