@@ -155,8 +155,10 @@ async function automaticFixture(service: ServiceCase) {
 				records: [await queueRead()],
 			}) as never,
 	);
-	if (!(f.client instanceof LidarrClient))
+	if (f.client instanceof ReadarrClient)
 		vi.spyOn(f.client.queue, "getById").mockImplementation(queueRead);
+	else if (f.client instanceof SonarrClient || f.client instanceof RadarrClient)
+		vi.spyOn(f.client.queue, "getById").mockRejectedValue(new Error("Unsupported item GET"));
 	const instance = await prisma.serviceInstance.findFirstOrThrow({
 		where: { id: f.input.instanceId, userId: f.input.userId },
 	});
@@ -207,7 +209,7 @@ describe("automatic import uses the shared durable lifecycle", () => {
 			const f = await automaticFixture(services[1]);
 			let reads = 0;
 			f.queueRead.mockImplementation(async () => {
-				if (++reads === 1) return f.item;
+				if (++reads <= 2) return f.item;
 				return change === "queue-state"
 					? { ...f.item, trackedDownloadState: "downloading" }
 					: { ...f.item, statusMessages: [{ messages: ["password protected"] }] };
@@ -279,23 +281,26 @@ describe("automatic import uses the shared durable lifecycle", () => {
 		"retains a prepared source when %s changes before the submission marker",
 		async (change) => {
 			const f = await automaticFixture(services[1]);
-			f.queueRead.mockResolvedValueOnce(f.item).mockImplementation(async () => {
-				if (change === "auto-disabled")
-					await prisma.queueCleanerConfig.updateMany({
-						where: { id: f.config.id, instance: { userId: f.input.userId } },
-						data: { autoImportEnabled: false },
-					});
-				if (change === "config-dry-run")
-					await prisma.queueCleanerConfig.updateMany({
-						where: { id: f.config.id, instance: { userId: f.input.userId } },
-						data: { dryRunMode: true },
-					});
-				if (change === "counter-cleared")
-					await prisma.queueCleanerStrike.deleteMany({
-						where: { instanceId: f.input.instanceId, instance: { userId: f.input.userId } },
-					});
-				return f.item;
-			});
+			f.queueRead
+				.mockResolvedValueOnce(f.item)
+				.mockResolvedValueOnce(f.item)
+				.mockImplementationOnce(async () => {
+					if (change === "auto-disabled")
+						await prisma.queueCleanerConfig.updateMany({
+							where: { id: f.config.id, instance: { userId: f.input.userId } },
+							data: { autoImportEnabled: false },
+						});
+					if (change === "config-dry-run")
+						await prisma.queueCleanerConfig.updateMany({
+							where: { id: f.config.id, instance: { userId: f.input.userId } },
+							data: { dryRunMode: true },
+						});
+					if (change === "counter-cleared")
+						await prisma.queueCleanerStrike.deleteMany({
+							where: { instanceId: f.input.instanceId, instance: { userId: f.input.userId } },
+						});
+					return f.item;
+				});
 			try {
 				await expect(f.automatic()).rejects.toMatchObject({ statusCode: 409 });
 				expect(f.posts).not.toHaveBeenCalled();
@@ -402,26 +407,29 @@ describe("automatic import uses the shared durable lifecycle", () => {
 	);
 	it("refuses a late legacy receipt after preparing its own operation", async () => {
 		const f = await automaticFixture(services[1]);
-		f.queueRead.mockResolvedValueOnce(f.item).mockImplementation(async () => {
-			expect(
-				await prisma.arrImportOperation.count({
-					where: { userId: f.input.userId, state: "preparing" },
-				}),
-			).toBe(1);
-			await prisma.queueCleanerImportReceipt.create({
-				data: {
-					instanceId: f.input.instanceId,
-					downloadKey: queueDownloadKey(f.item)!,
-					queueId: 42,
-					downloadTitle: "Synthetic",
-					connectionFingerprint: f.automaticInput.connectionFingerprint,
-					commandFingerprint: `v1:${"b".repeat(64)}`,
-					state: "pending",
-					lastAttemptAt: new Date(),
-				},
+		f.queueRead
+			.mockResolvedValueOnce(f.item)
+			.mockResolvedValueOnce(f.item)
+			.mockImplementationOnce(async () => {
+				expect(
+					await prisma.arrImportOperation.count({
+						where: { userId: f.input.userId, state: "preparing" },
+					}),
+				).toBe(1);
+				await prisma.queueCleanerImportReceipt.create({
+					data: {
+						instanceId: f.input.instanceId,
+						downloadKey: queueDownloadKey(f.item)!,
+						queueId: 42,
+						downloadTitle: "Synthetic",
+						connectionFingerprint: f.automaticInput.connectionFingerprint,
+						commandFingerprint: `v1:${"b".repeat(64)}`,
+						state: "pending",
+						lastAttemptAt: new Date(),
+					},
+				});
+				return f.item;
 			});
-			return f.item;
-		});
 		try {
 			await expect(f.automatic()).rejects.toMatchObject({ statusCode: 409 });
 			expect(f.posts).not.toHaveBeenCalled();
@@ -576,7 +584,12 @@ describe("automatic import uses the shared durable lifecycle", () => {
 			protocol: "usenet",
 			trackedDownloadState: "importPending",
 		};
-		vi.spyOn(f.client.queue, "getById").mockResolvedValue(item as never);
+		vi.spyOn(f.client.queue, "get").mockResolvedValue({
+			page: 1,
+			pageSize: 1000,
+			totalRecords: 1,
+			records: [item],
+		} as never);
 		const permit = acquireQueueSourceAction(f.input.userId, item);
 		if (!permit) throw new Error("Expected a synthetic source permit");
 		try {
@@ -604,41 +617,55 @@ describe("automatic import uses the shared durable lifecycle", () => {
 	});
 });
 
-describe("Sonarr queue-based manual import", () => {
-	it.each([false, true])(
-		"keeps current queue identity before submission (changed=%s)",
-		async (changed) => {
-			const f = await fixture(services[0]);
-			if (!(f.client instanceof SonarrClient))
-				throw new Error("Expected a synthetic Sonarr client");
+describe("Sonarr and Radarr queue-based manual import", () => {
+	it.each([
+		{ provider: "Sonarr", service: services[0], changed: false },
+		{ provider: "Sonarr", service: services[0], changed: true },
+		{ provider: "Radarr", service: services[1], changed: false },
+		{ provider: "Radarr", service: services[1], changed: true },
+	] as const)(
+		"keeps current $provider queue identity before submission (changed=$changed)",
+		async ({ service, changed }) => {
+			const f = await fixture(service);
+			if (!(f.client instanceof SonarrClient || f.client instanceof RadarrClient))
+				throw new Error("Expected a synthetic Sonarr or Radarr client");
 			const item = {
 				id: 42,
 				downloadId: sources[0],
-				seriesId: 12,
-				episodeId: 13,
+				...service.media,
+				...(service.service === "sonarr" ? { episodeId: 13 } : {}),
 				protocol: "usenet",
 				trackedDownloadState: "importPending",
 			};
-			const page = (seriesId: number) =>
+			const page = (replaceTarget: boolean) =>
 				({
 					page: 1,
 					pageSize: 1000,
 					totalRecords: 1,
-					records: [{ ...item, seriesId }],
+					records: [
+						{
+							...item,
+							...(replaceTarget
+								? service.service === "sonarr"
+									? { seriesId: 99 }
+									: { movieId: 99 }
+								: {}),
+						},
+					],
 				}) as never;
 			const singleItem = vi
 				.spyOn(f.client.queue, "getById")
 				.mockRejectedValue(new Error("404 Not Found"));
 			const list = vi
 				.spyOn(f.client.queue, "get")
-				.mockResolvedValueOnce(page(12))
-				.mockResolvedValueOnce(page(12))
-				.mockResolvedValue(page(changed ? 99 : 12));
+				.mockResolvedValueOnce(page(false))
+				.mockResolvedValueOnce(page(false))
+				.mockResolvedValue(page(changed));
 
 			const result = submitTrackedQueueManualImport(f.context, {
 				userId: f.input.userId,
 				instanceId: f.input.instanceId,
-				service: "sonarr",
+				service: service.service,
 				queueId: item.id,
 				downloadId: item.downloadId,
 			});

@@ -946,19 +946,24 @@ describe("executeQueueCleaner — integration", () => {
 		expect(app.prisma.queueCleanerStrike.deleteMany).not.toHaveBeenCalled();
 	});
 
-	it("revalidates a Sonarr target using the supported queue list", async () => {
-		const del = vi.fn().mockResolvedValue(undefined);
-		const get = vi.fn().mockResolvedValue({ records: [STALLED_ITEM] });
-		const getById = vi.fn().mockRejectedValue(new Error("404 Not Found"));
-		const app = makeApp({ get, getById, del });
+	it.each(["SONARR", "RADARR"] as const)(
+		"revalidates a %s target using the supported queue list",
+		async (service) => {
+			const del = vi.fn().mockResolvedValue(undefined);
+			const get = vi.fn().mockResolvedValue({ records: [STALLED_ITEM] });
+			const getById = vi.fn().mockRejectedValue(new Error("404 Not Found"));
+			const app = makeApp({ get, getById, del });
+			const instance = makeInstance({ service });
+			vi.mocked(app.prisma.serviceInstance.findUnique).mockResolvedValue(instance);
 
-		const result = await executeQueueCleaner(app, makeInstance(), makeConfig());
+			const result = await executeQueueCleaner(app, instance, makeConfig());
 
-		expect(result.itemsCleaned).toBe(1);
-		expect(getById).not.toHaveBeenCalled();
-		expect(get).toHaveBeenCalledTimes(6);
-		expect(del).toHaveBeenCalledTimes(1);
-	});
+			expect(result.itemsCleaned).toBe(1);
+			expect(getById).not.toHaveBeenCalled();
+			expect(get).toHaveBeenCalledTimes(6);
+			expect(del).toHaveBeenCalledTimes(1);
+		},
+	);
 
 	it.each(["absent", "truncated", "duplicate", "changed"] as const)(
 		"defers Sonarr when the current target observation is %s",

@@ -132,7 +132,7 @@ export async function readCurrentQueueItem(
 	id: number,
 ): Promise<RawQueueItem | undefined> {
 	// These providers expose a complete queue list and no supported single-item GET.
-	if (service === "LIDARR" || service === "SONARR")
+	if (service === "LIDARR" || service === "SONARR" || service === "RADARR")
 		return (await readCompleteQueue(client, service)).find((item) => item.id === id);
 	const queue = client.queue as { getById(id: number): Promise<unknown> };
 	const item = parseItem(await queue.getById(id));
