@@ -9,26 +9,31 @@ PINNED_E2E_RUN_TOKEN=$(openssl rand -hex 32)
 export COMPOSE_PROJECT_NAME PINNED_E2E_RUN_TOKEN
 compose() { docker compose -p "$COMPOSE_PROJECT_NAME" -f "$HERE/compose.yml" "$@"; }
 
+list_project_resources() {
+  filter="label=com.docker.compose.project=$COMPOSE_PROJECT_NAME"
+  case "$1" in
+    container) docker ps -aq --filter "$filter" ;;
+    volume) docker volume ls -q --filter "$filter" ;;
+    network) docker network ls -q --filter "$filter" ;;
+  esac
+}
+
 assert_project_absent() {
   for kind in container volume network; do
-    case "$kind" in
-      container) ids=$(docker ps -aq --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME") ;;
-      volume) ids=$(docker volume ls -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME") ;;
-      network) ids=$(docker network ls -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME") ;;
-    esac
+    ids=$(list_project_resources "$kind") || return 1
     [ -z "$ids" ] || { echo "refusing pre-existing Compose project resources" >&2; return 1; }
   done
 }
 
 assert_owned_resources() {
   for kind in container volume network; do
+    ids=$(list_project_resources "$kind") || return 1
     case "$kind" in
-      container) ids=$(docker ps -aq --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME"); format='{{ index .Config.Labels "io.arr-dashboard.e2e.pinned.project" }}:{{ index .Config.Labels "io.arr-dashboard.e2e.pinned.run-token" }}' ;;
-      volume) ids=$(docker volume ls -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME"); format='{{ index .Labels "io.arr-dashboard.e2e.pinned.project" }}:{{ index .Labels "io.arr-dashboard.e2e.pinned.run-token" }}' ;;
-      network) ids=$(docker network ls -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME"); format='{{ index .Labels "io.arr-dashboard.e2e.pinned.project" }}:{{ index .Labels "io.arr-dashboard.e2e.pinned.run-token" }}' ;;
+      container) format='{{ index .Config.Labels "io.arr-dashboard.e2e.pinned.project" }}:{{ index .Config.Labels "io.arr-dashboard.e2e.pinned.run-token" }}' ;;
+      volume|network) format='{{ index .Labels "io.arr-dashboard.e2e.pinned.project" }}:{{ index .Labels "io.arr-dashboard.e2e.pinned.run-token" }}' ;;
     esac
     for id in $ids; do
-      identity=$(docker "$kind" inspect --format "$format" "$id")
+      identity=$(docker "$kind" inspect --format "$format" "$id") || return 1
       [ "$identity" = "$COMPOSE_PROJECT_NAME:$PINNED_E2E_RUN_TOKEN" ] || {
         echo "refusing cleanup because a project resource failed ownership verification" >&2
         return 1

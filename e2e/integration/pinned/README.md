@@ -11,9 +11,11 @@ the API key from the fixture's private config file and compares the app
 version without printing the key. Jellyfin `/System/Info/Public` reports
 `10.11.11`.
 
-Run `node --test e2e/integration/pinned/manifest.test.mjs` for offline
-manifest checks, including negative controls for duplicate AMD64 descriptors
-and digest/config mismatches. Run `sh e2e/integration/pinned/run.sh` for a fresh uniquely
+Run `node --test e2e/integration/pinned/*.test.mjs` for offline controls.
+The manifest checks reject duplicate AMD64 descriptors and digest/config
+mismatches. The lifecycle checks verify that unsuccessful Docker enumeration
+or inspection leaves the fixture untouched. Run `sh e2e/integration/pinned/run.sh`
+for a fresh uniquely
 named project, internal-only network, fresh volumes, and a 180-second Compose
 health bound. It checks Jellyfin's public version, Lidarr's `/ping` response,
 and Lidarr's authenticated runtime version. Cleanup only targets the generated
