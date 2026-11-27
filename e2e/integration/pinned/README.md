@@ -14,10 +14,12 @@ version without printing the key. Jellyfin `/System/Info/Public` reports
 Run `node --test e2e/integration/pinned/manifest.test.mjs` for offline
 manifest checks, including negative controls for duplicate AMD64 descriptors
 and digest/config mismatches. Run `sh e2e/integration/pinned/run.sh` for a fresh uniquely
-named project, internal-only network, fresh volumes, 180-second Compose health
-bound, Jellyfin public-version assertion, and Lidarr `/ping`. Cleanup targets
-only the generated project. Public image pulls require network access. No
-credentials or provider secrets are used or printed.
+named project, internal-only network, fresh volumes, and a 180-second Compose
+health bound. It checks Jellyfin's public version, Lidarr's `/ping` response,
+and Lidarr's authenticated runtime version. Cleanup only targets the generated
+project. Public image pulls require network access. The run reads the disposable
+Lidarr API key inside its container and keeps it out of output. No existing
+provider credentials are needed.
 
 This only establishes provider readiness and image identity. It is not
 Dashboard compatibility evidence; authenticated setup and populated fixture

@@ -33,4 +33,3 @@ export function verifyRegistryIdentity({ indexRaw, childRaw, expected, platform 
 	assert.equal(child.config?.digest, expected.configDigest, "manifest config digest mismatch");
 	return selectedDigest;
 }
-
