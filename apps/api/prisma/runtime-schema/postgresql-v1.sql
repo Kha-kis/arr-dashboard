@@ -1,5 +1,8 @@
 -- arr-schema-atom enum:3b685b8fb8a42a2b356d8c451c192416cbad02516c450f860e638ee424223799
-CREATE TYPE "ServiceType" AS ENUM ('SONARR', 'RADARR', 'PROWLARR', 'LIDARR', 'READARR', 'SEERR', 'TAUTULLI', 'PLEX', 'JELLYFIN', 'EMBY', 'QUI');
+CREATE TYPE "ServiceType" AS ENUM ('SONARR', 'RADARR', 'PROWLARR', 'LIDARR', 'READARR', 'SEERR', 'TAUTULLI', 'PLEX', 'JELLYFIN', 'EMBY', 'QUI', 'SABNZBD');
+
+-- arr-schema-atom enum-append:3b685b8fb8a42a2b356d8c451c192416cbad02516c450f860e638ee424223799
+ALTER TYPE "ServiceType" ADD VALUE 'SABNZBD';
 
 -- arr-schema-atom enum:d2f0efeed0e4d47303b1c85d47e877d0290111aa02b1713b1244c55959bfe13f
 CREATE TYPE "ProviderIdentityKind" AS ENUM ('plex-machine-identifier', 'jellyfin-server-id', 'emby-server-id', 'tautulli-pms-identifier');

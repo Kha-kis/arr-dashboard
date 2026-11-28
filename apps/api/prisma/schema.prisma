@@ -50,6 +50,7 @@ enum ServiceType {
   JELLYFIN
   EMBY
   QUI
+  SABNZBD
 }
 
 enum ProviderIdentityKind {

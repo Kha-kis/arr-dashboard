@@ -118,6 +118,109 @@ describe("loaded SQLite OIDC replacement capability", () => {
 		expect(calls).toBe(1);
 	});
 });
+describe("SABnzbd additive service schema capability", () => {
+	it("permits only the exact v1 ServiceType append atom and leaves SQLite physical SQL unchanged", async () => {
+		const postgresSource = readFileSync(
+			new URL("../../../../prisma/runtime-schema/registry-postgresql-v1.json", import.meta.url),
+			"utf8",
+		);
+		const postgresDocument = JSON.parse(postgresSource) as RuntimeSchemaRegistryDocument;
+		const serviceType = postgresDocument.nativeEnums.find(({ name }) => name === "ServiceType");
+		expect(serviceType).toMatchObject({
+			previousValues: [
+				"SONARR",
+				"RADARR",
+				"PROWLARR",
+				"LIDARR",
+				"READARR",
+				"SEERR",
+				"TAUTULLI",
+				"PLEX",
+				"JELLYFIN",
+				"EMBY",
+				"QUI",
+			],
+			values: [
+				"SONARR",
+				"RADARR",
+				"PROWLARR",
+				"LIDARR",
+				"READARR",
+				"SEERR",
+				"TAUTULLI",
+				"PLEX",
+				"JELLYFIN",
+				"EMBY",
+				"QUI",
+				"SABNZBD",
+			],
+		});
+		const appendAtom = postgresDocument.atoms.find(({ id }) => id === serviceType?.appendAtom);
+		expect(appendAtom).toMatchObject({
+			kind: "enum-append",
+			tableName: null,
+			objectName: "ServiceType",
+			sql: "ALTER TYPE \"ServiceType\" ADD VALUE 'SABNZBD';",
+		});
+		expect(
+			postgresDocument.atoms.filter(
+				({ kind, objectName }) => kind === "enum-append" && objectName !== "ServiceType",
+			),
+		).toEqual([]);
+
+		const sqliteSql = readFileSync(
+			new URL("../../../../prisma/runtime-schema/sqlite-v1.sql", import.meta.url),
+			"utf8",
+		);
+		const sqliteDocument = JSON.parse(
+			readFileSync(
+				new URL("../../../../prisma/runtime-schema/registry-sqlite-v1.json", import.meta.url),
+				"utf8",
+			),
+		) as RuntimeSchemaRegistryDocument;
+		expect(sqliteDocument.nativeEnums).toEqual([]);
+		expect(sqliteDocument.atoms.some(({ kind }) => kind === "enum-append")).toBe(false);
+		expect(sqliteSql).not.toMatch(/CREATE TYPE|ALTER TYPE/);
+
+		const registry = loadRuntimeSchemaRegistry("postgresql");
+		const execution = prepareRuntimeSchemaExecution(
+			registry,
+			{ provider: "postgresql", tables: [] },
+			[],
+			["ServiceType"],
+		);
+		const statements: string[] = [];
+		await execution.execute((sql) => {
+			statements.push(sql);
+		});
+		expect(statements.filter((sql) => sql === appendAtom?.sql)).toHaveLength(1);
+		expect(statements.some((sql) => sql.startsWith('CREATE TYPE "ServiceType" AS ENUM'))).toBe(
+			false,
+		);
+		const fresh = prepareRuntimeSchemaExecution(registry, { provider: "postgresql", tables: [] }, [
+			"ServiceType",
+		]);
+		const freshStatements: string[] = [];
+		await fresh.execute((sql) => {
+			freshStatements.push(sql);
+		});
+		expect(
+			freshStatements.filter((sql) => sql.startsWith('CREATE TYPE "ServiceType" AS ENUM')),
+		).toHaveLength(1);
+		expect(
+			freshStatements.some((sql) => sql.startsWith('ALTER TYPE "ServiceType" ADD VALUE')),
+		).toBe(false);
+		expect(() =>
+			prepareRuntimeSchemaExecution(
+				registry,
+				{ provider: "postgresql", tables: [] },
+				[],
+				["UnreviewedEnum"],
+			),
+		).toThrow("Database schema registry is unavailable.");
+	});
+});
+
 function canonical(value: unknown): string {
 	if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
 	if (value !== null && typeof value === "object")

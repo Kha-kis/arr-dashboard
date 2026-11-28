@@ -23,7 +23,8 @@ export type CreateServicePayload = {
 		| "plex"
 		| "jellyfin"
 		| "emby"
-		| "qui";
+		| "qui"
+		| "sabnzbd";
 	enabled?: boolean;
 	isDefault?: boolean;
 	tags?: string[];
@@ -144,7 +145,8 @@ export async function testConnectionBeforeAdd(
 		| "plex"
 		| "jellyfin"
 		| "emby"
-		| "qui",
+		| "qui"
+		| "sabnzbd",
 	httpAuth?: { username: string; password: string },
 ): Promise<TestConnectionResponse> {
 	return await apiRequest<TestConnectionResponse>("/api/services/test-connection", {

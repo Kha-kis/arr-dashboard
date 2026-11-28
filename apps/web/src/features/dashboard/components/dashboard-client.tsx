@@ -24,6 +24,7 @@ import { lazy, Suspense, useCallback, useMemo, useState } from "react";
 import { PremiumSkeleton } from "../../../components/layout/premium-components";
 import { springs } from "../../../components/motion";
 import { QueueFilters, ServiceInstancesTable } from "../../../components/presentational";
+import { DashboardStatisticsNotice } from "../../../components/presentational/dashboard-statistics-notice";
 import {
 	Alert,
 	AlertDescription,
@@ -34,13 +35,12 @@ import {
 	Typography,
 } from "../../../components/ui";
 import { useDashboardStatisticsQuery } from "../../../hooks/api/useDashboard";
-import { DashboardStatisticsNotice } from "../../../components/presentational/dashboard-statistics-notice";
-import { resolveDashboardStatisticsState } from "../../../lib/dashboard-statistics-state";
 import { useJellyfinNowPlaying } from "../../../hooks/api/useJellyfin";
 import { useNowPlaying } from "../../../hooks/api/usePlex";
 import { useTautulliActivity } from "../../../hooks/api/useTautulli";
 import { useRefreshState } from "../../../hooks/useRefreshState";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { resolveDashboardStatisticsState } from "../../../lib/dashboard-statistics-state";
 import { anonymizeHealthMessage, getLinuxUsername, useIncognitoMode } from "../../../lib/incognito";
 import { POLLING_REALTIME, POLLING_STANDARD } from "../../../lib/polling-intervals";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
@@ -61,9 +61,10 @@ import { NeedsAttentionPanel } from "./needs-attention-panel";
 import { NowPlayingWidget } from "./now-playing-widget";
 import { OnDeckWidget } from "./on-deck-widget";
 import { PlexServerInfoWidget } from "./plex-server-info-widget";
-import { QueueTable } from "./queue-table";
 import { QueueSearchFeedback } from "./queue-search-feedback";
+import { QueueTable } from "./queue-table";
 import { RecentlyAddedWidget } from "./recently-added-widget";
+import { SabnzbdQueueWidget } from "./sabnzbd-queue-widget";
 import { SeerrRequestsWidget } from "./seerr-requests-widget";
 import { WatchHistorySection } from "./watch-history-section";
 
@@ -663,6 +664,7 @@ export const DashboardClient = () => {
 			    the "Jellyfin unreachable" gap that was previously surfacing
 			    as a misleading cache-refresh-error banner. */}
 			<NeedsAttentionPanel />
+			<SabnzbdQueueWidget />
 
 			{/* Tabs */}
 			<DashboardTabs

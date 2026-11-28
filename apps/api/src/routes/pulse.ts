@@ -84,6 +84,7 @@ const COLLECTOR_LABELS: Record<string, string> = {
 	collectSchedulerHealth: "scheduler health",
 	collectCleanupOpportunities: "cleanup opportunities",
 	collectQuiSignals: "qui health",
+	collectSabnzbdSignals: "SABnzbd",
 };
 
 export function labelForCollector(name: string): string {

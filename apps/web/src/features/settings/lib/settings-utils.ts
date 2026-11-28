@@ -123,6 +123,11 @@ export const getServicePlaceholders = (service: ServiceType) => {
 				label: "Primary QUI",
 				baseUrl: "http://localhost:7476",
 			};
+		case "sabnzbd":
+			return {
+				label: "Primary SABnzbd",
+				baseUrl: "http://localhost:8080",
+			};
 		default:
 			return {
 				label: "Primary Instance",

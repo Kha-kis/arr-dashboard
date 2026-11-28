@@ -2,14 +2,14 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { Client } from "pg";
 import {
-	parsePostgresRuntimeUrl,
-	selectPostgresRuntimeNamespace,
-} from "./restore-runtime-postgres-namespace.js";
-import {
 	RESTORE_POSTGRES_LOCK_NAMESPACE,
 	RESTORE_POSTGRES_OPERATION_LOCK,
 	RESTORE_POSTGRES_OWNER_LOCK,
 } from "./restore-runtime-postgres.js";
+import {
+	parsePostgresRuntimeUrl,
+	selectPostgresRuntimeNamespace,
+} from "./restore-runtime-postgres-namespace.js";
 import {
 	createInitialRestoreRuntimeRecord,
 	parseRestoreRuntimeRecord,
@@ -37,11 +37,16 @@ import {
 	type RuntimeSchemaStartupSettings,
 } from "./runtime-schema-startup.js";
 
-export type RuntimeSchemaPostgresEnum = Readonly<{ name: string; values: readonly string[] }>;
+export type RuntimeSchemaPostgresEnum = Readonly<{
+	name: string;
+	values: readonly string[];
+	previousValues?: readonly string[];
+}>;
 export type RuntimeSchemaPostgresCatalogRead = Readonly<{
 	namespace: string;
 	catalog: RuntimeSchemaCatalog;
 	missingEnums: readonly string[];
+	appendableEnums: readonly string[];
 }>;
 
 type Boundary = {
@@ -215,6 +220,7 @@ export async function readPostgresRuntimeSchemaCatalog(
 			)
 		).rows;
 		const missingEnums: string[] = [];
+		const appendableEnums: string[] = [];
 		const seenEnums = new Set<string>();
 		for (const expected of expectedEnums) {
 			identifier(expected.name);
@@ -229,11 +235,17 @@ export async function readPostgresRuntimeSchemaCatalog(
 			seenEnums.add(expected.name);
 			const actual = nativeTypes.find((type) => type.name === expected.name);
 			if (!actual) missingEnums.push(expected.name);
-			else if (
-				actual.kind !== "e" ||
-				JSON.stringify(actual.values) !== JSON.stringify(expected.values)
-			)
-				unavailable();
+			else if (actual.kind !== "e") unavailable();
+			else if (JSON.stringify(actual.values) !== JSON.stringify(expected.values)) {
+				if (
+					!expected.previousValues ||
+					JSON.stringify(actual.values) !== JSON.stringify(expected.previousValues) ||
+					expected.values.length !== expected.previousValues.length + 1 ||
+					JSON.stringify(expected.values.slice(0, -1)) !== JSON.stringify(expected.previousValues)
+				)
+					unavailable();
+				appendableEnums.push(expected.name);
+			}
 		}
 		const nativeTables = relations.filter((relation) => relation.kind === "r");
 		if (
@@ -410,16 +422,28 @@ export async function readPostgresRuntimeSchemaCatalog(
 				unavailable();
 			tables.push({
 				name: table.name,
-				columns: fields.map((column) => ({
-					name: column.name,
-					type:
-						(column.type_kind === "e"
-							? `ENUM:${JSON.stringify([column.type_name, column.enum_labels])}`
-							: column.type.toUpperCase()) +
-						(column.identity ? `;IDENTITY:${column.identity}` : ""),
-					nullable: column.nullable,
-					defaultValue: normalizeDefault(column),
-				})),
+				columns: fields.map((column) => {
+					const enumDefinition =
+						column.type_kind === "e" && column.type_namespace === namespace
+							? expectedEnums.find((candidate) => candidate.name === column.type_name)
+							: undefined;
+					const labels =
+						enumDefinition?.previousValues &&
+						appendableEnums.includes(enumDefinition.name) &&
+						JSON.stringify(column.enum_labels) === JSON.stringify(enumDefinition.previousValues)
+							? enumDefinition.values
+							: column.enum_labels;
+					return {
+						name: column.name,
+						type:
+							(column.type_kind === "e"
+								? `ENUM:${JSON.stringify([column.type_name, labels])}`
+								: column.type.toUpperCase()) +
+							(column.identity ? `;IDENTITY:${column.identity}` : ""),
+						nullable: column.nullable,
+						defaultValue: normalizeDefault(column),
+					};
+				}),
 				primaryKey: primary.length ? columnNames(table.name, primary[0]!.columns) : [],
 				indexes,
 				foreignKeys,
@@ -438,6 +462,7 @@ export async function readPostgresRuntimeSchemaCatalog(
 			namespace,
 			catalog: { provider: "postgresql" as const, tables },
 			missingEnums: Object.freeze(missingEnums),
+			appendableEnums: Object.freeze(appendableEnums),
 		});
 	} catch {
 		return unavailable();
@@ -623,7 +648,12 @@ export async function synchronizePostgresRuntimeSchema(
 		const read = () =>
 			readPostgresRuntimeSchemaCatalog(client, targets.tables, targets.enums, targets.indexes);
 		const before = await read();
-		const prepared = prepareRuntimeSchemaExecution(registry, before.catalog, before.missingEnums);
+		const prepared = prepareRuntimeSchemaExecution(
+			registry,
+			before.catalog,
+			before.missingEnums,
+			before.appendableEnums,
+		);
 		const control = before.catalog.tables.find((table) => table.name === "RestoreRuntimeControl");
 		const receiptTable = before.catalog.tables.find(
 			(table) => table.name === "ArrSchemaMigrationReceipt",
@@ -667,7 +697,12 @@ export async function synchronizePostgresRuntimeSchema(
 			await client.query(sql);
 		});
 		const after = await read();
-		const post = prepareRuntimeSchemaExecution(registry, after.catalog, after.missingEnums);
+		const post = prepareRuntimeSchemaExecution(
+			registry,
+			after.catalog,
+			after.missingEnums,
+			after.appendableEnums,
+		);
 		if (after.namespace !== before.namespace || post.statementCount !== 0)
 			throw new RuntimeSchemaStartupError();
 		const values = runtimeColumns.map((column) => next[column]);

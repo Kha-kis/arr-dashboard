@@ -5,7 +5,7 @@
 > [!IMPORTANT]
 > **Before upgrading Docker SQLite to v2.25.1 or later**, confirm that its database uses an explicit persistent directory mount. Pause automatic container updates and pin your current image if you follow `latest`, `2`, or `2.25`. If the database is in the writable layer, keep the original container and verify an encrypted backup before moving to separately initialized persistent storage. [Read the startup advisory](https://github.com/Kha-kis/arr-dashboard/releases/tag/v2.25.0#sqlite-startup-advisory).
 
-A unified dashboard for managing multiple **Sonarr**, **Radarr**, **Prowlarr**, **Lidarr**, **Readarr**, **Plex**, **Tautulli**, **Jellyfin**, **Emby**, and **Seerr** instances. Consolidate your media automation management into a single, secure, and powerful interface.
+A unified dashboard for managing multiple **Sonarr**, **Radarr**, **Prowlarr**, **Lidarr**, **Readarr**, **Plex**, **Tautulli**, **Jellyfin**, **Emby**, **Seerr**, and **SABnzbd** instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
 Now integrates with **[autobrr/qui](https://github.com/autobrr/qui)** as a federated peer for torrent-layer observability — surface seed health, ratios, and cross-seed siblings alongside your *arr/library data without arr-dashboard owning torrent-layer logic. See the [qUI integration guide](https://github.com/Kha-kis/arr-dashboard/wiki/qUI-Integration) for setup.
 

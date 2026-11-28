@@ -1,7 +1,7 @@
 "use client";
 
-import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
 import {
 	Activity,
 	BarChart3,
@@ -9,6 +9,7 @@ import {
 	ChevronDown,
 	ChevronRight,
 	Compass,
+	Download,
 	Eraser,
 	Globe,
 	History,
@@ -72,6 +73,7 @@ const NAV_GROUPS: NavGroup[] = [
 			{ href: "/discover", label: "Discover", icon: Compass },
 			{ href: "/library", label: "Library", icon: Library },
 			{ href: "/search", label: "Search", icon: Search },
+			{ href: "/sabnzbd", label: "Downloads", icon: Download },
 			{ href: "/requests", label: "Requests", icon: Inbox },
 		],
 	},

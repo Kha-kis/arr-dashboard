@@ -72,6 +72,7 @@ import {
 } from "../lib/trash-guides/deployment-target.js";
 import { assertNoActiveTrashRecoveryForInstance } from "../lib/trash-guides/recovery-evidence.js";
 import { validateRequest } from "../lib/utils/validate.js";
+import { isValidSabnzbdBaseUrl } from "../lib/sabnzbd/client.js";
 import { invalidatePulseCache } from "./pulse.js";
 
 const idParams = z.object({ id: z.string().min(1) });
@@ -531,6 +532,12 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			request.body,
 		);
 
+		if (service.toLowerCase() === "sabnzbd" && !isValidSabnzbdBaseUrl(rest.baseUrl)) {
+			return reply.status(400).send({
+				error: "SABnzbd URL must not include credentials, a query string, or a fragment.",
+			});
+		}
+
 		const encrypted = app.encryptor.encrypt(apiKey);
 		const httpAuthConflict = httpAuth ? getHttpAuthConflict(service) : null;
 		if (httpAuthConflict) {
@@ -643,6 +650,15 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 					);
 				}
 				const targetServiceName = payload.service ?? existing.service.toLowerCase();
+				const targetBaseUrl = payload.baseUrl ?? existing.baseUrl;
+				if (
+					targetServiceName.toLowerCase() === "sabnzbd" &&
+					!isValidSabnzbdBaseUrl(targetBaseUrl)
+				) {
+					return reply.status(400).send({
+						error: "SABnzbd URL must not include credentials, a query string, or a fragment.",
+					});
+				}
 				const keepsExistingHttpAuth =
 					payload.httpAuth === undefined && Boolean(existing.encryptedHttpAuthCredentials);
 				const httpAuthConflict =
@@ -1334,6 +1350,12 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			request.body,
 		);
 
+		if (service === "sabnzbd" && !isValidSabnzbdBaseUrl(baseUrl)) {
+			return reply.status(400).send({
+				error: "SABnzbd URL must not include credentials, a query string, or a fragment.",
+			});
+		}
+
 		// Validate URL scheme to prevent SSRF with non-HTTP schemes
 		try {
 			const parsed = new URL(baseUrl);
@@ -1368,18 +1390,21 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			? await testServiceConnection(baseUrl, apiKey, service, httpAuth)
 			: await testServiceConnection(baseUrl, apiKey, service);
 		if (!result.success) {
-			request.log.warn({ service, baseUrl }, "Connection test failed");
+			request.log.warn(
+				service === "sabnzbd" ? { service } : { service, baseUrl },
+				"Connection test failed",
+			);
 
 			app.notificationService
 				?.notify(
 					{
 						eventType: "SERVICE_CONNECTION_FAILED",
 						title: `Connection test failed for ${service}`,
-						body: result.error ?? `Failed to connect to ${service} at ${baseUrl}`,
-						metadata: {
-							service,
-							baseUrl,
-						},
+						body:
+							service === "sabnzbd"
+								? "SABnzbd connection test failed."
+								: (result.error ?? `Failed to connect to ${service} at ${baseUrl}`),
+						metadata: service === "sabnzbd" ? { service } : { service, baseUrl },
 					},
 					{ userId: request.currentUser!.id },
 				)

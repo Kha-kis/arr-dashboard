@@ -38,6 +38,7 @@ import { registerPulseRoutes } from "./pulse.js";
 import { registerQueueCleanerRoutes } from "./queue-cleaner.js";
 import { registerQuiRoutes } from "./qui.js";
 import { registerQuiWebhookRoutes } from "./qui-webhook.js";
+import { registerSabnzbdRoutes } from "./sabnzbd.js";
 import { registerSearchRoutes } from "./search.js";
 import { registerSeerrRoutes } from "./seerr/index.js";
 import { registerServiceRoutes } from "./services.js";
@@ -304,6 +305,13 @@ export const PROTECTED_ROUTE_GROUPS: readonly RouteGroup[] = [
 		register: registerSeerrRoutes,
 		maturity: "stable",
 		summary: "Request management, discovery, library enrichment",
+	},
+	{
+		path: "/api/sabnzbd",
+		prefix: "/api/sabnzbd",
+		register: registerSabnzbdRoutes,
+		maturity: "internal",
+		summary: "Owner-scoped SABnzbd queue, history and operator controls",
 	},
 	{
 		path: "/api/trash-guides",

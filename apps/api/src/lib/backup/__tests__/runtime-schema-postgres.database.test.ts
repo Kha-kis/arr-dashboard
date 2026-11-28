@@ -17,6 +17,19 @@ const expectedEnums: readonly RuntimeSchemaPostgresEnum[] = [
 const applicationEnums: readonly RuntimeSchemaPostgresEnum[] = [
 	{
 		name: "ServiceType",
+		previousValues: [
+			"SONARR",
+			"RADARR",
+			"PROWLARR",
+			"LIDARR",
+			"READARR",
+			"SEERR",
+			"TAUTULLI",
+			"PLEX",
+			"JELLYFIN",
+			"EMBY",
+			"QUI",
+		],
 		values: [
 			"SONARR",
 			"RADARR",
@@ -29,6 +42,7 @@ const applicationEnums: readonly RuntimeSchemaPostgresEnum[] = [
 			"JELLYFIN",
 			"EMBY",
 			"QUI",
+			"SABNZBD",
 		],
 	},
 	{
@@ -448,6 +462,40 @@ describe.skipIf(!connectionString)("native PostgreSQL runtime schema catalog", (
 			defaultValue: "'ready'",
 		});
 		await refuse(["Private"], [{ name: "State", values: ["pending", "ready"] }]);
+	});
+
+	it("recognizes only the exact prior ServiceType and fingerprints all five existing typed columns to the candidate", async () => {
+		const prior = applicationEnums.find(({ name }) => name === "ServiceType")!.previousValues!;
+		await database.query(
+			`CREATE TYPE "ServiceType" AS ENUM (${prior.map((label) => `'${label}'`).join(",")});
+			CREATE TABLE "ServiceInstance"(service "ServiceType" NOT NULL);
+			CREATE TABLE "arr_import_operations"(service "ServiceType" NOT NULL);
+			CREATE TABLE "standalone_cf_deployments"("serviceType" "ServiceType" NOT NULL);
+			CREATE TABLE "trash_cache"("serviceType" "ServiceType" NOT NULL);
+			CREATE TABLE "trash_templates"("serviceType" "ServiceType" NOT NULL);`,
+		);
+		const targetNames = [
+			"ServiceInstance",
+			"arr_import_operations",
+			"standalone_cf_deployments",
+			"trash_cache",
+			"trash_templates",
+		];
+		const result = await read(targetNames, applicationEnums);
+		expect(result.appendableEnums).toEqual(["ServiceType"]);
+		expect(result.missingEnums).not.toContain("ServiceType");
+		expect(result.catalog.tables).toHaveLength(5);
+		for (const table of result.catalog.tables)
+			expect(table.columns[0]?.type).toBe(
+				`ENUM:["ServiceType",${JSON.stringify(applicationEnums.find(({ name }) => name === "ServiceType")!.values)}]`,
+			);
+	});
+
+	it("refuses a near-match ServiceType predecessor before planning application changes", async () => {
+		await database.query(
+			`CREATE TYPE "ServiceType" AS ENUM ('SONARR','RADARR','PROWLARR','LIDARR','READARR','SEERR','TAUTULLI','PLEX','JELLYFIN','EMBY','QUI','FOREIGN');`,
+		);
+		await refuse([], applicationEnums);
 	});
 
 	it("reports missing registered types without creating them or inventing completion", async () => {

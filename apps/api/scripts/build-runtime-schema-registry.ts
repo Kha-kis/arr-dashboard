@@ -38,6 +38,20 @@ import {
 import { readSqliteRuntimeSchemaCatalog } from "../src/lib/backup/runtime-schema-sqlite.js";
 import { SQLITE_DATE_FORMAT_RECEIPT_SQL } from "../src/lib/backup/runtime-sqlite-datetime.js";
 
+const APPROVED_SERVICE_TYPE_PREDECESSOR = [
+	"SONARR",
+	"RADARR",
+	"PROWLARR",
+	"LIDARR",
+	"READARR",
+	"SEERR",
+	"TAUTULLI",
+	"PLEX",
+	"JELLYFIN",
+	"EMBY",
+	"QUI",
+] as const;
+
 export type RuntimeSchemaAuthorInput = Readonly<{
 	schemaSource: string;
 	applicationSql: string;
@@ -83,11 +97,31 @@ export function authorRuntimeSchemaRegistry(
 			atoms.push({ id, kind, tableName, objectName, sql, sha256: sha(sql) });
 			return id;
 		};
-		const nativeEnums = parsed.enums.map((definition) => ({
-			name: definition.name,
-			values: definition.values,
-			createAtom: add("enum", null, definition.name, definition.sql),
-		}));
+		const nativeEnums = parsed.enums.map((definition) => {
+			const createAtom = add("enum", null, definition.name, definition.sql);
+			if (definition.name !== "ServiceType")
+				return { name: definition.name, values: definition.values, createAtom };
+			const previousValues = [...APPROVED_SERVICE_TYPE_PREDECESSOR];
+			if (
+				definition.values.length !== previousValues.length + 1 ||
+				JSON.stringify(definition.values.slice(0, -1)) !== JSON.stringify(previousValues) ||
+				definition.values.at(-1) !== "SABNZBD"
+			)
+				fail();
+			const appendAtom = add(
+				"enum-append",
+				null,
+				definition.name,
+				`ALTER TYPE ${identifier(definition.name)} ADD VALUE '${definition.values.at(-1)}';`,
+			);
+			return {
+				name: definition.name,
+				values: definition.values,
+				createAtom,
+				previousValues,
+				appendAtom,
+			};
+		});
 		if (catalog.provider === "sqlite" && nativeEnums.length) fail();
 		const tables = catalog.tables.map((target) => {
 			const source =

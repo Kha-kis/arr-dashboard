@@ -1,4 +1,5 @@
 import { readJellyfinJson } from "../jellyfin/jellyfin-read-deadline.js";
+import { asRecord, SabnzbdClientError, sabCall } from "../sabnzbd/client.js";
 import { createHttpAuthHeaders, type HttpAuthCredentials } from "./http-auth.js";
 import { getHttpAuthConflict } from "./http-auth-validation.js";
 
@@ -103,6 +104,48 @@ export async function testServiceConnection(
 		// helper used by route handlers so test + runtime stay in sync.
 		if (service === "qui") {
 			return await testQuiConnection(normalizedBaseUrl, apiKey, httpAuth);
+		}
+
+		// Use the same authenticated API path as the SABnzbd runtime client.
+		// A queue read verifies both the key and the response envelope; the
+		// unauthenticated version endpoint is not sufficient for saved auth.
+		if (service === "sabnzbd") {
+			try {
+				const body = asRecord(
+					await sabCall(
+						normalizedBaseUrl,
+						apiKey,
+						{
+							mode: "queue",
+							start: "0",
+							limit: "1",
+						},
+						{ headers: createHttpAuthHeaders(httpAuth) },
+					),
+				);
+				const queue = asRecord(body.queue);
+				if (!Array.isArray(queue.slots)) {
+					return {
+						success: false,
+						error: "Invalid response format",
+						details: "SABnzbd returned an incomplete queue response.",
+					};
+				}
+				return {
+					success: true,
+					message: "Successfully connected to SABnzbd",
+					version: typeof queue.version === "string" ? queue.version : "unknown",
+				};
+			} catch (error) {
+				if (error instanceof SabnzbdClientError && error.category === "authentication") {
+					return {
+						success: false,
+						error: "Authentication failed",
+						details: "Verify the SABnzbd API key and retry the connection test.",
+					};
+				}
+				throw error;
+			}
 		}
 
 		// Seerr uses its own status endpoint; Prowlarr/Lidarr/Readarr use v1; Sonarr/Radarr use v3

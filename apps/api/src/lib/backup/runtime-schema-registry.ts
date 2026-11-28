@@ -12,20 +12,21 @@ import {
 
 // BEGIN REVIEWED RUNTIME SCHEMA ASSET BINDINGS
 const REVIEWED_RUNTIME_SCHEMA_ASSETS = {
-	normalizedSchemaSha256: "a5362c90c3bf41291f6e6db4d3a3984c29ee6011a93f1af70c7b2fe1e416bb01",
+	normalizedSchemaSha256: "ad60db891335853d56c75396a8adf274af96f53f7fe80db0fea5b791699f984e",
 	sqlite: {
-		documentSha256: "e195ddfd6fb2574ab21aa0e37627acf95963f9a2ac08d198b81e5e2433f65f76",
+		documentSha256: "62625d7d68a46f812eb3b76aed2fbe1c5f3e8bb6568f62b795b8657f62fb789d",
 		sqlSha256: "1346c3bd12b1101cc1383b78c7a3a3fd27d8eb2c39298cb222f72a7de48672b0",
 	},
 	postgresql: {
-		documentSha256: "96d0c705678086f576ef0f49b1949b65efc890a49eda08bf7a48b95a4d6efa51",
-		sqlSha256: "0b22554ffce299c0be5f9b7f2cf6093d2757187e68038683b7f74a15d713fa73",
+		documentSha256: "cda3fda2361d717d0409f26eb7688452df863d081bbb57f81541eaacaebafe45",
+		sqlSha256: "2032c92d144d6f13c28a96a5973a76521c512de15a174cdb1a90a844101a1360",
 	},
 } as const;
 // END REVIEWED RUNTIME SCHEMA ASSET BINDINGS
 
 export type RuntimeSchemaAtomKind =
 	| "enum"
+	| "enum-append"
 	| "table"
 	| "column"
 	| "index"
@@ -44,7 +45,13 @@ export type RuntimeSchemaRegistryDocument = Readonly<{
 	schemaSourceSha256: string;
 	applicationModelCount: number;
 	registry: RuntimeSchemaRegistry;
-	nativeEnums: readonly Readonly<{ name: string; values: readonly string[]; createAtom: string }>[];
+	nativeEnums: readonly Readonly<{
+		name: string;
+		values: readonly string[];
+		createAtom: string;
+		previousValues?: readonly string[];
+		appendAtom?: string;
+	}>[];
 	atoms: readonly RuntimeSchemaAtom[];
 	sqlSha256: string;
 }>;
@@ -264,6 +271,18 @@ function statementKind(atom: RuntimeSchemaAtom, provider: "sqlite" | "postgresql
 				word(3, "AS") &&
 				word(4, "ENUM");
 			break;
+		case "enum-append":
+			valid =
+				provider === "postgresql" &&
+				atom.tableName === null &&
+				word(0, "ALTER") &&
+				word(1, "TYPE") &&
+				identifier(2, atom.objectName) &&
+				word(3, "ADD") &&
+				word(4, "VALUE") &&
+				tokens[5]?.kind === "literal" &&
+				tokens.length === 7;
+			break;
 		case "predecessor-index":
 			valid =
 				word(0, "DROP") &&
@@ -458,6 +477,7 @@ export function verifyRuntimeSchemaRegistryDocument(
 		};
 		const ranks: Record<RuntimeSchemaAtomKind, number> = {
 			enum: 0,
+			"enum-append": 0,
 			table: 1,
 			column: 2,
 			index: 3,
@@ -483,7 +503,7 @@ export function verifyRuntimeSchemaRegistryDocument(
 		}
 		const enums = new Set<string>();
 		for (const definition of value.nativeEnums) {
-			keys(definition, ["name", "values", "createAtom"]);
+			keys(definition, ["name", "values", "createAtom"], ["previousValues", "appendAtom"]);
 			name(definition.name);
 			if (
 				value.registry.provider !== "postgresql" ||
@@ -499,6 +519,25 @@ export function verifyRuntimeSchemaRegistryDocument(
 			const tokens = sqlTokens(value.atoms.find((atom) => atom.id === definition.createAtom)!.sql);
 			const labels = tokens.filter((token) => token.kind === "literal").map((token) => token.value);
 			if (JSON.stringify(labels) !== JSON.stringify(definition.values)) unavailable();
+			if (Object.hasOwn(definition, "previousValues") || Object.hasOwn(definition, "appendAtom")) {
+				if (!Array.isArray(definition.previousValues) || typeof definition.appendAtom !== "string")
+					unavailable();
+				if (
+					definition.values.length !== definition.previousValues.length + 1 ||
+					JSON.stringify(definition.values.slice(0, -1)) !==
+						JSON.stringify(definition.previousValues)
+				)
+					unavailable();
+				definition.previousValues.forEach(name);
+				if (new Set(definition.previousValues).size !== definition.previousValues.length)
+					unavailable();
+				mapped(definition.appendAtom, "enum-append", null, definition.name);
+				const append = sqlTokens(
+					value.atoms.find((atom) => atom.id === definition.appendAtom)!.sql,
+				);
+				if (append[5]?.kind !== "literal" || append[5]?.value !== definition.values.at(-1))
+					unavailable();
+			}
 		}
 		for (const definition of value.registry.tables) {
 			const table = definition.target;
@@ -676,7 +715,11 @@ export function readRuntimeSchemaRegistryTargets(
 ): Readonly<{
 	tables: readonly string[];
 	indexes: readonly string[];
-	enums: readonly Readonly<{ name: string; values: readonly string[] }>[];
+	enums: readonly Readonly<{
+		name: string;
+		values: readonly string[];
+		previousValues?: readonly string[];
+	}>[];
 }> {
 	const document = loadedRegistries.get(registry);
 	if (!document) unavailable();
@@ -685,7 +728,11 @@ export function readRuntimeSchemaRegistryTargets(
 		indexes: registry.tables.flatMap((definition) =>
 			definition.target.indexes.map((index) => index.name),
 		),
-		enums: document.nativeEnums.map(({ name, values }) => ({ name, values: [...values] })),
+		enums: document.nativeEnums.map(({ name, values, previousValues }) => ({
+			name,
+			values: [...values],
+			...(previousValues ? { previousValues: [...previousValues] } : {}),
+		})),
 	});
 }
 
@@ -716,6 +763,7 @@ export function prepareRuntimeSchemaExecution(
 	registry: Readonly<RuntimeSchemaRegistry>,
 	catalog: RuntimeSchemaCatalog | RuntimeSchemaPlanningCatalog,
 	missingEnums: readonly string[] = [],
+	appendEnums: readonly string[] = [],
 ): RuntimeSchemaExecution {
 	const document = loadedRegistries.get(registry);
 	if (!document) unavailable();
@@ -726,12 +774,26 @@ export function prepareRuntimeSchemaExecution(
 		(registry.provider === "sqlite" && missing.length)
 	)
 		unavailable();
+	const appends = copyJson(appendEnums) as readonly string[];
+	array(appends);
+	if (
+		new Set(appends).size !== appends.length ||
+		appends.some((enumName) => missing.includes(enumName)) ||
+		(registry.provider === "sqlite" && appends.length)
+	)
+		unavailable();
 	const selectedEnums = new Set<string>();
 	for (const enumName of missing) {
 		name(enumName);
 		const definition = document.nativeEnums.find((candidate) => candidate.name === enumName);
 		if (!definition) unavailable();
 		selectedEnums.add(definition.createAtom);
+	}
+	for (const enumName of appends) {
+		name(enumName);
+		const definition = document.nativeEnums.find((candidate) => candidate.name === enumName);
+		if (!definition?.appendAtom || !definition.previousValues) unavailable();
+		selectedEnums.add(definition.appendAtom);
 	}
 	// The pure planner validates the complete native projection before any SQL is resolved.
 	const plan = planRuntimeSchema(catalog, registry);

@@ -18,6 +18,7 @@ export const INTEGRATION_SERVICES = [
 	"jellyfin",
 	"emby",
 	"qui",
+	"sabnzbd",
 ] as const;
 
 /** All supported service types */
