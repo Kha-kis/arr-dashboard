@@ -884,8 +884,11 @@ describe("executeQueueCleaner — integration", () => {
 	])("defers a changed target before strikes or removal (%j)", async (change) => {
 		const del = vi.fn();
 		const app = makeApp({
-			get: async () => ({ records: [STALLED_ITEM] }),
-			getById: async () => ({ ...STALLED_ITEM, ...change }),
+			get: vi
+				.fn()
+				.mockResolvedValueOnce({ records: [STALLED_ITEM] })
+				.mockResolvedValueOnce({ records: [STALLED_ITEM] })
+				.mockResolvedValue({ records: [{ ...STALLED_ITEM, ...change }] }),
 			del,
 		});
 		const result = await executeQueueCleaner(
@@ -954,11 +957,14 @@ describe("executeQueueCleaner — integration", () => {
 
 	it("revalidates again after strike admission before the upstream action", async () => {
 		const del = vi.fn();
-		const getById = vi
+		const get = vi
 			.fn()
-			.mockResolvedValueOnce(STALLED_ITEM)
-			.mockResolvedValue({ ...STALLED_ITEM, downloadId: "replacement" });
-		const app = makeApp({ get: async () => ({ records: [STALLED_ITEM] }), getById, del });
+			.mockResolvedValueOnce({ records: [STALLED_ITEM] })
+			.mockResolvedValueOnce({ records: [STALLED_ITEM] })
+			.mockResolvedValueOnce({ records: [STALLED_ITEM] })
+			.mockResolvedValueOnce({ records: [STALLED_ITEM] })
+			.mockResolvedValue({ records: [{ ...STALLED_ITEM, downloadId: "replacement" }] });
+		const app = makeApp({ get, del });
 		const result = await executeQueueCleaner(app, makeInstance(), makeConfig());
 		expect(result.itemsCleaned).toBe(0);
 		expect(result.skippedItems[0]?.reason).toContain("identity changed");
@@ -1036,11 +1042,58 @@ describe("executeQueueCleaner — integration", () => {
 		expect(app.prisma.queueCleanerStrike.deleteMany).not.toHaveBeenCalled();
 	});
 
+	it.each(["SONARR", "RADARR"] as const)(
+		"revalidates a %s target using the supported queue list",
+		async (service) => {
+			const del = vi.fn().mockResolvedValue(undefined);
+			const get = vi.fn().mockResolvedValue({ records: [STALLED_ITEM] });
+			const getById = vi.fn().mockRejectedValue(new Error("404 Not Found"));
+			const app = makeApp({ get, getById, del });
+			const instance = makeInstance({ service });
+			vi.mocked(app.prisma.serviceInstance.findUnique).mockResolvedValue(instance);
+
+			const result = await executeQueueCleaner(app, instance, makeConfig());
+
+			expect(result.itemsCleaned).toBe(1);
+			expect(getById).not.toHaveBeenCalled();
+			expect(get).toHaveBeenCalledTimes(6);
+			expect(del).toHaveBeenCalledTimes(1);
+		},
+	);
+
+	it.each(["absent", "truncated", "duplicate", "changed"] as const)(
+		"defers Sonarr when the current target observation is %s",
+		async (scenario) => {
+			const present = { records: [STALLED_ITEM] };
+			const get = vi.fn().mockResolvedValueOnce(present).mockResolvedValueOnce(present);
+			if (scenario === "absent") get.mockResolvedValue({ records: [] });
+			if (scenario === "truncated") get.mockResolvedValue({ ...present, totalRecords: 2 });
+			if (scenario === "duplicate")
+				get.mockResolvedValue({ records: [STALLED_ITEM, STALLED_ITEM] });
+			if (scenario === "changed")
+				get.mockResolvedValueOnce(present).mockResolvedValue({ records: [] });
+			const del = vi.fn().mockResolvedValue(undefined);
+			const app = makeApp({ get, del });
+			const result = await executeQueueCleaner(
+				app,
+				makeInstance(),
+				makeConfig({ strikeSystemEnabled: true, maxStrikes: 1 }),
+			);
+			expect(result).toMatchObject({ status: "partial", itemsCleaned: 0 });
+			expect(del).not.toHaveBeenCalled();
+			expect(app.prisma.queueCleanerStrike.create).not.toHaveBeenCalled();
+			expect(app.prisma.queueCleanerStrike.update).not.toHaveBeenCalled();
+		},
+	);
+
 	it("reports unavailable current-target evidence as partial, not a successful run", async () => {
 		const del = vi.fn();
 		const app = makeApp({
-			get: async () => ({ records: [STALLED_ITEM] }),
-			getById: vi.fn().mockRejectedValue(new Error("fixture read failure")),
+			get: vi
+				.fn()
+				.mockResolvedValueOnce({ records: [STALLED_ITEM] })
+				.mockResolvedValueOnce({ records: [STALLED_ITEM] })
+				.mockRejectedValue(new Error("fixture read failure")),
 			del,
 		});
 		const result = await executeQueueCleaner(app, makeInstance(), makeConfig());

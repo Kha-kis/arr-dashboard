@@ -1,0 +1,37 @@
+name: ${COMPOSE_PROJECT_NAME:?Set a unique e2e-pinned-* project name}
+x-run-labels: &labels
+  io.arr-dashboard.e2e.pinned.project: ${COMPOSE_PROJECT_NAME}
+  io.arr-dashboard.e2e.pinned.run-token: ${PINNED_E2E_RUN_TOKEN:?Set run token}
+services:
+  lidarr:
+    image: linuxserver/lidarr@sha256:c4285344c994b34e1ae7db8d57c1702dcfe88b8e10c98a0cdf0f74aba8b58b9c
+    labels: *labels
+    environment: { PUID: "1000", PGID: "1000", TZ: Etc/UTC }
+    volumes: [lidarr-config:/config]
+    networks: [fixture]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8686/ping >/dev/null"]
+      interval: 3s
+      timeout: 2s
+      retries: 40
+      start_period: 10s
+  jellyfin:
+    image: jellyfin/jellyfin@sha256:0b901391a662862eddb5dc55d244d7883cbb6236ef5b9a6ea82abc78a89819f0
+    labels: *labels
+    volumes: [jellyfin-config:/config, jellyfin-cache:/cache, media:/media:ro]
+    networks: [fixture]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8096/health"]
+      interval: 3s
+      timeout: 2s
+      retries: 40
+      start_period: 10s
+networks:
+  fixture:
+    internal: true
+    labels: *labels
+volumes:
+  lidarr-config: { labels: *labels }
+  jellyfin-config: { labels: *labels }
+  jellyfin-cache: { labels: *labels }
+  media: { labels: *labels }

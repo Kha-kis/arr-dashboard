@@ -48,9 +48,14 @@ function requirePostgresTestUrl(value: string): URL {
  */
 export function createTestPrismaClient(
 	databaseUrl = ":memory:",
+	options: { onQuery?: (query: string) => void } = {},
 ): InstanceType<typeof PrismaClient> {
 	const adapter = new PrismaBetterSqlite3({ url: databaseUrl });
-	return new PrismaClient({ adapter });
+	const { onQuery } = options;
+	if (!onQuery) return new PrismaClient({ adapter });
+	const client = new PrismaClient({ adapter, log: [{ level: "query", emit: "event" }] });
+	client.$on("query", ({ query }) => onQuery(query));
+	return client;
 }
 
 /**

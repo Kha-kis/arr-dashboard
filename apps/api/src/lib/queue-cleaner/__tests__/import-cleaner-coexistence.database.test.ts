@@ -150,11 +150,17 @@ async function cleanerFixture() {
 		trackedDownloadState: "importPending",
 	};
 	const client = new RadarrClient({ baseUrl: "https://fixture.invalid", apiKey: "synthetic-key" });
+	const current = vi.fn(async () => item);
 	vi.spyOn(client.queue, "get").mockImplementation(
 		async (options?: { page?: number }) =>
-			({ page: options?.page ?? 1, pageSize: 1000, totalRecords: 1, records: [item] }) as never,
+			({
+				page: options?.page ?? 1,
+				pageSize: 1000,
+				totalRecords: 1,
+				records: [await current()],
+			}) as never,
 	);
-	const current = vi.spyOn(client.queue, "getById").mockImplementation(async () => item as never);
+	vi.spyOn(client.queue, "getById").mockRejectedValue(new Error("Unsupported item GET"));
 	const remove = vi.spyOn(client.queue, "delete").mockResolvedValue(undefined as never);
 	const post = vi.spyOn(client, "post").mockRejectedValue(new Error("Unexpected synthetic POST"));
 	vi.spyOn(client, "get").mockRejectedValue(new Error("Unexpected synthetic provider GET"));
@@ -351,7 +357,6 @@ describe("Cleaner preview models attempted imports without removal authority", (
 			totalRecords: items.length,
 			records: items,
 		} as never);
-		f.current.mockImplementation(async (id) => items.find((item) => item.id === id) as never);
 		const before = await journal();
 		const preview = await executeEnhancedPreview(f.app, f.instance, config);
 		expect(preview).toMatchObject({ wouldRemove: 1, wouldImport: 1, wouldSkip: 1 });
@@ -790,7 +795,6 @@ describe("cleaner produces shared tracked import operations", () => {
 					records: items,
 				}) as never,
 		);
-		f.current.mockImplementation(async (id) => items.find((item) => item.id === id) as never);
 		f.candidates.mockImplementation(async (options) => {
 			if (!options?.downloadId) throw new Error("Expected one exact synthetic source");
 			return [
@@ -1056,10 +1060,13 @@ describe("cleaner coexistence with shared import evidence", () => {
 	});
 	it("rechecks a new shared import admitted after initial queue observation", async () => {
 		const f = await cleanerFixture();
-		f.current.mockImplementationOnce(async () => {
-			await startImport();
-			return f.item as never;
-		});
+		f.current
+			.mockResolvedValueOnce(f.item)
+			.mockResolvedValueOnce(f.item)
+			.mockImplementationOnce(async () => {
+				await startImport();
+				return f.item;
+			});
 		expect(await f.run()).toMatchObject({ itemsCleaned: 0 });
 		expect(f.remove).not.toHaveBeenCalled();
 		expect(f.post).not.toHaveBeenCalled();
