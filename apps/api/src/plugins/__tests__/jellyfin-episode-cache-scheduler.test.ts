@@ -1054,6 +1054,96 @@ describe("Jellyfin episode cache scheduler lifecycle", () => {
 		expect(mocks.refresh).toHaveBeenCalledTimes(2);
 	});
 
+	it("bounds missing parent retries after a persisted failed-run deadline expires", async () => {
+		findInstances.mockResolvedValue([instance("JELLYFIN")]);
+		const initial = 6 * 60_000;
+		findFailedRun.mockResolvedValue({
+			state: "failed",
+			nextAttemptAt: new Date(Date.now() + initial - 1),
+		});
+		mocks.refresh.mockResolvedValue({
+			complete: false,
+			upserted: 0,
+			errors: 1,
+			progressed: false,
+			failureCategory: "parent-status-missing",
+		});
+		await app.register(jellyfinEpisodeCacheSchedulerPlugin);
+		await app.ready();
+
+		await vi.advanceTimersByTimeAsync(initial);
+		expect(mocks.refresh).toHaveBeenCalledOnce();
+		await vi.advanceTimersByTimeAsync(2);
+		expect(mocks.refresh).toHaveBeenCalledOnce();
+		await vi.advanceTimersByTimeAsync(29_997);
+		expect(mocks.refresh).toHaveBeenCalledOnce();
+		await vi.advanceTimersByTimeAsync(1);
+		expect(mocks.refresh).toHaveBeenCalledTimes(2);
+		for (const [index, delay] of [120_000, 600_000].entries()) {
+			await vi.advanceTimersByTimeAsync(delay - 1);
+			expect(mocks.refresh).toHaveBeenCalledTimes(index + 2);
+			await vi.advanceTimersByTimeAsync(1);
+			expect(mocks.refresh).toHaveBeenCalledTimes(index + 3);
+		}
+		await vi.advanceTimersByTimeAsync(600_000);
+		expect(mocks.refresh).toHaveBeenCalledTimes(4);
+	});
+
+	it("honors a future failed-run deadline and recovers when the parent returns", async () => {
+		findInstances.mockResolvedValue([instance("JELLYFIN")]);
+		const initial = 6 * 60_000;
+		findFailedRun.mockResolvedValue({
+			state: "failed",
+			nextAttemptAt: new Date(Date.now() + initial + 45_000),
+		});
+		const missingParent = {
+			complete: false,
+			upserted: 0,
+			errors: 1,
+			progressed: false,
+			failureCategory: "parent-status-missing",
+		};
+		mocks.refresh
+			.mockResolvedValueOnce(missingParent)
+			.mockResolvedValueOnce(missingParent)
+			.mockResolvedValueOnce({ complete: true, errors: 0, upserted: 16, progressed: false });
+		await app.register(jellyfinEpisodeCacheSchedulerPlugin);
+		await app.ready();
+
+		await vi.advanceTimersByTimeAsync(initial + 44_999);
+		expect(mocks.refresh).toHaveBeenCalledOnce();
+		await vi.advanceTimersByTimeAsync(1);
+		expect(mocks.refresh).toHaveBeenCalledTimes(2);
+		await vi.advanceTimersByTimeAsync(29_999);
+		expect(mocks.refresh).toHaveBeenCalledTimes(2);
+		await vi.advanceTimersByTimeAsync(1);
+		expect(mocks.refresh).toHaveBeenCalledTimes(3);
+		await vi.advanceTimersByTimeAsync(600_000);
+		expect(mocks.refresh).toHaveBeenCalledTimes(3);
+	});
+
+	it.each(["absent", "exhausted"] as const)(
+		"does not restart missing-parent work with a %s durable retry",
+		async (state) => {
+			findInstances.mockResolvedValue([instance("JELLYFIN")]);
+			findFailedRun.mockResolvedValue(
+				state === "absent" ? null : { state: "failed", nextAttemptAt: null },
+			);
+			mocks.refresh.mockResolvedValue({
+				complete: false,
+				upserted: 0,
+				errors: 1,
+				progressed: false,
+				failureCategory: "parent-status-missing",
+			});
+			await app.register(jellyfinEpisodeCacheSchedulerPlugin);
+			await app.ready();
+
+			await vi.advanceTimersByTimeAsync(6 * 60_000 + 750_000);
+			expect(mocks.refresh).toHaveBeenCalledOnce();
+		},
+	);
+
 	it.each(["missing", "exhausted", "due", "future", "running"] as const)(
 		"bounds proven outer refusal recovery against a %s durable run",
 		async (state) => {

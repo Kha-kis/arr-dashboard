@@ -273,11 +273,15 @@ const jellyfinEpisodeCacheSchedulerPlugin = fastifyPlugin(
 						const untilRetry = retryAt ? retryAt.getTime() - Date.now() : null;
 						if (activeRun?.state === "failed" && !retryAfterOuterRefusal && untilRetry === null)
 							return;
-						if (untilRetry !== null && (untilRetry > 0 || !retryAfterOuterRefusal)) {
+						const retryAfterMissingParent = result.failureCategory === "parent-status-missing";
+						if (
+							untilRetry !== null &&
+							(untilRetry > 0 || (!retryAfterOuterRefusal && !retryAfterMissingParent))
+						) {
 							delay = Math.max(0, untilRetry);
 						} else {
-							// A refused outer claim cannot advance an already-due deadline.
-							// Consume the finite retry budget instead of scheduling at zero.
+							// A refused outer claim or a missing parent can leave the durable
+							// deadline unchanged. Use the finite retry budget once it is due.
 							const retryCount = effectiveTransientIdentityRetry;
 							const transientDelay = TRANSIENT_IDENTITY_RETRY_DELAYS_MS[retryCount];
 							if (transientDelay === undefined) {
