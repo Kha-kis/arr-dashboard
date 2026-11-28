@@ -233,6 +233,7 @@ describe("testServiceConnection provider probes (#465, #976)", () => {
 		expect(result.error).toMatch(/authentication failed/i);
 		expect(fetchSpy).toHaveBeenCalledTimes(1);
 	});
+
 	it("tests SABnzbd credentials through a bounded authenticated queue request", async () => {
 		fetchSpy.mockResolvedValueOnce(
 			jsonResponse({
@@ -277,5 +278,105 @@ describe("testServiceConnection provider probes (#465, #976)", () => {
 		expect(result.error).toBe("Authentication failed");
 		expect(result.details).not.toContain("synthetic-key");
 		expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+	});
+
+
+
+	it.each([
+		[
+			"html",
+			() =>
+				new Response("<html>Synthetic page</html>", { headers: { "content-type": "text/html" } }),
+		],
+		[
+			"malformed JSON",
+			() => new Response("{", { headers: { "content-type": "application/json" } }),
+		],
+		["missing identity", () => jsonResponse({ ServerName: "Synthetic", Version: "12.4.0" })],
+		["different identity", () => jsonResponse({ Id: "different-synthetic-server" })],
+		["blank identity", () => jsonResponse({ Id: "" })],
+	] as const)(
+		"refuses a protected 2xx with %s instead of usable server evidence",
+		async (_kind, protectedResponse) => {
+			fetchSpy
+				.mockResolvedValueOnce(
+					jsonResponse({
+						Id: "synthetic-current-server",
+						ServerName: "Synthetic",
+						Version: "12.4.0",
+					}),
+				)
+				.mockResolvedValueOnce(protectedResponse());
+
+			const result = await testServiceConnection(
+				"https://jellyfin.example.test",
+				"synthetic-token",
+				"jellyfin",
+			);
+
+			expect(result).toMatchObject({
+				success: false,
+				error: "Invalid authenticated server response",
+			});
+			expect(JSON.stringify(result)).not.toMatch(
+				/synthetic-(current-server|token)|different-synthetic-server/,
+			);
+			expect(fetchSpy).toHaveBeenCalledTimes(2);
+		},
+	);
+
+	it.each(["jellyfin", "emby"] as const)(
+		"accepts the matching %s protected identity even when a proxy omits the JSON media type",
+		async (service) => {
+			fetchSpy
+				.mockResolvedValueOnce(jsonResponse({ Id: "matching-server", Version: "10.11.11" }))
+				.mockResolvedValueOnce(new Response(JSON.stringify({ Id: "matching-server" })));
+
+			const result = await testServiceConnection(
+				"https://media.example.test",
+				"synthetic-token",
+				service,
+			);
+
+			expect(result).toMatchObject({ success: true, version: "10.11.11" });
+			expect(fetchSpy).toHaveBeenCalledTimes(2);
+		},
+	);
+
+	it("includes the protected response body in the existing deadline", async () => {
+		const lifetime = new AbortController();
+		const abortTimeout = vi
+			.spyOn(AbortSignal, "timeout")
+			.mockReturnValueOnce(new AbortController().signal)
+			.mockReturnValueOnce(lifetime.signal);
+		let startBody!: () => void;
+		const bodyStarted = new Promise<void>((resolve) => {
+			startBody = resolve;
+		});
+		const cancel = vi.fn();
+		const body = new ReadableStream({ pull: startBody, cancel }, { highWaterMark: 0 });
+		fetchSpy
+			.mockResolvedValueOnce(jsonResponse({ Id: "matching-server" }))
+			.mockResolvedValueOnce(new Response(body));
+
+		try {
+			const outcome = testServiceConnection(
+				"https://media.example.test",
+				"synthetic-token",
+				"jellyfin",
+			);
+			await bodyStarted;
+			lifetime.abort();
+			await expect(outcome).resolves.toMatchObject({
+				success: false,
+				error: "Invalid authenticated server response",
+			});
+			expect(abortTimeout.mock.calls).toEqual([[5000], [5000]]);
+			expect(cancel).toHaveBeenCalledTimes(1);
+		} finally {
+			abortTimeout.mockRestore();
+		}
+
 	});
 });
