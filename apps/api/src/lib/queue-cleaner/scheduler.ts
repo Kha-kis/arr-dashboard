@@ -806,8 +806,9 @@ class QueueCleanerScheduler {
 			if (contentionDiagnostics)
 				log.error(contentionDiagnostics, "Queue Cleaner SQLite transaction failed");
 
-			await app.prisma.queueCleanerLog.update({
-				where: { id: logEntry.id },
+			// The result may already be committed when its acknowledgement is lost.
+			const failureLog = await app.prisma.queueCleanerLog.updateMany({
+				where: { id: logEntry.id, instanceId, status: "running", completedAt: null },
 				data: {
 					status: "error",
 					message,
@@ -818,6 +819,8 @@ class QueueCleanerScheduler {
 
 			if (!contentionDiagnostics)
 				log.error({ err: error, instanceLabel: config.instance.label }, "Queue cleaner error");
+
+			if (failureLog.count !== 1) return;
 
 			// Best-effort failure notification remains inside the operation lease.
 			await app.notificationService
