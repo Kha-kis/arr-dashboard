@@ -802,12 +802,12 @@ function ConfigTab({
 						{previewData.prefetchHealth &&
 							Object.entries(previewData.prefetchHealth).some(([, s]) => s === "failed") && (
 								<div className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
-									<span className="font-medium">Data source issues:</span>{" "}
+									<span className="font-medium">Cleanup evidence unavailable</span> for{" "}
 									{Object.entries(previewData.prefetchHealth)
 										.filter(([, s]) => s === "failed")
 										.map(([k]) => k)
-										.join(", ")}{" "}
-									failed to load. Some rules may have been skipped.
+										.join(", ")}
+									. Some rules may have been skipped.
 								</div>
 							)}
 						{previewData.warnings && previewData.warnings.length > 0 && (
