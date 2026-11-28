@@ -5,8 +5,8 @@ import {
 	createScopedWriteFixture,
 } from "../../__tests__/scoped-write-intent-fixture.js";
 import { ArrClientFactory } from "../../arr/client-factory.js";
-import { executeOnInstances } from "../../arr/client-helpers.js";
 import { Encryptor } from "../../auth/encryption.js";
+import { executeOnInstances } from "../../arr/client-helpers.js";
 import { pulseCollectors } from "../../pulse/collectors.js";
 import { SchedulerRegistry } from "../../scheduler-registry/scheduler-registry.js";
 import { SeerrCircuitBreaker } from "../../seerr/seerr-circuit-breaker.js";
@@ -148,22 +148,28 @@ describe("Dashboard metadata read acquisition", { timeout: 20_000 }, () => {
 	it("collects owned committed Pulse attention during an unrelated ordinary transaction", async () => {
 		const f = await createScopedWriteFixture({ writeIntent: true });
 		await f.plain.serviceInstance.updateMany({ data: { enabled: false } });
+		const encryptor = new Encryptor("8".repeat(64));
+		const token = encryptor.encrypt("synthetic-api-key");
 		await f.plain.user.create({ data: { id: "foreign-user", username: "foreign-user" } });
 		await f.plain.serviceInstance.createMany({
 			data: [
 				{ id: "owned-seerr", userId: "synthetic-user", enabled: true, label: "Committed Seerr" },
 				{ id: "disabled-seerr", userId: "synthetic-user", enabled: false, label: "Disabled" },
 				{ id: "foreign-seerr", userId: "foreign-user", enabled: true, label: "Foreign" },
+				{ id: "owned-sab", userId: "synthetic-user", enabled: true, label: "Committed SAB" },
+				{ id: "disabled-sab", userId: "synthetic-user", enabled: false, label: "Disabled SAB" },
+				{ id: "foreign-sab", userId: "foreign-user", enabled: true, label: "Foreign SAB" },
 			].map((row) => ({
 				...row,
-				service: "SEERR" as const,
+				service: row.id.endsWith("-sab") ? ("SABNZBD" as const) : ("SEERR" as const),
 				baseUrl: "http://synthetic.invalid",
-				encryptedApiKey: "synthetic-cipher",
-				encryptionIv: "synthetic-iv",
+				encryptedApiKey: row.id.endsWith("-sab") ? token.value : "synthetic-cipher",
+				encryptionIv: row.id.endsWith("-sab") ? token.iv : "synthetic-iv",
 			})),
 		});
 		const app = Fastify({ logger: false });
 		app.decorate("prisma", f.client.prisma);
+		app.decorate("encryptor", encryptor);
 		app.decorate("schedulerRegistry", new SchedulerRegistry());
 		const breaker = new SeerrCircuitBreaker({ failureThreshold: 1, cooldownMs: 60_000 });
 		for (const id of ["owned-seerr", "disabled-seerr", "foreign-seerr"]) breaker.reportFailure(id);
@@ -195,6 +201,14 @@ describe("Dashboard metadata read acquisition", { timeout: 20_000 }, () => {
 								where: { id: "foreign-seerr" },
 								data: { userId: "synthetic-user" },
 							});
+							await tx.serviceInstance.update({
+								where: { id: "owned-sab" },
+								data: { enabled: false, label: "Uncommitted SAB" },
+							});
+							await tx.serviceInstance.update({
+								where: { id: "foreign-sab" },
+								data: { userId: "synthetic-user" },
+							});
 							entered();
 							await held;
 							throw rollback;
@@ -220,8 +234,16 @@ describe("Dashboard metadata read acquisition", { timeout: 20_000 }, () => {
 					title: "Committed Seerr is unreachable",
 					source: "seerr",
 				}),
+				expect.objectContaining({
+					id: "sabnzbd-offline-owned-sab",
+					severity: "critical",
+					title: "Committed SAB is unreachable",
+					source: "sabnzbd",
+				}),
 			]);
-			expect(JSON.stringify(items)).not.toMatch(/Uncommitted|Foreign|foreign-seerr|disabled-seerr/);
+			expect(JSON.stringify(items)).not.toMatch(
+				/Uncommitted|Foreign|foreign-seerr|disabled-seerr|foreign-sab|disabled-sab/,
+			);
 			release();
 			expect(await publication).toBe(rollback);
 			expect(f.losses).toEqual([]);

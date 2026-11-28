@@ -7,6 +7,7 @@
 
 import type { PulseItem } from "@arr/shared";
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
+import { withIsolatedRuntimePrismaReadClient } from "../backup/restore-runtime-client.js";
 import { asRecord, sabCall, text } from "../sabnzbd/client.js";
 import { getStoredHttpAuthHeaders } from "../services/http-auth.js";
 
@@ -15,9 +16,11 @@ export async function collectSabnzbdSignals(
 	userId: string,
 	log: FastifyBaseLogger,
 ): Promise<PulseItem[]> {
-	const instances = await app.prisma.serviceInstance.findMany({
-		where: { userId, service: "SABNZBD", enabled: true },
-	});
+	const instances = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+		prisma.serviceInstance.findMany({
+			where: { userId, service: "SABNZBD", enabled: true },
+		}),
+	);
 	const items: PulseItem[] = [];
 	const now = new Date().toISOString();
 
