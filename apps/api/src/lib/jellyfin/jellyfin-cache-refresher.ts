@@ -924,6 +924,22 @@ export async function collectJellyfinCacheLiveEvidence(
 			}
 		}
 
+		const seasonParents = new Map<string, string | null>();
+		const seasonObservations: Array<{
+			id: string;
+			unit: ProviderCoverageUnitV1;
+			canonicalKeys: Set<string>;
+		}> = [];
+		const recordOnDeckMatch = (
+			agg: ItemAggregation,
+			unit: ProviderCoverageUnitV1,
+			canonicalKeys: Set<string>,
+		) => {
+			agg.onDeck = true;
+			unit.sourceBindings++;
+			canonicalKeys.add(`${agg.mediaType}:${agg.tmdbId}:${agg.libraryId}`);
+		};
+
 		for (const user of users) {
 			const onDeckUnit = createCoverageUnit(`user:${user.id}/on-deck`, {
 				expectedRawCount: null,
@@ -941,26 +957,45 @@ export async function collectJellyfinCacheLiveEvidence(
 				const onDeckCanonicalKeys = new Set<string>();
 				for (const item of [...resumeItems, ...nextUp]) {
 					onDeckUnit.rawObserved++;
-					if (item.type !== "Movie" && item.type !== "Series" && item.type !== "Episode") {
+					const jellyfinSeason = provider === "jellyfin" && item.type === "Season";
+					if (
+						!jellyfinSeason &&
+						item.type !== "Movie" &&
+						item.type !== "Series" &&
+						item.type !== "Episode"
+					) {
 						complete = false;
 						addCoverageSkip(onDeckUnit, "unsupported-provider-object");
 						continue;
 					}
 					const jellyfinId =
 						item.type === "Movie" || item.type === "Series" ? item.id : item.seriesId;
-					if (!jellyfinId?.trim()) {
+					if (!jellyfinId?.trim() || (jellyfinSeason && !item.id.trim())) {
 						complete = false;
 						addCoverageSkip(onDeckUnit, "missing-stable-key");
+						continue;
+					}
+					if (jellyfinSeason) {
+						// A later user may observe a conflicting parent for the same Season.
+						// Apply Season evidence only after all users have been collected.
+						const previousParent = seasonParents.get(item.id);
+						if (previousParent === undefined) {
+							seasonParents.set(item.id, jellyfinId);
+						} else if (previousParent !== jellyfinId) {
+							seasonParents.set(item.id, null);
+						}
+						seasonObservations.push({
+							id: item.id,
+							unit: onDeckUnit,
+							canonicalKeys: onDeckCanonicalKeys,
+						});
 						continue;
 					}
 					let matched = false;
 					for (const agg of aggregations.values()) {
 						if (agg.sourceIds.has(jellyfinId)) {
-							agg.onDeck = true;
+							recordOnDeckMatch(agg, onDeckUnit, onDeckCanonicalKeys);
 							matched = true;
-							onDeckUnit.sourceBindings++;
-							const canonicalKey = `${agg.mediaType}:${agg.tmdbId}:${agg.libraryId}`;
-							onDeckCanonicalKeys.add(canonicalKey);
 						}
 					}
 					if (!matched) {
@@ -977,6 +1012,19 @@ export async function collectJellyfinCacheLiveEvidence(
 				coverageUnits.push(onDeckUnit);
 				log.warn({ category: "on-deck-fetch-failed" }, "Jellyfin on-deck fetch failed");
 			}
+		}
+
+		for (const observation of seasonObservations) {
+			const parentId = seasonParents.get(observation.id);
+			const parentKey = parentId ? sourceIdentity.get(parentId) : undefined;
+			const parent = parentKey ? aggregations.get(parentKey) : undefined;
+			if (parent?.mediaType !== "series" || sourceIdentity.has(observation.id)) {
+				complete = false;
+				addCoverageSkip(observation.unit, "missing-supported-mapping");
+				continue;
+			}
+			recordOnDeckMatch(parent, observation.unit, observation.canonicalKeys);
+			observation.unit.canonicalEntities = observation.canonicalKeys.size;
 		}
 
 		const rows: JellyfinCacheSnapshotRow[] = [...aggregations.values()].map((agg) => ({

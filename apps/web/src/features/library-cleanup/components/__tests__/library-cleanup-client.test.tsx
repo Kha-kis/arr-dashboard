@@ -793,6 +793,47 @@ describe("LibraryCleanupClient", () => {
 			).toBeInTheDocument();
 		});
 
+		it("labels failed prefetch as unavailable cleanup evidence while preserving warnings and safety blocks", () => {
+			mockUseCleanupPreview.mockReturnValue(
+				defaultMutation({
+					data: {
+						totalEvaluated: 1,
+						totalFlagged: 1,
+						prefetchHealth: { jellyfin: "failed", plex: "ok" },
+						warnings: ["Jellyfin watch evidence unavailable; affected rules may be skipped."],
+						items: [
+							{
+								instanceId: "radarr-4k",
+								instanceLabel: "4K Radarr",
+								arrItemId: 101,
+								itemType: "movie",
+								title: "Example Movie",
+								matchedRuleName: "4K cleanup",
+								reason: "Skipped for safety: required evidence unavailable",
+								action: "skipped",
+								selectionStatus: "blocked",
+								plannedAction: "delete",
+								sizeOnDisk: "1000",
+								year: 2024,
+							},
+						],
+					},
+				}),
+			);
+
+			render(<LibraryCleanupClient />, { wrapper: createWrapper() });
+
+			expect(screen.getByText("Cleanup evidence unavailable").parentElement).toHaveTextContent(
+				"Cleanup evidence unavailable for jellyfin. Some rules may have been skipped.",
+			);
+			expect(screen.queryByText(/failed to load/)).not.toBeInTheDocument();
+			expect(
+				screen.getByText("Jellyfin watch evidence unavailable; affected rules may be skipped."),
+			).toBeInTheDocument();
+			expect(screen.getByText("1 Safety-blocked")).toBeInTheDocument();
+			expect(screen.queryByText("1 Delete")).not.toBeInTheDocument();
+		});
+
 		it("renders safety-blocked preview items separately from delete actions", () => {
 			mockUseCleanupPreview.mockReturnValue(
 				defaultMutation({
