@@ -1,3 +1,4 @@
+import { readJellyfinJson } from "../jellyfin/jellyfin-read-deadline.js";
 import { createHttpAuthHeaders, type HttpAuthCredentials } from "./http-auth.js";
 import { getHttpAuthConflict } from "./http-auth-validation.js";
 
@@ -575,12 +576,13 @@ async function testJellyfinConnection(
 					...createHttpAuthHeaders(httpAuth),
 				}
 			: { Authorization: `MediaBrowser Token="${apiKey}"` };
+		const authSignal = AbortSignal.timeout(5000);
 		const authResponse = await fetch(authUrl, {
 			headers: {
 				Accept: "application/json",
 				...serviceAuthHeaders,
 			},
-			signal: AbortSignal.timeout(5000),
+			signal: authSignal,
 		});
 		if (authResponse.status === 401) {
 			return {
@@ -591,6 +593,25 @@ async function testJellyfinConnection(
 		}
 		if (!authResponse.ok) {
 			return handleHttpError(authResponse, baseUrl);
+		}
+
+		const authInfo: unknown = await readJellyfinJson(authResponse, authSignal).catch(
+			() => undefined,
+		);
+		if (
+			typeof authInfo !== "object" ||
+			authInfo === null ||
+			!("Id" in authInfo) ||
+			typeof authInfo.Id !== "string" ||
+			authInfo.Id.trim().length === 0 ||
+			authInfo.Id !== json.Id
+		) {
+			return {
+				success: false,
+				error: "Invalid authenticated server response",
+				details:
+					"The authenticated request did not identify the same server as the public request. Check the server URL and proxy configuration.",
+			};
 		}
 	} catch {
 		return {
