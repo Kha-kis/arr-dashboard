@@ -278,10 +278,7 @@ describe("testServiceConnection provider probes (#465, #976)", () => {
 		expect(result.error).toBe("Authentication failed");
 		expect(result.details).not.toContain("synthetic-key");
 		expect(fetchSpy).toHaveBeenCalledTimes(1);
-
 	});
-
-
 
 	it.each([
 		[
@@ -377,6 +374,5 @@ describe("testServiceConnection provider probes (#465, #976)", () => {
 		} finally {
 			abortTimeout.mockRestore();
 		}
-
 	});
 });
