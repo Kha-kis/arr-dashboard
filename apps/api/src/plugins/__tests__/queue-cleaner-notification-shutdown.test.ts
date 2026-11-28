@@ -801,7 +801,8 @@ describe("Queue Cleaner accepted notification handoff", () => {
 		expect(rows.jobs[0]).toMatchObject({
 			id: f.staleId,
 			status: "error",
-			message: "Clean was interrupted (app restart or crash)",
+			message:
+				"Clean was interrupted (app restart or crash); one or more provider actions may have completed before the result was recorded. Review the upstream queue before retrying.",
 		});
 		expect(rows.jobs[0]?.completedAt).toBeInstanceOf(Date);
 		expect(rows.config.lastRunAt).toBeNull();
@@ -834,7 +835,8 @@ describe("Queue Cleaner accepted notification handoff", () => {
 		expect((await f.outcome()).jobs[0]).toMatchObject({
 			id: f.staleId,
 			status: "error",
-			message: "Clean was interrupted (app restart or crash)",
+			message:
+				"Clean was interrupted (app restart or crash); one or more provider actions may have completed before the result was recorded. Review the upstream queue before retrying.",
 		});
 		expect(f.state.afterTeardown).toBe(0);
 		expect(f.counts.executor).toBe(0);

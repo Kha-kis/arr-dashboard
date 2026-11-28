@@ -128,7 +128,8 @@ class QueueCleanerScheduler {
 					where: { status: "running" },
 					data: {
 						status: "error",
-						message: "Clean was interrupted (app restart or crash)",
+						message:
+							"Clean was interrupted (app restart or crash); one or more provider actions may have completed before the result was recorded. Review the upstream queue before retrying.",
 						completedAt: new Date(),
 					},
 				});
@@ -601,33 +602,45 @@ class QueueCleanerScheduler {
 			return true;
 		});
 
-		// Run due instances concurrently — cleaningInProgress prevents overlap
-		await Promise.allSettled(
-			dueConfigs.map(async (config) => {
-				this.cleaningInProgress.add(config.instanceId);
-				try {
-					await this.runClean(config.instanceId);
-				} catch (error) {
+		// Preserve the usual joined tick until the existing reporting deadline. If
+		// physical provider work is still settling then, let unrelated due instances
+		// receive later ticks while this instance remains marked in progress and the
+		// tracked run retains ownership through its final result.
+		const scheduledRuns = dueConfigs.map((config) => {
+			let notifyReportingDeadline!: () => void;
+			const reportingDeadline = new Promise<void>((resolve) => {
+				notifyReportingDeadline = resolve;
+			});
+			this.cleaningInProgress.add(config.instanceId);
+			const ownedRun = this.runClean(config.instanceId, notifyReportingDeadline)
+				.catch((error) => {
 					log.error(
 						{ err: error, instanceId: config.instanceId },
 						"Unexpected error during scheduled clean",
 					);
-				} finally {
+				})
+				.finally(() => {
 					this.cleaningInProgress.delete(config.instanceId);
-				}
-			}),
-		);
+				});
+			// Each instance remains joined until its own executor reaches the existing
+			// reporting deadline or its complete result work settles. A slow instance
+			// cannot release the tick before a peer whose own work is still pre-deadline.
+			return Promise.race([ownedRun, reportingDeadline]);
+		});
+		await Promise.allSettled(scheduledRuns);
 	}
 
 	/**
 	 * Execute a clean for an instance.
 	 */
-	private runClean(instanceId: string): Promise<void> {
+	private runClean(instanceId: string, onReportingDeadline?: () => void): Promise<void> {
 		if (this.shuttingDown) return Promise.resolve();
-		return this.trackWork(this.trackClean(() => this.runCleanWork(instanceId)));
+		return this.trackWork(
+			this.trackClean(() => this.runCleanWork(instanceId, onReportingDeadline)),
+		);
 	}
 
-	private async runCleanWork(instanceId: string): Promise<void> {
+	private async runCleanWork(instanceId: string, onReportingDeadline?: () => void): Promise<void> {
 		const app = this.app;
 		if (!app) return;
 
@@ -674,6 +687,7 @@ class QueueCleanerScheduler {
 			},
 		});
 
+		let exceededReportingDeadline = false;
 		try {
 			const execution = this.trackWork(
 				withIndependentCleanupOperationGuard(() =>
@@ -688,11 +702,53 @@ class QueueCleanerScheduler {
 					}
 				})
 				.catch(() => undefined);
-			const result = await withTimeout(
-				execution,
-				MAX_CLEAN_DURATION_MS,
-				`Queue clean timed out after ${MAX_CLEAN_DURATION_MS / 1000} seconds`,
+			const deadline = new Promise<"deadline">((resolve) => {
+				const timer = setTimeout(() => resolve("deadline"), MAX_CLEAN_DURATION_MS);
+				execution.then(
+					() => clearTimeout(timer),
+					() => clearTimeout(timer),
+				);
+			});
+			const settledBeforeDeadline = execution.then(
+				(result) => ({ kind: "result" as const, result }),
+				(error: unknown) => ({ kind: "error" as const, error }),
 			);
+			const first = await Promise.race([settledBeforeDeadline, deadline]);
+			let result: CleanerResult;
+			if (first === "deadline") {
+				exceededReportingDeadline = true;
+				onReportingDeadline?.();
+				const warningMessage =
+					"Queue clean has not produced a final result after " +
+					String(MAX_CLEAN_DURATION_MS / 1000) +
+					" seconds. " +
+					"Provider work or result persistence may still be active; do not retry while this run settles.";
+				try {
+					const warning = await app.prisma.queueCleanerLog.updateMany({
+						where: { id: logEntry.id, instanceId, status: "running", completedAt: null },
+						data: { message: warningMessage },
+					});
+					if (warning.count !== 1) {
+						log.warn(
+							{ instanceId, logId: logEntry.id, matchedRows: warning.count },
+							"Queue Cleaner pending result warning was not applied to its running log",
+						);
+					}
+				} catch (warningError) {
+					log.error(
+						{ err: warningError, instanceId, logId: logEntry.id },
+						"Queue Cleaner exceeded its reporting deadline but could not persist the pending warning",
+					);
+				}
+				// The deadline bounds only when the pending warning becomes visible. Await
+				// the original executor exactly once so operation ownership and shutdown
+				// drain stay tied to physical settlement.
+				result = await execution;
+			} else if (first.kind === "error") {
+				throw first.error;
+			} else {
+				result = first.result;
+			}
 
 			const durationMs = Date.now() - startTime;
 			const completedAt = new Date();
@@ -801,21 +857,39 @@ class QueueCleanerScheduler {
 			}
 		} catch (error) {
 			const durationMs = Date.now() - startTime;
-			const message = getErrorMessage(error, "Unknown error");
+			const underlyingMessage = getErrorMessage(error, "Unknown error");
+			const message = exceededReportingDeadline
+				? "Queue clean settled without a confirmed result after the " +
+					String(MAX_CLEAN_DURATION_MS / 1000) +
+					"-second reporting deadline. Some provider actions may have completed; review the upstream queue before retrying. Underlying error: " +
+					underlyingMessage
+				: underlyingMessage;
 			const contentionDiagnostics = queueCleanerSqliteDiagnosticsFrom(error);
 			if (contentionDiagnostics)
 				log.error(contentionDiagnostics, "Queue Cleaner SQLite transaction failed");
 
 			// The result may already be committed when its acknowledgement is lost.
-			const failureLog = await app.prisma.queueCleanerLog.updateMany({
-				where: { id: logEntry.id, instanceId, status: "running", completedAt: null },
-				data: {
-					status: "error",
-					message,
-					durationMs,
-					completedAt: new Date(),
-				},
-			});
+			// If even the guarded terminal check is unavailable, preserve the single
+			// original Activity row as unresolved; do not escape into the manual
+			// pre-start fallback, which would misrepresent completed provider work.
+			let failureLog: { count: number };
+			try {
+				failureLog = await app.prisma.queueCleanerLog.updateMany({
+					where: { id: logEntry.id, instanceId, status: "running", completedAt: null },
+					data: {
+						status: "error",
+						message,
+						durationMs,
+						completedAt: new Date(),
+					},
+				});
+			} catch (reportingError) {
+				log.error(
+					{ err: reportingError, executionError: error, instanceId, logId: logEntry.id },
+					"Queue Cleaner result could not be confirmed or written; preserving its original Activity row",
+				);
+				return;
+			}
 
 			if (!contentionDiagnostics)
 				log.error({ err: error, instanceLabel: config.instance.label }, "Queue cleaner error");
