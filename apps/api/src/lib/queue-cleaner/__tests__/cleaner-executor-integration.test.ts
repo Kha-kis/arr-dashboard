@@ -728,6 +728,102 @@ describe("executeQueueCleaner — integration", () => {
 		expect(del).toHaveBeenCalledOnce();
 	});
 
+	it.each(["usenet", "usenetdownloadprotocol", "UsenetDownloadProtocol"])(
+		"treats reported Lidarr protocol %s as Usenet without replacing its raw value",
+		async (protocol) => {
+			const instance = makeInstance({ service: "LIDARR" });
+			const item = { ...STALLED_ITEM, protocol, trackedDownloadState: "failed" };
+			const del = vi.fn().mockResolvedValue(undefined);
+			const app = makeApp({ get: async () => ({ records: [item] }), del });
+			vi.mocked(app.prisma.serviceInstance.findUnique).mockResolvedValue(instance);
+			const config = makeConfig({
+				failedEnabled: true,
+				stalledEnabled: false,
+				lastSeedProtection: true,
+				removeFromClient: false,
+				addToBlocklist: true,
+			});
+			const preview = await executeEnhancedPreview(app, instance, config);
+			const dry = await executeQueueCleaner(app, instance, { ...config, dryRunMode: true });
+			const live = await executeQueueCleaner(app, instance, config);
+			expect(preview.previewItems[0]).toMatchObject({ action: "remove", protocol });
+			expect(dry.skippedItems[0]?.reason).toContain("Would remove");
+			expect(live.itemsCleaned).toBe(1);
+			expect(del).toHaveBeenCalledOnce();
+		},
+	);
+
+	it.each([
+		["LIDARR", "torrentdownloadprotocol"],
+		["LIDARR", "unknown"],
+		["LIDARR", "usenetdownloadprotocol-typo"],
+		["SONARR", "usenetdownloadprotocol"],
+	] as const)("keeps %s protocol %s guarded without a torrent hash", async (service, protocol) => {
+		const instance = makeInstance({ service });
+		const item = { ...STALLED_ITEM, protocol, trackedDownloadState: "failed" };
+		const del = vi.fn().mockResolvedValue(undefined);
+		const app = makeApp({ get: async () => ({ records: [item] }), del });
+		vi.mocked(app.prisma.serviceInstance.findUnique).mockResolvedValue(instance);
+		const config = makeConfig({
+			failedEnabled: true,
+			stalledEnabled: false,
+			lastSeedProtection: true,
+		});
+		const preview = await executeEnhancedPreview(app, instance, config);
+		const result = await executeQueueCleaner(app, instance, config);
+		expect(preview.previewItems[0]).toMatchObject({
+			action: "skip",
+			reason: expect.stringContaining("torrent identity is unavailable"),
+		});
+		expect(result.itemsCleaned).toBe(0);
+		expect(del).not.toHaveBeenCalled();
+	});
+
+	it("still withholds a Lidarr Usenet alias without a verified download identity", async () => {
+		const instance = makeInstance({ service: "LIDARR" });
+		const item = { ...STALLED_ITEM, protocol: "usenetdownloadprotocol", downloadId: undefined };
+		const del = vi.fn();
+		const app = makeApp({ get: async () => ({ records: [item] }), del });
+		vi.mocked(app.prisma.serviceInstance.findUnique).mockResolvedValue(instance);
+		const config = makeConfig({ lastSeedProtection: true });
+		const preview = await executeEnhancedPreview(app, instance, config);
+		const dry = await executeQueueCleaner(app, instance, { ...config, dryRunMode: true });
+		const live = await executeQueueCleaner(app, instance, config);
+		expect(preview.previewItems[0]).toMatchObject({
+			action: "skip",
+			reason: expect.stringContaining("identity is unavailable"),
+		});
+		expect(dry.skippedItems[0]?.reason).toContain("identity is unavailable");
+		expect(live.itemsCleaned).toBe(0);
+		expect(del).not.toHaveBeenCalled();
+	});
+
+	it("does not treat Lidarr Usenet as seeding even with identical queue status", async () => {
+		const instance = makeInstance({ service: "LIDARR" });
+		const item = {
+			...STALLED_ITEM,
+			protocol: "usenetdownloadprotocol",
+			trackedDownloadStatus: "ok",
+			trackedDownloadState: "importPending",
+			sizeleft: 0,
+		};
+		const del = vi.fn().mockResolvedValue(undefined);
+		const app = makeApp({ get: async () => ({ records: [item] }), del });
+		vi.mocked(app.prisma.serviceInstance.findUnique).mockResolvedValue(instance);
+		const config = makeConfig({
+			failedEnabled: false,
+			stalledEnabled: false,
+			lastSeedProtection: false,
+			seedingTimeoutEnabled: true,
+			seedingTimeoutHours: 0,
+		});
+		const preview = await executeEnhancedPreview(app, instance, config);
+		const result = await executeQueueCleaner(app, instance, config);
+		expect(preview.wouldRemove).toBe(0);
+		expect(result.itemsCleaned).toBe(0);
+		expect(del).not.toHaveBeenCalled();
+	});
+
 	it("reads every advertised queue page in preview and execution", async () => {
 		const first = Array.from({ length: 1000 }, (_, index) => ({
 			...STALLED_ITEM,

@@ -58,6 +58,12 @@ export const rawQueueItemSchema = z.looseObject({
 	status: z.unknown().optional(),
 });
 
+/** Match the Lidarr compatibility spelling for policy without changing stored identity. */
+export function isUsenetQueueProtocol(protocol: unknown, service?: string): boolean {
+	const value = typeof protocol === "string" ? protocol.toLowerCase() : "";
+	return value === "usenet" || (service === "LIDARR" && value === "usenetdownloadprotocol");
+}
+
 /**
  * Safely parse a date value from unknown, returning null if invalid.
  */

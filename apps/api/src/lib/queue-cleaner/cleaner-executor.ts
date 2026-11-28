@@ -40,6 +40,7 @@ import {
 	checkWhitelist,
 	collectStatusTexts,
 	isFutureEpisode,
+	isUsenetQueueProtocol,
 	parseDate,
 	type RawQueueItem,
 } from "./queue-item-utils.js";
@@ -111,11 +112,10 @@ function applyPreviewActionLimits<
 function isUnsafeRetainedTorrentAction(
 	item: Pick<CleanerResultItem, "protocol" | "rule">,
 	config: QueueCleanerConfig,
+	service: ServiceInstance["service"],
 ): boolean {
-	const normalizedProtocol =
-		typeof item.protocol === "string" ? item.protocol.toLowerCase() : undefined;
 	return (
-		normalizedProtocol !== "usenet" &&
+		!isUsenetQueueProtocol(item.protocol, service) &&
 		item.rule !== "disallowed_file_extension" &&
 		isUnsafeRetainedTorrentPolicy(config)
 	);
@@ -248,7 +248,7 @@ async function resolveSafetyGateReasons(
 						const item = sourceItems.get(id);
 						const fingerprint = item && queueItemFingerprint(item);
 						const strike = retryStrikes.get(id);
-						const rule = item && evaluateQueueItem(item, config, now)?.rule;
+						const rule = item && evaluateQueueItem(item, config, now, instance.service)?.rule;
 						if (
 							item &&
 							fingerprint &&
@@ -295,8 +295,7 @@ async function resolveSafetyGateReasons(
 		const hash = normalizeDownloadId(item.downloadId);
 		if (
 			config.lastSeedProtection &&
-			item.protocol !== "usenet" &&
-			!(typeof item.protocol === "string" && item.protocol.toLowerCase() === "usenet") &&
+			!isUsenetQueueProtocol(item.protocol, instance.service) &&
 			!hash
 		) {
 			reasons.set(String(item.id), "last-seed protection: torrent identity is unavailable");
@@ -764,7 +763,7 @@ async function executeQueueCleanerWithGuard(
 		}
 
 		const filePolicy = filePolicyResults.get(item);
-		const standardEvaluation = evaluateQueueItem(item, config, now);
+		const standardEvaluation = evaluateQueueItem(item, config, now, instance.service);
 		if (filePolicy?.status === "deferred") {
 			skipped.push({
 				id,
@@ -880,7 +879,7 @@ async function executeQueueCleanerWithGuard(
 			const currentRule =
 				policy?.status === "violation"
 					? "disallowed_file_extension"
-					: evaluateQueueItem(current, config, currentTime)?.rule;
+					: evaluateQueueItem(current, config, currentTime, instance.service)?.rule;
 			const reasons = await resolveSafetyGateReasons(
 				app,
 				instance,
@@ -1109,10 +1108,10 @@ async function executeQueueCleanerWithGuard(
 		}
 
 		const policyBlocked = dryRunToRemove.filter((item) =>
-			isUnsafeRetainedTorrentAction(item, config),
+			isUnsafeRetainedTorrentAction(item, config, instance.service),
 		);
 		const authorizedCandidates = dryRunToRemove.filter(
-			(item) => !isUnsafeRetainedTorrentAction(item, config),
+			(item) => !isUnsafeRetainedTorrentAction(item, config, instance.service),
 		);
 		const plannedActions = applyPreviewActionLimits(
 			authorizedCandidates.map((item) => {
@@ -1171,9 +1170,11 @@ async function executeQueueCleanerWithGuard(
 		};
 	}
 
-	const policyBlocked = toRemove.filter((item) => isUnsafeRetainedTorrentAction(item, config));
+	const policyBlocked = toRemove.filter((item) =>
+		isUnsafeRetainedTorrentAction(item, config, instance.service),
+	);
 	const authorizedToRemove = toRemove.filter(
-		(item) => !isUnsafeRetainedTorrentAction(item, config),
+		(item) => !isUnsafeRetainedTorrentAction(item, config, instance.service),
 	);
 	for (const item of policyBlocked) {
 		skipped.push({ ...item, reason: RETAINED_TORRENT_BLOCKLIST_ERROR });
@@ -1319,7 +1320,7 @@ async function executeQueueCleanerWithGuard(
 				const isTorrent = item.protocol === "torrent";
 				const isFilePolicyRemoval = item.rule === "disallowed_file_extension";
 				const useChangeCategory = !isFilePolicyRemoval && config.changeCategoryEnabled && isTorrent;
-				if (isUnsafeRetainedTorrentAction(item, config)) {
+				if (isUnsafeRetainedTorrentAction(item, config, instance.service)) {
 					skipped.push({ ...item, reason: RETAINED_TORRENT_BLOCKLIST_ERROR });
 					continue;
 				}
@@ -1747,7 +1748,7 @@ export async function executeEnhancedPreview(
 		// Evaluate against rules. A file-policy violation takes precedence
 		// because its removal semantics must delete the full torrent payload.
 		const filePolicy = filePolicyResults.get(item);
-		const standardEvaluation = evaluateQueueItem(item, config, now);
+		const standardEvaluation = evaluateQueueItem(item, config, now, instance.service);
 		if (filePolicy?.status === "deferred") {
 			ruleSummary.file_policy_deferred = (ruleSummary.file_policy_deferred ?? 0) + 1;
 			previewItems.push({
@@ -1821,6 +1822,7 @@ export async function executeEnhancedPreview(
 						rule: evaluation.rule,
 					},
 					config,
+					instance.service,
 				)
 			) {
 				previewItems.push({
