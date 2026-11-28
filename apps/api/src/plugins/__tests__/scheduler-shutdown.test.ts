@@ -306,7 +306,8 @@ describe.each<Kind>(["hunting", "queue-cleaner"])("%s terminal shutdown", (kind)
 		await vi.advanceTimersByTimeAsync(
 			(kind === "hunting" ? MAX_HUNT_DURATION_MS : MAX_CLEAN_DURATION_MS) + 1,
 		);
-		expect(fixture.logModel.update).toHaveBeenCalledWith(
+		const failureWrite = kind === "hunting" ? fixture.logModel.update : fixture.logModel.updateMany;
+		expect(failureWrite).toHaveBeenCalledWith(
 			expect.objectContaining({ data: expect.objectContaining({ status: "error" }) }),
 		);
 		const closing = fixture.close();
