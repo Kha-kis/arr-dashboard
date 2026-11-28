@@ -8,6 +8,10 @@ const apiDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), "provider-cache-heap-"));
 const databasePath = path.join(testDir, "provider-cache.db");
 const pnpm = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+const measureOnly = process.argv.includes("--measure");
+if (process.argv.slice(2).some((arg) => arg !== "--measure")) {
+	throw new Error("Usage: node scripts/test-provider-cache-heap.mjs [--measure]");
+}
 
 function run(command, args, env = {}) {
 	const result = spawnSync(command, args, {
@@ -37,9 +41,11 @@ try {
 				"--maxWorkers=1",
 				"--no-file-parallelism",
 				"--disableConsoleIntercept",
+				...(measureOnly ? ["--testNamePattern=opt-in repeated refresh metrics"] : []),
 			],
 			{
 				TEST_HEAP: "true",
+				TEST_HEAP_MEASURE: measureOnly ? "true" : "false",
 				PROVIDER_CACHE_TEST_DB_PATH: databasePath,
 			},
 		);
