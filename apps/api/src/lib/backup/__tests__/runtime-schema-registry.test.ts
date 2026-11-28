@@ -194,7 +194,22 @@ describe("SABnzbd additive service schema capability", () => {
 			statements.push(sql);
 		});
 		expect(statements.filter((sql) => sql === appendAtom?.sql)).toHaveLength(1);
-		expect(statements.some((sql) => sql === 'CREATE TYPE "ServiceType" AS ENUM')).toBe(false);
+		expect(statements.some((sql) => sql.startsWith('CREATE TYPE "ServiceType" AS ENUM'))).toBe(
+			false,
+		);
+		const fresh = prepareRuntimeSchemaExecution(registry, { provider: "postgresql", tables: [] }, [
+			"ServiceType",
+		]);
+		const freshStatements: string[] = [];
+		await fresh.execute((sql) => {
+			freshStatements.push(sql);
+		});
+		expect(
+			freshStatements.filter((sql) => sql.startsWith('CREATE TYPE "ServiceType" AS ENUM')),
+		).toHaveLength(1);
+		expect(
+			freshStatements.some((sql) => sql.startsWith('ALTER TYPE "ServiceType" ADD VALUE')),
+		).toBe(false);
 		expect(() =>
 			prepareRuntimeSchemaExecution(
 				registry,

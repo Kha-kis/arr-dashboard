@@ -35,9 +35,14 @@ type HistoryItem = {
 	library: null;
 };
 
-function boundedCount(value: unknown, maximum: number): number {
-	const parsed = typeof value === "number" ? value : Number(value);
-	return Number.isInteger(parsed) && parsed >= 0 ? Math.min(parsed, maximum) : 0;
+function nonNegativeCount(value: unknown): number | null {
+	const parsed =
+		typeof value === "number"
+			? value
+			: typeof value === "string" && /^\d+$/.test(value)
+				? Number(value)
+				: Number.NaN;
+	return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
 }
 
 function safeText(value: unknown, maximum = 160): string {
@@ -56,8 +61,8 @@ function queueItems(value: unknown): Job[] | null {
 	const result: Job[] = [];
 	for (const item of rows) {
 		const row = asRecord(item);
-		const nzoId = text(row.nzo_id);
-		if (!nzoId || nzoId.length > 200 || ids.has(nzoId)) return null;
+		const nzoId = typeof row.nzo_id === "string" ? row.nzo_id : "";
+		if (!safeNzoId(nzoId) || ids.has(nzoId)) return null;
 		ids.add(nzoId);
 		result.push({
 			nzoId,
@@ -83,8 +88,8 @@ function historyItems(value: unknown, maximum = DEFAULT_HISTORY_LIMIT): HistoryI
 	const result: HistoryItem[] = [];
 	for (const item of rows) {
 		const row = asRecord(item);
-		const nzoId = text(row.nzo_id);
-		if (!nzoId || nzoId.length > 200 || ids.has(nzoId)) return null;
+		const nzoId = typeof row.nzo_id === "string" ? row.nzo_id : "";
+		if (!safeNzoId(nzoId) || ids.has(nzoId)) return null;
 		ids.add(nzoId);
 		const completed = Number(row.completed);
 		const completedDate =
@@ -112,12 +117,8 @@ function queueStats(queueValue: unknown) {
 	const pausedValue = queue.paused_all ?? queue.paused;
 	const parsedSpeed = typeof queue.kbpersec === "number" ? queue.kbpersec : Number(queue.kbpersec);
 	const rawSlotCount = queue.noofslots_total ?? queue.noofslots;
-	const parsedSlotCount = Number(rawSlotCount);
-	const slotCountKnown =
-		rawSlotCount !== undefined &&
-		rawSlotCount !== null &&
-		Number.isSafeInteger(parsedSlotCount) &&
-		parsedSlotCount >= 0;
+	const parsedSlotCount = nonNegativeCount(rawSlotCount);
+	const slotCountKnown = parsedSlotCount !== null;
 	const visibleSlotCount = Array.isArray(queue.slots) ? queue.slots.length : 0;
 	return {
 		version: safeText(queue.version, 40) || "unknown",
@@ -129,7 +130,7 @@ function queueStats(queueValue: unknown) {
 		timeLeft: safeText(queue.timeleft, 40),
 		diskFree: safeText(queue.diskspace1, 40),
 		diskTotal: safeText(queue.diskspacetotal1, 40),
-		queueCount: slotCountKnown ? parsedSlotCount : visibleSlotCount,
+		queueCount: slotCountKnown ? Math.min(parsedSlotCount, 1_000_000) : visibleSlotCount,
 		queueCountKnown: slotCountKnown,
 		pausedJobs: 0,
 	};
@@ -244,13 +245,9 @@ async function readInstance(
 				? "partial"
 				: "complete";
 	const rawHistoryTotal = historyBody?.noofslots;
-	const parsedHistoryTotal = Number(rawHistoryTotal);
-	const historyTotalKnown =
-		rawHistoryTotal !== undefined &&
-		rawHistoryTotal !== null &&
-		Number.isSafeInteger(parsedHistoryTotal) &&
-		parsedHistoryTotal >= 0;
-	const historyTotal = historyTotalKnown ? parsedHistoryTotal : 0;
+	const parsedHistoryTotal = nonNegativeCount(rawHistoryTotal);
+	const historyTotalKnown = parsedHistoryTotal !== null;
+	const historyTotal = historyTotalKnown ? Math.min(parsedHistoryTotal, 1_000_000) : 0;
 	const historyCoverage: Coverage =
 		history === null
 			? "unavailable"
@@ -310,19 +307,12 @@ function exactFilteredLookup<T>(
 ): ExactLookup<T> {
 	const envelope = asRecord(asRecord(value)[envelopeKey]);
 	if (!Array.isArray(envelope.slots)) return { state: "unavailable" };
-	const countValue = envelope.noofslots;
-	const count =
-		typeof countValue === "number"
-			? countValue
-			: typeof countValue === "string" && /^\d+$/.test(countValue)
-				? Number(countValue)
-				: Number.NaN;
-	if (!Number.isSafeInteger(count) || count < 0 || count > 2 || envelope.slots.length > 2)
-		return { state: "unavailable" };
+	const count = nonNegativeCount(envelope.noofslots);
+	if (count === null || count > 2 || envelope.slots.length > 2) return { state: "unavailable" };
 	if (count === 0 && envelope.slots.length === 0) return { state: "absent" };
 	if (count !== 1 || envelope.slots.length !== 1) return { state: "unavailable" };
 	const item = asRecord(envelope.slots[0]);
-	return text(item.nzo_id) === nzoId
+	return typeof item.nzo_id === "string" && safeNzoId(item.nzo_id) && item.nzo_id === nzoId
 		? { state: "found", item: item as T }
 		: { state: "unavailable" };
 }
@@ -862,13 +852,14 @@ export const registerSabnzbdRoutes: FastifyPluginAsync = async (app) => {
 		const items = historyItems(history, page.limit);
 		if (!items)
 			return reply.status(502).send({ error: "SABnzbd returned incomplete history data" });
+		const historyTotal = nonNegativeCount(history.noofslots);
 		return {
 			items,
 			start: page.start,
 			limit: page.limit,
-			total: boundedCount(history.noofslots, 1_000_000),
+			total: historyTotal === null ? 0 : Math.min(historyTotal, 1_000_000),
 			coverage:
-				page.start + items.length >= boundedCount(history.noofslots, 1_000_000)
+				historyTotal !== null && page.start + items.length >= historyTotal
 					? ("complete" as const)
 					: ("partial" as const),
 		};

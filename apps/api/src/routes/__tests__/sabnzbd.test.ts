@@ -197,6 +197,40 @@ describe("SABnzbd read routes", () => {
 		expect(instance.error).toContain("temporarily unavailable");
 	});
 
+	it("keeps malformed provider totals partial instead of inventing complete empty coverage", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(jsonResponse({ queue: { noofslots_total: "", slots: [] } }))
+			.mockResolvedValueOnce(jsonResponse({ history: { noofslots: "", slots: [] } }))
+			.mockResolvedValueOnce(jsonResponse({ warnings: [] }))
+			.mockResolvedValueOnce(jsonResponse({ categories: [] }));
+		vi.stubGlobal("fetch", fetchMock);
+		const { app } = await buildApp();
+
+		const instance = (await app.inject({ method: "GET", url: "/api/sabnzbd" })).json().instances[0];
+		await app.close();
+
+		expect(instance.queueCoverage).toBe("partial");
+		expect(instance.historyCoverage).toBe("partial");
+	});
+
+	it("rejects non-string provider job identities rather than coercing them", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(
+				jsonResponse({ queue: { noofslots_total: 1, slots: [{ nzo_id: 123 }] } }),
+			)
+			.mockResolvedValueOnce(jsonResponse({ history: { noofslots: 1, slots: [{ nzo_id: 123 }] } }))
+			.mockResolvedValueOnce(jsonResponse({ warnings: [] }))
+			.mockResolvedValueOnce(jsonResponse({ categories: [] }));
+		vi.stubGlobal("fetch", fetchMock);
+		const { app } = await buildApp();
+		const instance = (await app.inject({ method: "GET", url: "/api/sabnzbd" })).json().instances[0];
+		await app.close();
+		expect(instance.queueCoverage).toBe("unavailable");
+		expect(instance.historyCoverage).toBe("unavailable");
+	});
+
 	it("marks truncated queue and history observations partial", async () => {
 		const fetchMock = vi
 			.fn()
