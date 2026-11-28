@@ -7,6 +7,7 @@
  * replacement-publication path against real SQLite/Prisma instead of mocks.
  */
 
+import { performance } from "node:perf_hooks";
 import type { FastifyBaseLogger } from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
@@ -33,6 +34,7 @@ const publication = vi.hoisted(() => ({
 	plexClient: undefined as PlexClient | undefined,
 	jellyfinClient: undefined as JellyfinClient | undefined,
 	tautulliClient: undefined as TautulliClient | undefined,
+	plexItems: [] as PlexLibraryItem[],
 }));
 
 vi.mock("../plex-client.js", async (importOriginal) => {
@@ -141,7 +143,20 @@ vi.mock("../plex-authority-service.js", async (importOriginal) => {
 	};
 });
 
-const RUN_HEAP_TESTS = process.env.TEST_HEAP === "true";
+const RUN_HEAP_TESTS = process.env.TEST_HEAP === "true" || process.env.TEST_HEAP_MEASURE === "true";
+const RUN_HEAP_MEASURE = process.env.TEST_HEAP_MEASURE === "true";
+const nativeSqlCounts = { statements: 0, reads: 0, writes: 0, other: 0 };
+function recordSqlEvent(query: string): void {
+	nativeSqlCounts.statements += 1;
+	const statement = query
+		.trimStart()
+		.replace(/^(?:--[^\n]*\s*)+/, "")
+		.toUpperCase();
+	if (/^(SELECT|EXPLAIN)\b/.test(statement)) nativeSqlCounts.reads += 1;
+	else if (/^(INSERT|UPDATE|DELETE|REPLACE|CREATE|DROP|ALTER|TRUNCATE)\b/.test(statement))
+		nativeSqlCounts.writes += 1;
+	else nativeSqlCounts.other += 1;
+}
 const MIB = 1024 * 1024;
 const PLEX_ITEMS = 15_000;
 const JELLYFIN_ITEMS = 12_000;
@@ -181,7 +196,15 @@ function reportHeap(message: string): void {
 		beforeAll(async () => {
 			const testDb = process.env.PROVIDER_CACHE_TEST_DB_PATH;
 			if (!testDb) throw new Error("Run this test through pnpm test:provider-cache-heap");
-			prisma = createTestPrismaClient(testDb);
+			prisma = createTestPrismaClient(
+				testDb,
+				RUN_HEAP_MEASURE ? { onQuery: recordSqlEvent } : undefined,
+			);
+			if (RUN_HEAP_MEASURE) {
+				const mode =
+					await prisma.$queryRawUnsafe<Array<{ journal_mode: string }>>("PRAGMA journal_mode");
+				reportHeap(`SQLite journal mode: ${mode[0]?.journal_mode ?? "unknown"}`);
+			}
 
 			await prisma.user.create({ data: { id: "heap-user", username: "heap-user" } });
 			await prisma.serviceInstance.createMany({
@@ -250,6 +273,7 @@ function reportHeap(message: string): void {
 				addedAt: 1_700_000_000 + index,
 				thumb: `/library/metadata/${index}/thumb`,
 			}));
+			publication.plexItems = plexItems;
 			plexClient = {
 				getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
 				getActivities: vi.fn().mockResolvedValue([]),
@@ -461,6 +485,101 @@ function reportHeap(message: string): void {
 			expect(firstGrowth).toBeLessThan(100 * MIB);
 			expect(repeatedGrowth).toBeLessThan(50 * MIB);
 		}, 180_000);
+
+		if (RUN_HEAP_MEASURE)
+			it("opt-in repeated refresh metrics", async () => {
+				const plexItems = vi.mocked(plexClient.getLibraryItemsWithCoverage);
+				const fullFixture = publication.plexItems;
+				expect(fullFixture).toHaveLength(15_000);
+				for (const [label, sampleSize] of [
+					["small", 500],
+					["large", PLEX_ITEMS],
+				] as const) {
+					const items = fullFixture.slice(0, sampleSize);
+					const elapsed: number[] = [];
+					const postGcHeap: number[] = [];
+					const peakRss: number[] = [];
+					const cacheAgeMs: number[] = [];
+					let settlementCalls = 0;
+					let providerReadCalls = 0;
+					let reportedWrites = 0;
+					const sqlCounts = { statements: 0, reads: 0, writes: 0, other: 0 };
+					let actualRows = 0;
+					for (let sample = 0; sample < 5; sample++) {
+						plexItems.mockResolvedValue({
+							items,
+							expectedRawCount: items.length,
+							pagesAttempted: 1,
+							pagesCompleted: 1,
+							rawObserved: items.length,
+							reason: null,
+						});
+						collectHeap();
+						let rss = process.memoryUsage().rss;
+						const sampler = setInterval(() => {
+							rss = Math.max(rss, process.memoryUsage().rss);
+						}, 10);
+						const start = performance.now();
+						const sqlBefore = { ...nativeSqlCounts };
+						let result!: Awaited<ReturnType<typeof refreshPlexCache>>;
+						try {
+							publication.plexClient = plexClient;
+							const sectionsBefore = vi.mocked(plexClient.getLibrarySections).mock.calls.length;
+							const settlementBefore = vi.mocked(plexClient.getLibrarySettlementSections).mock.calls
+								.length;
+							const itemsBefore = plexItems.mock.calls.length;
+							result = await refreshPlexCache({
+								prisma,
+								instance: plexPublicationInstance,
+								log: silentLog,
+							});
+							providerReadCalls +=
+								vi.mocked(plexClient.getLibrarySections).mock.calls.length -
+								sectionsBefore +
+								plexItems.mock.calls.length -
+								itemsBefore;
+							for (const key of Object.keys(sqlCounts) as (keyof typeof sqlCounts)[]) {
+								sqlCounts[key] += nativeSqlCounts[key] - sqlBefore[key];
+							}
+							settlementCalls +=
+								vi.mocked(plexClient.getLibrarySettlementSections).mock.calls.length -
+								settlementBefore;
+						} finally {
+							clearInterval(sampler);
+						}
+						elapsed.push(performance.now() - start);
+						postGcHeap.push(collectHeap());
+						peakRss.push(Math.max(rss, process.memoryUsage().rss));
+						expect(result).toMatchObject({ complete: true, errors: 0, upserted: sampleSize });
+						reportedWrites += result.upserted;
+						const status = await prisma.cacheRefreshStatus.findUniqueOrThrow({
+							where: { instanceId_cacheType: { instanceId: "heap-plex", cacheType: "plex" } },
+						});
+						cacheAgeMs.push(Date.now() - status.lastRefreshedAt.getTime());
+						actualRows = await prisma.plexCache.count({ where: { instanceId: "heap-plex" } });
+						expect(actualRows).toBe(sampleSize);
+					}
+					const mean = (values: number[]) =>
+						values.reduce((sum, value) => sum + value, 0) / values.length;
+					reportHeap(
+						`Provider refresh measurements: size=${label} rows=${sampleSize} samples=${elapsed.length} elapsedMeanMs=${mean(elapsed).toFixed(1)} elapsedMinMs=${Math.min(...elapsed).toFixed(1)} elapsedMaxMs=${Math.max(...elapsed).toFixed(1)} peakRssMaxMB=${(Math.max(...peakRss) / MIB).toFixed(1)} postGcHeapMeanMB=${(mean(postGcHeap) / MIB).toFixed(1)} providerReadCalls=${providerReadCalls} settlementCalls=${settlementCalls} reportedWrites=${reportedWrites} conservedRows=${actualRows} cacheAgeMeanMs=${mean(cacheAgeMs).toFixed(1)}`,
+					);
+					reportHeap(
+						"Native SQL counts: statements=" +
+							sqlCounts.statements +
+							" reads=" +
+							sqlCounts.reads +
+							" writes=" +
+							sqlCounts.writes +
+							" other=" +
+							sqlCounts.other +
+							" actualRows=" +
+							actualRows +
+							" expectedRows=" +
+							sampleSize,
+					);
+				}
+			}, 240_000);
 
 		it("bounds the production-shaped full-library policy read", async () => {
 			await prisma.user.create({
