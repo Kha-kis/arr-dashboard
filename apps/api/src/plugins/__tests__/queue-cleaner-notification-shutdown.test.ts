@@ -28,6 +28,9 @@ vi.mock("../../lib/queue-cleaner/cleaner-executor.js", () => ({
 	executeEnhancedPreview: executors.preview,
 }));
 const RESULT_FAILURE = "Synthetic result transaction interrupted";
+const DEADLINE_RESULT_FAILURE =
+	"Queue clean settled without a confirmed result after the 300-second reporting deadline. Some provider actions may have completed; review the upstream queue before retrying. Underlying error: " +
+	RESULT_FAILURE;
 type Origin = "manual" | "scheduled";
 type Outcome = "removed" | "warned" | "both" | "throw" | "empty";
 type Phase =
@@ -282,6 +285,7 @@ async function boot(
 	vi.spyOn(logModel, "update");
 	const updateMany = logModel.updateMany.bind(logModel);
 	const jobWrites: { updateMany: AwaitOnly<typeof logModel.updateMany> } = logModel;
+	const pendingMessages: string[] = [];
 	vi.spyOn(jobWrites, "updateMany").mockImplementation(async (args) => {
 		// Startup reaping batches existing running rows. A failed run targets only its own row.
 		if (typeof args.where?.id !== "string") return updateMany(args);
@@ -293,9 +297,17 @@ async function boot(
 			status: "running",
 			completedAt: null,
 		});
-		expect(args.data.status).toBe("error");
+		if (args.data.status === undefined) {
+			expect(args.data).toEqual({
+				message: expect.stringContaining("has not produced a final result"),
+			});
+		} else {
+			expect(args.data.status).toBe("error");
+		}
 		const result = await updateMany(args);
-		if (result.count === 1) {
+		if (result.count === 1 && args.data.status === undefined)
+			pendingMessages.push(String(args.data.message));
+		if (result.count === 1 && args.data.status !== undefined) {
 			outcomes.push("error");
 			await pause("result");
 		}
@@ -543,6 +555,7 @@ async function boot(
 		sent,
 		logs,
 		outcomes,
+		pendingMessages,
 		result,
 		preview,
 		staleId,
@@ -859,6 +872,64 @@ describe("Queue Cleaner accepted notification handoff", () => {
 			);
 			expect((await f.outcome()).jobs).toHaveLength(1);
 			expect(f.counts.executor).toBe(1);
+		},
+	);
+
+	it.each(["normal", "before-commit", "after-commit"] as const)(
+		"keeps native Queue Cleaner deadline state pending until physical executor settlement (%s)",
+		async (settlement) => {
+			const gate = deferred();
+			const resultFailure = settlement === "normal" ? undefined : settlement;
+			const f = await boot({
+				origin: "manual",
+				outcome: "removed",
+				resultFailure,
+				hold: { phase: "executor", gate: gate.promise },
+			});
+			await f.start();
+			expect(await f.waitUntilHeld()).toBe(true);
+			expect(f.counts.executor).toBe(1);
+			await vi.advanceTimersByTimeAsync(MAX_CLEAN_DURATION_MS);
+			expect(await waitForNative(() => f.pendingMessages.length === 1)).toBe(true);
+			const pendingRows = await f.outcome();
+			expect(pendingRows.jobs).toHaveLength(1);
+			expect(pendingRows.jobs[0]).toMatchObject({
+				status: "running",
+				completedAt: null,
+				itemsCleaned: 0,
+				message: expect.stringContaining("do not retry while this run settles"),
+			});
+			expect(f.sent).toEqual([]);
+			expect(f.outcomes).toEqual([]);
+			await expect(f.manual()).resolves.toMatchObject({ triggered: false });
+			await expect(
+				withCleanupMaintenanceGuard(async () => "restore-admitted"),
+			).rejects.toMatchObject({
+				statusCode: 409,
+			});
+			const closing = await f.closePending();
+			expect(closing.settled()).toBe(false);
+			expect(f.state.disconnected).toBe(false);
+
+			gate.resolve();
+			await closing.promise;
+			expect(f.counts.executor).toBe(1);
+			expect(f.state.afterTeardown).toBe(0);
+			if (settlement === "before-commit") {
+				await assertPersisted(
+					f,
+					["QUEUE_CLEANER_FAILED"],
+					["sent"],
+					"error",
+					DEADLINE_RESULT_FAILURE,
+				);
+			} else if (settlement === "after-commit") {
+				await assertPersisted(f, [], [], "success", RESULT_FAILURE);
+			} else {
+				await assertPersisted(f, ["QUEUE_ITEMS_REMOVED"], ["sent"], "success");
+			}
+			expect((await f.outcome()).jobs).toHaveLength(1);
+			expect(f.pendingMessages).toHaveLength(1);
 		},
 	);
 
