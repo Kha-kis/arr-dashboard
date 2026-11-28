@@ -71,6 +71,8 @@ describe("SABnzbd Pulse collector", () => {
 		[{ warnings: [] }, { history: { slots: "private marker" } }],
 		[{ warnings: [null] }, { history: { slots: [] } }],
 		[{ warnings: [] }, { history: { slots: [{ fail_message: "private marker" }] } }],
+		[{ warnings: [] }, { history: { slots: [{ status: "" }] } }],
+		[{ warnings: [] }, { history: { slots: [{ status: "   " }] } }],
 	])(
 		"emits one bounded unavailable signal for malformed fulfilled envelopes",
 		async (warningBody, historyBody) => {

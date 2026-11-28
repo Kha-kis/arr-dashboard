@@ -88,6 +88,7 @@ function historyItems(value: unknown, maximum = DEFAULT_HISTORY_LIMIT): HistoryI
 	const result: HistoryItem[] = [];
 	for (const item of rows) {
 		const row = asRecord(item);
+		if (typeof row.status !== "string" || row.status.trim().length === 0) return null;
 		const nzoId = typeof row.nzo_id === "string" ? row.nzo_id : "";
 		if (!safeNzoId(nzoId) || ids.has(nzoId)) return null;
 		ids.add(nzoId);
@@ -298,6 +299,11 @@ function providerStatusOk(value: unknown): boolean {
 	return asRecord(value).status === true;
 }
 
+function providerPriorityPositionOk(value: unknown): boolean {
+	const position = asRecord(value).position;
+	return typeof position === "number" && Number.isSafeInteger(position) && position >= 0;
+}
+
 type ExactLookup<T> = { state: "found"; item: T } | { state: "absent" } | { state: "unavailable" };
 
 function exactFilteredLookup<T>(
@@ -397,7 +403,7 @@ export const registerSabnzbdRoutes: FastifyPluginAsync = async (app) => {
 		"moving",
 		"running",
 	]);
-	const RESUMABLE_QUEUE_STATUSES = new Set([
+	const ACTIVE_QUEUE_STATUSES = new Set([
 		"queued",
 		"downloading",
 		"propagating",
@@ -516,14 +522,6 @@ export const registerSabnzbdRoutes: FastifyPluginAsync = async (app) => {
 							outcome: "refused",
 							message: "The exact job state is unavailable. Refresh before acting.",
 						});
-					if (
-						body.action === "resume" &&
-						!RESUMABLE_QUEUE_STATUSES.has(text(current.item.status).toLowerCase())
-					)
-						return reply.status(409).send({
-							outcome: "refused",
-							message: "The exact job state is unavailable. Refresh before acting.",
-						});
 					params = { mode: "queue", name: body.action, value: jobId };
 					break;
 				case "delete":
@@ -561,7 +559,11 @@ export const registerSabnzbdRoutes: FastifyPluginAsync = async (app) => {
 			const providerResponse = await sabCall(instance.baseUrl, instance.apiKey, params, {
 				headers: instance.requestHeaders,
 			});
-			if (!providerStatusOk(providerResponse))
+			const providerAccepted =
+				body.action === "priority"
+					? providerPriorityPositionOk(providerResponse)
+					: providerStatusOk(providerResponse);
+			if (!providerAccepted)
 				return reply.status(202).send({
 					outcome: "unconfirmed",
 					message:
@@ -581,7 +583,7 @@ export const registerSabnzbdRoutes: FastifyPluginAsync = async (app) => {
 						verified = text(after.item.status).toLowerCase() === "paused";
 						break;
 					case "resume":
-						verified = RESUMABLE_QUEUE_STATUSES.has(text(after.item.status).toLowerCase());
+						verified = ACTIVE_QUEUE_STATUSES.has(text(after.item.status).toLowerCase());
 						break;
 					case "priority":
 						verified =

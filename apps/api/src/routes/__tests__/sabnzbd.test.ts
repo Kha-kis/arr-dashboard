@@ -217,6 +217,32 @@ describe("SABnzbd read routes", () => {
 		expect(instance.historyCoverage).toBe("partial");
 	});
 
+	it("marks history unavailable when an item has a blank status", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(jsonResponse({ queue: { noofslots_total: 0, slots: [] } }))
+			.mockResolvedValueOnce(
+				jsonResponse({
+					history: {
+						noofslots: 1,
+						noofslots_total: 1,
+						slots: [{ nzo_id: "synthetic-history-item", status: "   " }],
+					},
+				}),
+			)
+			.mockResolvedValueOnce(jsonResponse({ warnings: [] }))
+			.mockResolvedValueOnce(jsonResponse({ categories: [] }));
+		vi.stubGlobal("fetch", fetchMock);
+		const { app } = await buildApp();
+		const response = await app.inject({ method: "GET", url: "/api/sabnzbd" });
+		const instance = response.json().instances[0];
+		await app.close();
+
+		expect(instance.history).toEqual([]);
+		expect(instance.historyCoverage).toBe("unavailable");
+		expect(instance.error).toContain("temporarily unavailable");
+	});
+
 	it("rejects non-string provider job identities rather than coercing them", async () => {
 		const fetchMock = vi
 			.fn()
@@ -448,6 +474,172 @@ describe("SABnzbd read routes", () => {
 		expect(response.statusCode).toBe(200);
 		expect(response.json()).toMatchObject({ outcome: "verified" });
 		await app.close();
+	});
+
+	it("resumes one exact paused job and verifies its queued readback", async () => {
+		const jobId = "paused-synthetic-job";
+		let resumed = false;
+		const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+			const url = new URL(String(input));
+			const mode = url.searchParams.get("mode");
+			if (mode === "queue" && url.searchParams.get("name") === "resume") {
+				expect(url.searchParams.get("value")).toBe(jobId);
+				resumed = true;
+				return jsonResponse({ status: true });
+			}
+			if (mode === "queue" && url.searchParams.get("nzo_ids") === jobId) {
+				return jsonResponse({
+					queue: {
+						noofslots: 1,
+						noofslots_total: 4,
+						slots: [{ nzo_id: jobId, status: resumed ? "Queued" : "Paused" }],
+					},
+				});
+			}
+			return jsonResponse({ error: "unexpected request" });
+		});
+		vi.stubGlobal("fetch", fetchMock);
+		const { app } = await buildApp();
+		const response = await app.inject({
+			method: "POST",
+			url: `/api/sabnzbd/sab-instance-1/jobs/${jobId}`,
+			payload: { action: "resume" },
+		});
+		await app.close();
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toMatchObject({ outcome: "verified" });
+		expect(fetchMock).toHaveBeenCalledTimes(3);
+	});
+
+	it("refuses an unknown job status before a resume mutation", async () => {
+		const jobId = "unknown-synthetic-job";
+		const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+			const url = new URL(String(input));
+			if (url.searchParams.get("mode") === "queue" && url.searchParams.get("nzo_ids") === jobId)
+				return jsonResponse({
+					queue: {
+						noofslots: 1,
+						noofslots_total: 4,
+						slots: [{ nzo_id: jobId, status: "Unrecognized Synthetic State" }],
+					},
+				});
+			return jsonResponse({ error: "unexpected mutation" });
+		});
+		vi.stubGlobal("fetch", fetchMock);
+		const { app } = await buildApp();
+		const response = await app.inject({
+			method: "POST",
+			url: `/api/sabnzbd/sab-instance-1/jobs/${jobId}`,
+			payload: { action: "resume" },
+		});
+		await app.close();
+
+		expect(response.statusCode).toBe(409);
+		expect(response.json()).toMatchObject({ outcome: "refused" });
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+	});
+
+	it("keeps a resume unconfirmed when exact readback is still paused", async () => {
+		const jobId = "paused-unsettled-synthetic-job";
+		let resumeAcknowledged = false;
+		const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+			const url = new URL(String(input));
+			const mode = url.searchParams.get("mode");
+			if (mode === "queue" && url.searchParams.get("name") === "resume") {
+				resumeAcknowledged = true;
+				return jsonResponse({ status: true });
+			}
+			if (mode === "queue" && url.searchParams.get("nzo_ids") === jobId)
+				return jsonResponse({
+					queue: {
+						noofslots: 1,
+						noofslots_total: 2,
+						slots: [{ nzo_id: jobId, status: "Paused" }],
+					},
+				});
+			return jsonResponse({ error: "unexpected request" });
+		});
+		vi.stubGlobal("fetch", fetchMock);
+		const { app } = await buildApp();
+		const response = await app.inject({
+			method: "POST",
+			url: `/api/sabnzbd/sab-instance-1/jobs/${jobId}`,
+			payload: { action: "resume" },
+		});
+		await app.close();
+
+		expect(resumeAcknowledged).toBe(true);
+		expect(response.statusCode).toBe(202);
+		expect(response.json()).toMatchObject({ outcome: "unconfirmed" });
+		expect(fetchMock).toHaveBeenCalledTimes(3);
+	});
+
+	it("accepts SABnzbd's position receipt for priority and still requires exact readback", async () => {
+		const jobId = "priority-synthetic-job";
+		let priorityChanged = false;
+		const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+			const url = new URL(String(input));
+			if (url.searchParams.get("mode") === "queue" && url.searchParams.get("name") === "priority") {
+				expect(url.searchParams.get("value")).toBe(jobId);
+				expect(url.searchParams.get("value2")).toBe("1");
+				priorityChanged = true;
+				return jsonResponse({ position: 0 });
+			}
+			if (url.searchParams.get("mode") === "queue" && url.searchParams.get("nzo_ids") === jobId)
+				return jsonResponse({
+					queue: {
+						noofslots: 1,
+						noofslots_total: 2,
+						slots: [
+							{
+								nzo_id: jobId,
+								status: "Queued",
+								priority: priorityChanged ? "High" : "Normal",
+							},
+						],
+					},
+				});
+			return jsonResponse({ error: "unexpected request" });
+		});
+		vi.stubGlobal("fetch", fetchMock);
+		const { app } = await buildApp();
+		const response = await app.inject({
+			method: "POST",
+			url: `/api/sabnzbd/sab-instance-1/jobs/${jobId}`,
+			payload: { action: "priority", priority: "1" },
+		});
+		await app.close();
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toMatchObject({ outcome: "verified" });
+		expect(fetchMock).toHaveBeenCalledTimes(3);
+	});
+
+	it("does not read back or replay a priority action with an invalid provider position", async () => {
+		const jobId = "priority-invalid-synthetic-job";
+		const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+			const url = new URL(String(input));
+			if (url.searchParams.get("mode") === "queue" && url.searchParams.get("name") === "priority")
+				return jsonResponse({ position: -1 });
+			if (url.searchParams.get("mode") === "queue" && url.searchParams.get("nzo_ids") === jobId)
+				return jsonResponse({
+					queue: { noofslots: 1, noofslots_total: 1, slots: [{ nzo_id: jobId, status: "Queued" }] },
+				});
+			return jsonResponse({ error: "unexpected request" });
+		});
+		vi.stubGlobal("fetch", fetchMock);
+		const { app } = await buildApp();
+		const response = await app.inject({
+			method: "POST",
+			url: `/api/sabnzbd/sab-instance-1/jobs/${jobId}`,
+			payload: { action: "priority", priority: "1" },
+		});
+		await app.close();
+
+		expect(response.statusCode).toBe(202);
+		expect(response.json()).toMatchObject({ outcome: "unconfirmed" });
+		expect(fetchMock).toHaveBeenCalledTimes(2);
 	});
 
 	it("uses global paused state rather than the distinct paused_all field", async () => {

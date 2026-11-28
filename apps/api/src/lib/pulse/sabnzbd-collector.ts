@@ -58,7 +58,10 @@ export async function collectSabnzbdSignals(
 			const warningShapeValid =
 				warningList?.every((warning) => typeof asRecord(warning).text === "string") === true;
 			const historyShapeValid =
-				historyList?.every((slot) => typeof asRecord(slot).status === "string") === true;
+				historyList?.every((slot) => {
+					const status = asRecord(slot).status;
+					return typeof status === "string" && status.trim().length > 0;
+				}) === true;
 			if (!warningShapeValid || !historyShapeValid) {
 				items.push({
 					id: `sabnzbd-unavailable-${instance.id}`,
