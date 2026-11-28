@@ -13,6 +13,7 @@ describe("labelForCollector", () => {
 	it("returns the operator label for every known collector", () => {
 		const knownPairs: Array<[string, string]> = [
 			["collectArrSignals", "ARR health and disk space"],
+			["collectSabnzbdSignals", "SABnzbd"],
 			["collectSeerrCircuitBreaker", "Seerr circuit breaker"],
 			["collectCacheStaleness", "cache freshness"],
 			["collectValidationHealth", "validation health"],
