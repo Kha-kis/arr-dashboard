@@ -1,5 +1,5 @@
 /**
- * Pins the Seerr-specific permission probe added in #465.
+ * Pins provider-specific permission and authentication probes for Seerr (#465) and Jellyfin (#976).
  *
  * Why this test exists:
  *   Seerr's `/api/v1/status` is tagged `public` in its openapi spec and
@@ -28,7 +28,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 	});
 }
 
-describe("testServiceConnection — Seerr permission probe (#465)", () => {
+describe("testServiceConnection provider probes (#465, #976)", () => {
 	let fetchSpy: FetchSpy;
 
 	beforeEach(() => {
@@ -148,6 +148,72 @@ describe("testServiceConnection — Seerr permission probe (#465)", () => {
 		expect(result.success).toBe(false);
 		expect(result.error).toMatch(/not supported for jellyfin/i);
 		expect(fetchSpy).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		[401, "Authentication failed (401)"],
+		[403, "Access forbidden (403)"],
+		[404, "Endpoint not found (404)"],
+		[503, "Server error (503)"],
+	])("rejects a protected Jellyfin probe that returns HTTP %i", async (status, error) => {
+		fetchSpy
+			.mockResolvedValueOnce(
+				jsonResponse({ Id: "synthetic-jellyfin", ServerName: "Synthetic", Version: "12.4.0" }),
+			)
+			.mockResolvedValueOnce(new Response("synthetic protected-probe failure", { status }));
+
+		const result = await testServiceConnection(
+			"https://jellyfin.example.test",
+			"synthetic-key",
+			"jellyfin",
+		);
+
+		expect(result.success).toBe(false);
+		expect(result.error).toBe(error);
+		if (status === 401) {
+			expect(result.details).toBe(
+				"Invalid API key. Generate one in Jellyfin Dashboard > API Keys.",
+			);
+		}
+		expect(fetchSpy).toHaveBeenCalledTimes(2);
+		expect(fetchSpy.mock.calls[1]?.[0]).toBe("https://jellyfin.example.test/System/Info");
+		expect(new Headers(fetchSpy.mock.calls[1]?.[1]?.headers).get("authorization")).toBe(
+			'MediaBrowser Token="synthetic-key"',
+		);
+	});
+
+	it("accepts a successful Jellyfin probe with the supported MediaBrowser token header", async () => {
+		fetchSpy
+			.mockResolvedValueOnce(
+				jsonResponse({ Id: "synthetic-jellyfin", ServerName: "Synthetic", Version: "12.4.0" }),
+			)
+			.mockResolvedValueOnce(jsonResponse({ Id: "synthetic-jellyfin" }));
+
+		const result = await testServiceConnection(
+			"https://jellyfin.example.test",
+			"synthetic-key",
+			"jellyfin",
+		);
+
+		expect(result.success).toBe(true);
+		expect(result.version).toBe("12.4.0");
+		expect(new Headers(fetchSpy.mock.calls[1]?.[1]?.headers).get("authorization")).toBe(
+			'MediaBrowser Token="synthetic-key"',
+		);
+	});
+
+	it.each([200, 403])("keeps shared Emby probe behavior honest for HTTP %i", async (status) => {
+		fetchSpy
+			.mockResolvedValueOnce(jsonResponse({ Id: "synthetic-emby", Version: "4.9.1.0" }))
+			.mockResolvedValueOnce(jsonResponse({ Id: "synthetic-emby" }, status));
+		const result = await testServiceConnection(
+			"https://emby.example.test",
+			"synthetic-key",
+			"emby",
+		);
+		expect(result.success).toBe(status === 200);
+		expect(fetchSpy).toHaveBeenCalledTimes(2);
+		expect(fetchSpy.mock.calls[1]?.[0]).toBe("https://emby.example.test/System/Info");
 	});
 
 	it("still returns the existing /status error when the first probe fails (no second probe)", async () => {
