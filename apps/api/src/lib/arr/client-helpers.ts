@@ -8,6 +8,7 @@
 import { LidarrClient, ProwlarrClient, RadarrClient, ReadarrClient, SonarrClient } from "arr-sdk";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { ServiceInstance, ServiceType } from "../../lib/prisma.js";
+import { withIsolatedRuntimePrismaReadClient } from "../backup/restore-runtime-client.js";
 import { InstanceNotFoundError } from "../errors.js";
 import { getErrorMessage } from "../utils/error-message.js";
 import { type ArrClient, ArrError, arrErrorToHttpStatus } from "./client-factory.js";
@@ -137,10 +138,9 @@ export async function executeOnInstances<T>(
 	}
 
 	// Fetch instances
-	const instances = await app.prisma.serviceInstance.findMany({
-		where,
-		orderBy: { label: "asc" },
-	});
+	const instances = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+		prisma.serviceInstance.findMany({ where, orderBy: { label: "asc" } }),
+	);
 
 	// Execute operations in parallel
 	const results = await Promise.all(

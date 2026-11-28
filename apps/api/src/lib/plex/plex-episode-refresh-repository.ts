@@ -76,6 +76,11 @@ function parentMetadataForFinalization(
 	)
 		return null;
 	if (
+		evaluated.metadata.publicationLevel === "positive-only" &&
+		evaluated.metadata.ambiguousTmdbCandidates === null
+	)
+		return null;
+	if (
 		!safeCount(evaluated.metadata.targetCount) ||
 		!/^[a-f0-9]{64}$/.test(evaluated.metadata.targetDigest)
 	)
@@ -597,6 +602,16 @@ export async function finalizePlexEpisodeRun(
 		)
 			return await settleWithoutPublication("terminal-no-publication", true);
 		const merged = mergeRows(stages);
+		const ambiguousSeriesTmdbIds = new Set(
+			parentMetadata.publicationLevel === "positive-only"
+				? (parentMetadata.ambiguousTmdbCandidates ?? [])
+						.filter((candidate) => candidate.mediaType === "series")
+						.map((candidate) => candidate.tmdbId)
+				: [],
+		);
+		if (merged.some((row) => ambiguousSeriesTmdbIds.has(row.showTmdbId))) {
+			return await settleWithoutPublication("terminal-no-publication", true);
+		}
 		const soleParentGroups = new Map<number, PlexGenerationTarget[]>();
 		for (const target of ledgerTargets) {
 			if (target.mediaType !== "series") continue;
@@ -605,7 +620,7 @@ export async function finalizePlexEpisodeRun(
 			soleParentGroups.set(target.tmdbId, group);
 		}
 		const soleParentTargets: PlexPositiveEpisodeParentTarget[] = [...soleParentGroups.values()]
-			.filter((group) => group.length === 1)
+			.filter((group) => group.length === 1 && !ambiguousSeriesTmdbIds.has(group[0]!.tmdbId))
 			.map((group) => {
 				const target = group[0]!;
 				return {
@@ -669,7 +684,7 @@ export async function finalizePlexEpisodeRun(
 			})),
 		};
 		const metadata = encodePlexPositiveEpisodeGenerationMetadata({
-			version: 5,
+			version: 6,
 			publicationLevel: "positive-only",
 			completeness: "partial",
 			itemCount: merged.length,
@@ -689,6 +704,20 @@ export async function finalizePlexEpisodeRun(
 			coverageReceipt: receipt,
 			connectionGeneration: run.connectionGeneration,
 			identityGeneration: run.identityGeneration,
+			parentProof: {
+				instanceId: instance.id,
+				generationId: parent.generationId!,
+				connectionGeneration: run.connectionGeneration,
+				identityGeneration: run.identityGeneration,
+				providerIdentity: instance.expectedIdentity!,
+				sourceFingerprint: expectedFingerprint,
+				publishedAt: parent.lastRefreshedAt.toISOString(),
+				attemptedAt: parent.lastAttemptAt!.toISOString(),
+				attemptResult: parent.lastAttemptResult as "success" | "partial",
+				itemCount: parent.itemCount,
+				metadata: parentMetadata,
+				targets: ledgerTargets,
+			},
 		});
 		await input.testHooks?.beforePublish?.(tx);
 		const publicationInstance = await tx.serviceInstance.findFirst({

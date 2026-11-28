@@ -1,4 +1,4 @@
-import { quiActionSchema } from "@arr/shared";
+import { quiActionSchema, quiLoggedOperationSchema, quiTrackerSelectorSchema } from "@arr/shared";
 import { z } from "zod";
 import { createQuiClient } from "../../lib/qui/client-factory.js";
 import { extractHostnameSafe } from "../../lib/qui/client-helpers.js";
@@ -66,8 +66,53 @@ export const BULK_ACTION_PARAMS = z.object({
 export const ACTION_LOG_QUERY = z.object({
 	cursor: z.string().min(1).optional(),
 	limit: z.coerce.number().int().positive().max(200).optional(),
-	action: quiActionSchema.optional(),
-	status: z.enum(["pending", "success", "failed"]).optional(),
+	action: quiLoggedOperationSchema.optional(),
+	status: z
+		.enum([
+			"pending",
+			"success",
+			"failed",
+			"uncertain",
+			"operator_verified_applied",
+			"operator_verified_not_applied",
+		])
+		.optional(),
+});
+
+const uniqueStringList = (schema: z.ZodType<string>) =>
+	z
+		.array(schema)
+		.min(1)
+		.max(50)
+		.refine((items) => new Set(items).size === items.length);
+
+export const QUI_DRAWER_RENAME_BODY = z.object({ name: z.string().min(1).max(1024) }).strict();
+export const QUI_DRAWER_ADD_TRACKERS_BODY = z
+	.object({ urls: uniqueStringList(z.string().min(1)) })
+	.strict();
+const TRACKER_SELECTOR_LIST = z
+	.object({
+		trackerSelectors: uniqueStringList(quiTrackerSelectorSchema),
+	})
+	.strict();
+const LEGACY_TRACKER_HOSTNAMES = z
+	.object({
+		hostnames: uniqueStringList(z.string().min(1)),
+	})
+	.strict();
+export const QUI_DRAWER_REMOVE_TRACKERS_BODY = z.union([
+	TRACKER_SELECTOR_LIST,
+	LEGACY_TRACKER_HOSTNAMES,
+]);
+export const QUI_DRAWER_EDIT_TRACKER_BODY = z.union([
+	z.object({ trackerSelector: quiTrackerSelectorSchema, newURL: z.string().min(1) }).strict(),
+	z.object({ oldHostname: z.string().min(1), newURL: z.string().min(1) }).strict(),
+]);
+
+export const ACTION_RECONCILIATION_PARAMS = z.object({ id: z.string().min(1) });
+export const ACTION_RECONCILIATION_BODY = z.object({
+	decision: z.enum(["applied", "not_applied"]),
+	acknowledgeVerified: z.literal(true),
 });
 
 // ─── Shared types + helpers for the cluster-based panel endpoints ─────

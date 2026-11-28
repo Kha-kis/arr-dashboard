@@ -1,6 +1,7 @@
 "use client";
 
 import { AnimatePresence, LayoutGroup, motion } from "framer-motion";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
 import {
 	Activity,
 	BarChart3,
@@ -14,7 +15,6 @@ import {
 	Inbox,
 	LayoutDashboard,
 	Library,
-	Menu,
 	Network,
 	Search,
 	Settings,
@@ -31,6 +31,7 @@ import { useThemeGradient } from "../../hooks/useThemeGradient";
 import { cn } from "../../lib/utils";
 import { useColorTheme } from "../../providers/color-theme-provider";
 import { springs } from "../motion";
+import { DialogClose, DialogOverlay, DialogPortal, DialogTitle } from "../ui/dialog";
 
 interface NavItem {
 	href: string;
@@ -205,7 +206,7 @@ const NavContent = ({
 		<LayoutGroup>
 			<nav
 				aria-label="Main navigation"
-				className="flex flex-col gap-3 relative z-10 overflow-y-auto flex-1 -mx-2 px-2"
+				className="flex min-h-0 flex-col gap-3 relative z-10 overflow-y-auto overscroll-contain flex-1 -mx-2 px-2"
 			>
 				{NAV_GROUPS.map((group) => {
 					const isCollapsed = collapsedGroups.has(group.id);
@@ -358,9 +359,8 @@ const NavContent = ({
 	</>
 );
 
-export const Sidebar = () => {
+export const Sidebar = ({ onNavigate }: { onNavigate: () => void }) => {
 	const pathname = usePathname();
-	const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 	const [mounted, setMounted] = useState(false);
 	const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 	const { gradient: themeGradient } = useThemeGradient();
@@ -412,78 +412,27 @@ export const Sidebar = () => {
 
 	return (
 		<>
-			{/* Mobile menu button */}
-			<motion.button
-				onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-				className={cn(
-					"lg:hidden fixed top-4 left-4 z-modal p-2.5 rounded-xl border transition-colors duration-300",
-					mobileMenuOpen ? "bg-card border-border" : "bg-card/80 backdrop-blur-xl border-border/50",
-				)}
-				style={
-					mobileMenuOpen
-						? {
-								boxShadow: `0 4px 16px -4px ${themeGradient.glow}`,
-							}
-						: undefined
-				}
-				aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
-				aria-expanded={mobileMenuOpen}
-				whileHover={{ scale: 1.05 }}
-				whileTap={{ scale: 0.95 }}
-				transition={springs.quick}
-			>
-				<AnimatePresence mode="wait">
-					{mobileMenuOpen ? (
-						<motion.div
-							key="close"
-							initial={{ rotate: -90, opacity: 0 }}
-							animate={{ rotate: 0, opacity: 1 }}
-							exit={{ rotate: 90, opacity: 0 }}
-							transition={springs.quick}
-						>
-							<X className="h-5 w-5" style={{ color: themeGradient.from }} />
-						</motion.div>
-					) : (
-						<motion.div
-							key="menu"
-							initial={{ rotate: 90, opacity: 0 }}
-							animate={{ rotate: 0, opacity: 1 }}
-							exit={{ rotate: -90, opacity: 0 }}
-							transition={springs.quick}
-						>
-							<Menu className="h-5 w-5 text-foreground" />
-						</motion.div>
-					)}
-				</AnimatePresence>
-			</motion.button>
-
-			{/* Mobile menu overlay */}
-			<AnimatePresence>
-				{mobileMenuOpen && (
-					<motion.div
-						className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-xs z-modal-backdrop"
-						onClick={() => setMobileMenuOpen(false)}
-						aria-hidden="true"
-						initial={{ opacity: 0 }}
-						animate={{ opacity: 1 }}
-						exit={{ opacity: 0 }}
-						transition={{ duration: 0.2 }}
-					/>
-				)}
-			</AnimatePresence>
-
-			{/* Mobile sidebar */}
-			<AnimatePresence>
-				{mobileMenuOpen && (
-					<motion.aside
+			<DialogPortal>
+				<DialogOverlay
+					onClick={(event) => {
+						if (event.target === event.currentTarget && event.button === 0 && !event.ctrlKey) {
+							onNavigate();
+						}
+					}}
+				/>
+				<DialogPrimitive.Content asChild>
+					<aside
 						data-sidebar
-						className="lg:hidden fixed inset-y-0 left-0 z-modal-backdrop w-72 flex flex-col border-r border-border/30 bg-background/95 backdrop-blur-xl p-6"
-						initial={{ x: "-100%" }}
-						animate={{ x: 0 }}
-						exit={{ x: "-100%" }}
-						transition={springs.snappy}
+						aria-describedby={undefined}
+						className="fixed inset-y-0 left-0 z-modal flex h-dvh min-h-0 w-72 max-w-full flex-col border-r border-border/30 bg-background/95 p-6 backdrop-blur-xl"
 					>
-						{/* Decorative gradient orb */}
+						<DialogTitle className="sr-only">Navigation menu</DialogTitle>
+						<DialogClose
+							className="absolute right-4 top-4 z-20 rounded-lg p-2 hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring"
+							aria-label="Close menu"
+						>
+							<X className="h-5 w-5" />
+						</DialogClose>
 						<div
 							className="absolute top-0 left-0 w-64 h-64 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2 pointer-events-none"
 							style={{
@@ -491,23 +440,22 @@ export const Sidebar = () => {
 								opacity: 0.3,
 							}}
 						/>
-
 						<NavContent
 							useFlatStyling={useFlatStyling}
 							themeGradient={themeGradient}
 							pathname={pathname}
 							collapsedGroups={collapsedGroups}
 							onToggleGroup={handleToggleGroup}
-							setMobileMenuOpen={setMobileMenuOpen}
+							setMobileMenuOpen={() => onNavigate()}
 						/>
-					</motion.aside>
-				)}
-			</AnimatePresence>
+					</aside>
+				</DialogPrimitive.Content>
+			</DialogPortal>
 
 			{/* Desktop sidebar */}
 			<aside
 				data-sidebar
-				className="hidden w-64 shrink-0 flex-col border-r border-border/30 bg-background/50 backdrop-blur-xl p-6 lg:flex relative overflow-hidden"
+				className="sticky top-0 h-dvh min-h-0 hidden w-64 shrink-0 flex-col border-r border-border/30 bg-background/50 backdrop-blur-xl p-6 lg:flex overflow-hidden"
 			>
 				{/* Decorative gradient orb */}
 				<div
@@ -524,7 +472,7 @@ export const Sidebar = () => {
 					pathname={pathname}
 					collapsedGroups={collapsedGroups}
 					onToggleGroup={handleToggleGroup}
-					setMobileMenuOpen={setMobileMenuOpen}
+					setMobileMenuOpen={() => onNavigate()}
 				/>
 			</aside>
 		</>

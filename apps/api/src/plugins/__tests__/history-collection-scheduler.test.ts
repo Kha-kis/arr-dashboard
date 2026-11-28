@@ -1,7 +1,20 @@
-import Fastify from "fastify";
+import { chmodSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import Fastify, { type FastifyInstance, type FastifyPluginAsync } from "fastify";
 import fp from "fastify-plugin";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { installRuntimeFixture } from "./runtime-fixture.js";
 import { registerSchedulers } from "../../bootstrap/schedulers.js";
+import {
+	getRestoreRuntimeClientContext,
+	openRestoreRuntime,
+} from "../../lib/backup/restore-runtime-admission.js";
+import {
+	registerRestoreBootstrapPlugin,
+	registerRestoreRuntimeActivation,
+} from "../../lib/backup/restore-runtime-bootstrap.js";
+import { synchronizeSqliteRuntimeSchema } from "../../lib/backup/runtime-schema-sqlite.js";
 import { HISTORY_SERVICE_TYPES } from "../../lib/history/history-source-contract.js";
 import { JOB_ID, KNOWN_JOBS } from "../../lib/scheduler-registry/job-definitions.js";
 import {
@@ -48,23 +61,115 @@ function noOpDependency(name: string) {
 	return fp(async () => undefined, { name });
 }
 
-async function buildTestApp(rows: unknown[] = [{ userId: "owner-a" }]) {
+const apps: FastifyInstance[] = [];
+const releases: Array<() => void> = [];
+
+function deferred<T>(fallback: T) {
+	let resolve!: (value: T) => void;
+	const promise = new Promise<T>((release) => {
+		resolve = release;
+	});
+	releases.push(() => resolve(fallback));
+	return { promise, resolve };
+}
+
+async function buildTestApp(
+	rows: unknown[] = [{ userId: "owner-a" }],
+	options: { beforeClose?: Promise<void>; bootstrap?: boolean } = {},
+) {
+	if (options.bootstrap) {
+		vi.useRealTimers();
+		vi.useFakeTimers({
+			toFake: ["Date", "setTimeout", "clearTimeout", "setInterval", "clearInterval"],
+		});
+	}
 	const app = Fastify({ logger: false });
+	apps.push(app);
+	if (options.bootstrap) {
+		const directory = mkdtempSync(join(tmpdir(), "history-bootstrap-"));
+		chmodSync(directory, 0o700);
+		const databaseUrl = `file:${join(directory, "fixture.db")}`;
+		await synchronizeSqliteRuntimeSchema(databaseUrl);
+		const runtime = await openRestoreRuntime({ databaseUrl });
+		app.decorate("restoreRuntime", runtime);
+		app.addHook("onClose", async () => {
+			await runtime.close();
+			rmSync(directory, { recursive: true, force: true });
+		});
+		await runtime.bindDestination("synthetic-history-bootstrap");
+	} else await installRuntimeFixture(app);
+	let teardownCount = 0;
 	const findMany = vi.fn().mockResolvedValue(rows);
 	const prisma = { serviceInstance: { findMany } };
 	app.decorate("prisma", prisma as never);
 	app.decorate("arrClientFactory", {} as never);
 	app.decorate("encryptor", {} as never);
-	await app.register(noOpDependency("prisma"));
+	await app.register(
+		fp(
+			async (scope) => {
+				// Mirror the synthetic application persistence boundary's close ordering.
+				scope.addHook("onClose", async () => {
+					teardownCount++;
+				});
+			},
+			{ name: "prisma" },
+		),
+	);
 	await app.register(noOpDependency("security"));
 	await app.register(noOpDependency("arr-client"));
-	await app.register(schedulerRegistryPlugin);
-	await app.register(historyCollectionSchedulerPlugin);
-	const info = vi.spyOn(app.log, "info").mockImplementation(() => undefined);
+	if (options.bootstrap) {
+		registerRestoreBootstrapPlugin(app, schedulerRegistryPlugin);
+		await app.after();
+	} else await app.register(schedulerRegistryPlugin);
+	const timeout = vi.spyOn(globalThis, "setTimeout");
+	const interval = vi.spyOn(globalThis, "setInterval");
+	const initialized = vi.fn(() =>
+		getRestoreRuntimeClientContext(app.restoreRuntime).assertTicket(),
+	);
+	const info = vi.spyOn(app.log, "info").mockImplementation((...args) => {
+		if (options.bootstrap && args[1] === "History observation scheduler initialized") initialized();
+	});
+	if (options.bootstrap) {
+		const registered: FastifyPluginAsync[] = [];
+		registerSchedulers({
+			register: (plugin: FastifyPluginAsync) => registered.push(plugin),
+		} as never);
+		const selected = registered.filter(
+			(plugin) =>
+				Reflect.get(plugin, Symbol.for("fastify.display-name")) === "history-collection-scheduler",
+		);
+		expect(selected).toHaveLength(1);
+		// Queue the final activation before awaiting Fastify's thenable; awaiting
+		// register here runs readiness early, unlike the real bootstrap pipeline.
+		app.register(selected[0]!);
+		registerRestoreRuntimeActivation(app);
+	} else await app.register(historyCollectionSchedulerPlugin);
 	const warn = vi.spyOn(app.log, "warn").mockImplementation(() => undefined);
 	const error = vi.spyOn(app.log, "error").mockImplementation(() => undefined);
+	const closing = deferred<void>(undefined);
+	app.addHook("preClose", async () => closing.resolve());
+	if (options.beforeClose) app.addHook("preClose", async () => options.beforeClose);
 	await app.ready();
-	return { app, findMany, info, warn, error };
+	return {
+		app,
+		findMany,
+		info,
+		initialized,
+		warn,
+		error,
+		closing: closing.promise,
+		teardownCount: () => teardownCount,
+		queuedStartup() {
+			const callback = timeout.mock.calls.find(([, delay]) => delay === STARTUP_DELAY_MS)?.[0];
+			if (typeof callback !== "function") throw new Error("History startup timer not captured");
+			callback();
+		},
+		queuedInterval() {
+			const callback = interval.mock.calls.find(([, delay]) => delay === INTERVAL_MS)?.[0];
+			if (typeof callback !== "function") throw new Error("History interval not captured");
+			callback();
+		},
+	};
 }
 
 async function settle() {
@@ -78,7 +183,9 @@ beforeEach(() => {
 	mocks.collect.mockResolvedValue(result());
 });
 
-afterEach(() => {
+afterEach(async () => {
+	for (const release of releases.splice(0)) release();
+	await Promise.all(apps.splice(0).map((app) => app.close()));
 	vi.useRealTimers();
 	vi.restoreAllMocks();
 });
@@ -95,10 +202,28 @@ describe("History scheduler catalog and bootstrap", () => {
 		);
 	});
 
-	it("registers the History scheduler during scheduler bootstrap", () => {
-		const register = vi.fn();
-		registerSchedulers({ register } as never);
-		expect(register).toHaveBeenCalledWith(historyCollectionSchedulerPlugin);
+	it("registers the History scheduler during scheduler bootstrap", async () => {
+		const { app, initialized, findMany } = await buildTestApp(undefined, { bootstrap: true });
+		expect(initialized).toHaveBeenCalledOnce();
+		const track = app.schedulerRegistry.track.bind(app.schedulerRegistry);
+		const ticks: Promise<unknown>[] = [];
+		vi.spyOn(app.schedulerRegistry, "track").mockImplementation((...args) => {
+			const task = track(...args);
+			if (args[0] === JOB_ID.historyCollection) ticks.push(task);
+			return task;
+		});
+		await vi.advanceTimersByTimeAsync(STARTUP_DELAY_MS);
+		expect(ticks).toHaveLength(1);
+		await ticks[0];
+		expect(mocks.collect).toHaveBeenCalledOnce();
+		expect(app.schedulerRegistry.getStatus(JOB_ID.historyCollection)).toMatchObject({
+			totalRuns: 1,
+			totalFailures: 0,
+			state: "idle",
+		});
+		await app.close();
+		await vi.advanceTimersByTimeAsync(INTERVAL_MS);
+		expect(findMany).toHaveBeenCalledOnce();
 	});
 });
 
@@ -128,7 +253,7 @@ describe("History scheduler lifecycle", () => {
 		expect(mocks.collect).not.toHaveBeenCalled();
 	});
 
-	it("clears timers on close and lets an in-flight owner settle without starting another", async () => {
+	it("drains an in-flight owner before database teardown without starting another", async () => {
 		const deferred: { resolve: () => void } = { resolve: () => undefined };
 		const pending = new Promise<void>((resolve) => {
 			deferred.resolve = resolve;
@@ -137,11 +262,27 @@ describe("History scheduler lifecycle", () => {
 			await pending;
 			return result();
 		});
-		const { app } = await buildTestApp([{ userId: "owner-a" }, { userId: "owner-b" }]);
+		releases.push(deferred.resolve);
+		const { app, closing, teardownCount } = await buildTestApp([
+			{ userId: "owner-a" },
+			{ userId: "owner-b" },
+		]);
 		await vi.advanceTimersByTimeAsync(STARTUP_DELAY_MS);
 		expect(mocks.collect).toHaveBeenCalledTimes(1);
-		await app.close();
-		deferred.resolve();
+		let closed = false;
+		const close = app.close().then(() => {
+			closed = true;
+		});
+		try {
+			await closing;
+			await vi.advanceTimersByTimeAsync(0);
+			expect(closed).toBe(false);
+			expect(teardownCount()).toBe(0);
+		} finally {
+			deferred.resolve();
+			await close;
+		}
+		expect(teardownCount()).toBe(1);
 		await settle();
 		expect(mocks.collect).toHaveBeenCalledTimes(1);
 		await vi.advanceTimersByTimeAsync(INTERVAL_MS * 2);
@@ -174,6 +315,120 @@ describe("History scheduler lifecycle", () => {
 			await app.close();
 		}
 	});
+});
+
+describe("History scheduler shutdown dependency lifetime", () => {
+	it.each([false, true])("drains owner enumeration before teardown (reject=%s)", async (reject) => {
+		const gate = deferred<void>(undefined);
+		const fixture = await buildTestApp();
+		let pending = false;
+		fixture.findMany.mockImplementationOnce(async () => {
+			pending = true;
+			try {
+				await gate.promise;
+				if (reject) throw new Error("Synthetic owner-query failure");
+				return [{ userId: "owner-a" }];
+			} finally {
+				pending = false;
+			}
+		});
+		await vi.advanceTimersByTimeAsync(STARTUP_DELAY_MS);
+		expect(pending).toBe(true);
+		let closed = false;
+		const close = fixture.app.close().then(() => {
+			closed = true;
+		});
+		try {
+			await fixture.closing;
+			await vi.advanceTimersByTimeAsync(0);
+			expect(closed).toBe(false);
+			expect(fixture.teardownCount()).toBe(0);
+		} finally {
+			gate.resolve();
+			await close;
+		}
+		expect(pending).toBe(false);
+		expect(fixture.teardownCount()).toBe(1);
+		expect(mocks.collect).not.toHaveBeenCalled();
+		expect(fixture.app.schedulerRegistry.getStatus(JOB_ID.historyCollection)).toMatchObject({
+			totalRuns: 1,
+			totalFailures: reject ? 1 : 0,
+			lastError: reject ? GENERIC_FAILURE : null,
+		});
+	});
+
+	it.each([false, true])(
+		"drains the accepted collector and shares duplicate close (reject=%s)",
+		async (reject) => {
+			const gate = deferred<void>(undefined);
+			let pending = false;
+			mocks.collect.mockImplementationOnce(async () => {
+				pending = true;
+				try {
+					await gate.promise;
+					if (reject) throw new Error("Synthetic collector failure");
+					return result();
+				} finally {
+					pending = false;
+				}
+			});
+			const fixture = await buildTestApp([{ userId: "owner-a" }, { userId: "owner-b" }]);
+			await vi.advanceTimersByTimeAsync(STARTUP_DELAY_MS);
+			expect(pending).toBe(true);
+			let closed = false;
+			const close = fixture.app.close().then(() => {
+				closed = true;
+			});
+			const duplicate = fixture.app.close();
+			try {
+				await fixture.closing;
+				await vi.advanceTimersByTimeAsync(0);
+				expect(closed).toBe(false);
+				expect(fixture.teardownCount()).toBe(0);
+				expect(fixture.findMany).toHaveBeenCalledTimes(1);
+			} finally {
+				gate.resolve();
+				await Promise.all([close, duplicate]);
+			}
+			expect(pending).toBe(false);
+			expect(fixture.teardownCount()).toBe(1);
+			expect(mocks.collect).toHaveBeenCalledTimes(1);
+			expect(fixture.app.schedulerRegistry.getStatus(JOB_ID.historyCollection)).toMatchObject({
+				totalRuns: 1,
+				totalFailures: reject ? 1 : 0,
+				lastError: reject ? GENERIC_FAILURE : null,
+			});
+		},
+	);
+
+	it.each(["startup", "interval"] as const)(
+		"rejects a queued %s callback while a sibling preClose is waiting",
+		async (kind) => {
+			const sibling = deferred<void>(undefined);
+			const fixture = await buildTestApp([{ userId: "owner-a" }], { beforeClose: sibling.promise });
+			if (kind === "interval") await vi.advanceTimersByTimeAsync(STARTUP_DELAY_MS);
+			const expectedRuns = kind === "interval" ? 1 : 0;
+			const close = fixture.app.close();
+			try {
+				await fixture.closing;
+				if (kind === "startup") fixture.queuedStartup();
+				else fixture.queuedInterval();
+				// Flush work without also expiring Fastify's unrelated close-hook budget.
+				await vi.advanceTimersByTimeAsync(0);
+				expect(fixture.findMany).toHaveBeenCalledTimes(expectedRuns);
+				expect(mocks.collect).toHaveBeenCalledTimes(expectedRuns);
+				expect(fixture.teardownCount()).toBe(0);
+			} finally {
+				sibling.resolve();
+				await close;
+			}
+			if (kind === "startup") fixture.queuedStartup();
+			else fixture.queuedInterval();
+			await vi.advanceTimersByTimeAsync(0);
+			expect(fixture.findMany).toHaveBeenCalledTimes(expectedRuns);
+			expect(fixture.teardownCount()).toBe(1);
+		},
+	);
 });
 
 describe("History scheduler owner contract", () => {
@@ -314,8 +569,14 @@ describe("History scheduler owner contract", () => {
 		);
 		const { app } = await buildTestApp([{ userId: "owner-a" }, { userId: "owner-b" }]);
 		await vi.advanceTimersByTimeAsync(STARTUP_DELAY_MS);
-		await app.close();
-		resolveFirst();
+		releases.push(resolveFirst);
+		const closing = app.close();
+		try {
+			await vi.advanceTimersByTimeAsync(0);
+		} finally {
+			resolveFirst();
+			await closing;
+		}
 		await settle();
 		expect(mocks.collect).toHaveBeenCalledTimes(1);
 	});

@@ -1,7 +1,9 @@
 import type { FastifyBaseLogger } from "fastify";
+import { retainRestoreRuntimeOperation } from "../backup/restore-runtime-admission.js";
 import { acquireIndependentCleanupOperationGuard } from "../library-cleanup/cleanup-maintenance-gate.js";
 import {
 	isRetryableLibraryRefreshResult,
+	libraryRefreshPublishedAt,
 	type LibraryRefreshRecoveryHandoff,
 	type LibraryRefreshRecoveryProvider,
 } from "../services/library-refresh-recovery.js";
@@ -10,6 +12,7 @@ import type {
 	ProviderCacheRefreshClaim,
 	WatchProviderCacheRefreshType,
 } from "../services/provider-cache-status.js";
+import type { ProviderPublicationAuthority } from "../services/provider-identity-guard.js";
 
 export type ProviderRefreshSettlement =
 	| "complete"
@@ -52,6 +55,7 @@ export type StartProviderCacheRefreshOptions<TResult> = {
 		provider: LibraryRefreshRecoveryProvider;
 		userId: string;
 		instanceId: string;
+		authority: ProviderPublicationAuthority;
 		handoff: LibraryRefreshRecoveryHandoff;
 	};
 };
@@ -68,12 +72,22 @@ export async function startProviderCacheRefreshInBackground<TResult>(
 	options: StartProviderCacheRefreshOptions<TResult>,
 ): Promise<ProviderCacheRefreshAdmission> {
 	const release = acquireIndependentCleanupOperationGuard();
+	let runtimeOperation: ReturnType<typeof retainRestoreRuntimeOperation>;
+	const releaseAll = async () => {
+		try {
+			await runtimeOperation?.release();
+		} finally {
+			release();
+		}
+	};
 	let claim: ProviderCacheRefreshClaim;
 	try {
+		// Retain accepted work before the request can release its runtime ticket.
+		runtimeOperation = retainRestoreRuntimeOperation();
 		claim = await options.claim();
 		if (!isProviderCacheRefreshClaim(claim)) throw new Error("invalid provider cache claim");
 	} catch {
-		release();
+		await releaseAll();
 		emit(
 			options.log,
 			"warn",
@@ -85,7 +99,7 @@ export async function startProviderCacheRefreshInBackground<TResult>(
 	}
 
 	if (claim.status === "superseded") {
-		release();
+		await releaseAll();
 		emit(
 			options.log,
 			"warn",
@@ -97,7 +111,7 @@ export async function startProviderCacheRefreshInBackground<TResult>(
 	}
 
 	if (claim.status === "already-running") {
-		release();
+		await releaseAll();
 		return { accepted: true, backgroundTask: Promise.resolve() };
 	}
 	const recoveryRequest = options.recovery
@@ -106,6 +120,7 @@ export async function startProviderCacheRefreshInBackground<TResult>(
 				userId: options.recovery.userId,
 				instanceId: options.recovery.instanceId,
 				attempt: claim.attempt,
+				authority: options.recovery.authority,
 			}
 		: undefined;
 	if (recoveryRequest) {
@@ -118,29 +133,42 @@ export async function startProviderCacheRefreshInBackground<TResult>(
 
 	const backgroundTask = Promise.resolve()
 		.then(async () => {
-			let result: TResult | undefined;
-			let thrown = false;
+			const settle = async () => {
+				let result: TResult | undefined;
+				let thrown = false;
+				try {
+					result = await options.produce(claim.attempt);
+				} catch {
+					thrown = true;
+				}
+				const settlement = thrown ? "failed" : classifyProviderRefreshSettlement(result);
+				emit(
+					options.log,
+					thrown ? "warn" : "info",
+					options.cacheType,
+					settlement,
+					"Provider cache refresh settled",
+				);
+				if (
+					recoveryRequest &&
+					isRetryableLibraryRefreshResult(options.recovery!.provider, result, thrown)
+				) {
+					await options
+						.recovery!.handoff.arm({
+							...recoveryRequest,
+							publishedAt: libraryRefreshPublishedAt(result),
+						})
+						.catch(() => undefined);
+				}
+			};
 			try {
-				result = await options.produce(claim.attempt);
+				if (runtimeOperation) await runtimeOperation.run(settle);
+				else await settle();
 			} catch {
-				thrown = true;
-			}
-			const settlement = thrown ? "failed" : classifyProviderRefreshSettlement(result);
-			emit(
-				options.log,
-				thrown ? "warn" : "info",
-				options.cacheType,
-				settlement,
-				"Provider cache refresh settled",
-			);
-			if (
-				recoveryRequest &&
-				isRetryableLibraryRefreshResult(options.recovery!.provider, result, thrown)
-			) {
-				await options.recovery!.handoff.arm(recoveryRequest).catch(() => undefined);
+				emit(options.log, "warn", options.cacheType, "failed", "Provider cache refresh settled");
 			}
 		})
-		.finally(release);
+		.finally(releaseAll);
 
 	return { accepted: true, backgroundTask };
 }

@@ -12,6 +12,7 @@ import type {
 	CodecAnalytics,
 	DeviceAnalytics,
 	JellyfinNowPlayingResponse,
+	JellyfinWatchEnrichmentResponse,
 	LibraryItem,
 	MostConcurrentResponse,
 	PlaysByDateResponse,
@@ -23,7 +24,6 @@ import type {
 	TranscodeAnalytics,
 	UserAnalytics,
 	UserEpisodeCompletion,
-	WatchEnrichmentResponse,
 	WatchHistoryResponse,
 } from "@arr/shared";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -109,14 +109,19 @@ export const useJellyfinSections = () => {
 // Watch Enrichment
 // ============================================================================
 
-export const useJellyfinWatchEnrichment = (items: LibraryItem[]) => {
+export const useJellyfinWatchEnrichment = (
+	items: LibraryItem[],
+	progressTmdbIds: readonly number[] = [],
+	enabled = true,
+) => {
 	const enrichable = useEnrichableItems(items, { movie: "movie", series: "series" });
 
-	return useQuery<WatchEnrichmentResponse>({
-		queryKey: jellyfinKeys.watchEnrichment(enrichable.key),
-		queryFn: () => fetchJellyfinWatchEnrichment(enrichable.tmdbIds, enrichable.types),
+	return useQuery<JellyfinWatchEnrichmentResponse>({
+		queryKey: jellyfinKeys.watchEnrichment(enrichable.key, progressTmdbIds),
+		queryFn: () =>
+			fetchJellyfinWatchEnrichment(enrichable.tmdbIds, enrichable.types, progressTmdbIds),
 		staleTime: 5 * 60_000,
-		enabled: enrichable.hasItems,
+		enabled: enabled && enrichable.hasItems,
 	});
 };
 

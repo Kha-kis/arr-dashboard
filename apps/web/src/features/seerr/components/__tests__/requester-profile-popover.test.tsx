@@ -23,6 +23,7 @@ vi.mock("next/link", () => ({
 }));
 
 // Import after mocks
+import { IncognitoProvider } from "../../../../contexts/IncognitoContext";
 import { RequesterProfilePopover } from "../requester-profile-popover";
 
 // ============================================================================
@@ -42,13 +43,13 @@ const sampleUser = {
 };
 
 const sampleQuota = {
-	movie: { used: 3, remaining: 7, restricted: true, limit: 10, days: 7 },
-	tv: { used: 1, remaining: 4, restricted: true, limit: 5, days: 7 },
+	movie: { used: 3, remaining: 7, restricted: false, limit: 10, days: 7 },
+	tv: { used: 5, remaining: 0, restricted: true, limit: 5, days: 7 },
 };
 
 const unrestrictedQuota = {
-	movie: { used: 0, remaining: 0, restricted: false, limit: 0, days: 0 },
-	tv: { used: 0, remaining: 0, restricted: false, limit: 0, days: 0 },
+	movie: { used: 0, restricted: false, limit: 0, days: 0 },
+	tv: { used: 0, restricted: false, limit: 0, days: 0 },
 };
 
 // ============================================================================
@@ -60,7 +61,9 @@ function createWrapper() {
 		defaultOptions: { queries: { retry: false } },
 	});
 	return ({ children }: { children: ReactNode }) => (
-		<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+		<QueryClientProvider client={queryClient}>
+			<IncognitoProvider>{children}</IncognitoProvider>
+		</QueryClientProvider>
 	);
 }
 
@@ -142,7 +145,7 @@ describe("RequesterProfilePopover", () => {
 		});
 	});
 
-	it("displays movie and TV quota bars when restricted", async () => {
+	it("displays finite usage for both available and exhausted quota", async () => {
 		mockUseSeerrUserQuota.mockReturnValue({
 			data: sampleQuota,
 			isLoading: false,
@@ -154,7 +157,8 @@ describe("RequesterProfilePopover", () => {
 			expect(screen.getByText("Movie Quota")).toBeTruthy();
 			expect(screen.getByText("TV Quota")).toBeTruthy();
 			expect(screen.getByText("3/10")).toBeTruthy();
-			expect(screen.getByText("1/5")).toBeTruthy();
+			expect(screen.getByText("5/5")).toBeTruthy();
+			expect(screen.getByText("Exhausted")).toBeTruthy();
 		});
 	});
 
@@ -171,9 +175,24 @@ describe("RequesterProfilePopover", () => {
 		});
 	});
 
-	it("shows error message when quota fetch fails", async () => {
+	it("labels the unlimited media type alongside finite usage", async () => {
 		mockUseSeerrUserQuota.mockReturnValue({
-			data: undefined,
+			data: { movie: sampleQuota.movie, tv: unrestrictedQuota.tv },
+			isLoading: false,
+			isError: false,
+		});
+		renderPopover();
+		fireEvent.click(screen.getByText("Click me"));
+		await waitFor(() => {
+			expect(screen.getByText("3/10")).toBeTruthy();
+			expect(screen.getByText("TV Quota")).toBeTruthy();
+			expect(screen.getByText("Unlimited")).toBeTruthy();
+		});
+	});
+
+	it("shows error message when a quota refresh fails", async () => {
+		mockUseSeerrUserQuota.mockReturnValue({
+			data: unrestrictedQuota,
 			isLoading: false,
 			isError: true,
 		});
@@ -181,6 +200,7 @@ describe("RequesterProfilePopover", () => {
 		fireEvent.click(screen.getByText("Click me"));
 		await waitFor(() => {
 			expect(screen.getByText("Could not load quota")).toBeTruthy();
+			expect(screen.queryByText("No quota restrictions")).toBeNull();
 		});
 	});
 

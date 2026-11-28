@@ -31,8 +31,8 @@ export * from "./enums"
  * const prisma = new PrismaClient({
  *   adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL })
  * })
- * // Fetch zero or more Users
- * const users = await prisma.user.findMany()
+ * // Fetch zero or more RestoreRuntimeControls
+ * const restoreRuntimeControls = await prisma.restoreRuntimeControl.findMany()
  * ```
  * 
  * Read more in our [docs](https://pris.ly/d/client).
@@ -41,6 +41,16 @@ export const PrismaClient = $Class.getPrismaClientClass()
 export type PrismaClient<LogOpts extends Prisma.LogLevel = never, OmitOpts extends Prisma.PrismaClientOptions["omit"] = Prisma.PrismaClientOptions["omit"], ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = $Class.PrismaClient<LogOpts, OmitOpts, ExtArgs>
 export { Prisma }
 
+/**
+ * Model RestoreRuntimeControl
+ * 
+ */
+export type RestoreRuntimeControl = Prisma.RestoreRuntimeControlModel
+/**
+ * Model SqliteRestoreStorageBinding
+ * 
+ */
+export type SqliteRestoreStorageBinding = Prisma.SqliteRestoreStorageBindingModel
 /**
  * Model User
  * 
@@ -214,6 +224,13 @@ export type EpisodeFileCache = Prisma.EpisodeFileCacheModel
  */
 export type LibrarySyncStatus = Prisma.LibrarySyncStatusModel
 /**
+ * Model DashboardStatisticsSnapshot
+ * A user-scoped, source-bound Dashboard statistics publication. Refresh claims
+ * are separate from the last published data so a failed refresh cannot erase
+ * an honest last-known result.
+ */
+export type DashboardStatisticsSnapshot = Prisma.DashboardStatisticsSnapshotModel
+/**
  * Model UserCustomFormat
  * 
  */
@@ -233,6 +250,26 @@ export type QueueCleanerLog = Prisma.QueueCleanerLogModel
  * Queue cleaner strike tracking for gradual removal
  */
 export type QueueCleanerStrike = Prisma.QueueCleanerStrikeModel
+/**
+ * Model QueueCleanerImportReceipt
+ * External import receipts must survive strike clearing/decay and queue ID reuse.
+ */
+export type QueueCleanerImportReceipt = Prisma.QueueCleanerImportReceiptModel
+/**
+ * Model ArrImportOperation
+ * Immutable attempt identity and durable progress, independent of current source claims.
+ */
+export type ArrImportOperation = Prisma.ArrImportOperationModel
+/**
+ * Model ArrImportFileProof
+ * Only positive, exactly bound file evidence may set verifiedAt.
+ */
+export type ArrImportFileProof = Prisma.ArrImportFileProofModel
+/**
+ * Model ArrImportSourceClaim
+ * The active submission fence is not the lifetime of its historical import evidence.
+ */
+export type ArrImportSourceClaim = Prisma.ArrImportSourceClaimModel
 /**
  * Model LibraryCleanupConfig
  * Per-user library cleanup configuration
@@ -289,6 +326,16 @@ export type NotificationSubscription = Prisma.NotificationSubscriptionModel
  */
 export type NotificationLog = Prisma.NotificationLogModel
 /**
+ * Model NotificationOutboxEvent
+ * Accepted notification work, distinct from any provider delivery acknowledgement.
+ */
+export type NotificationOutboxEvent = Prisma.NotificationOutboxEventModel
+/**
+ * Model NotificationOutboxDelivery
+ * Historical recipient selection; execution resolves the current owned channel again.
+ */
+export type NotificationOutboxDelivery = Prisma.NotificationOutboxDeliveryModel
+/**
  * Model VapidKeys
  * VAPID keys for Web Push notifications (singleton)
  */
@@ -329,6 +376,41 @@ export type JellyfinCache = Prisma.JellyfinCacheModel
  */
 export type JellyfinEpisodeCache = Prisma.JellyfinEpisodeCacheModel
 /**
+ * Model JellyfinEpisodeGenerationRow
+ * Invisible until cache_refresh_status names this generation; never cleanup authority by itself.
+ */
+export type JellyfinEpisodeGenerationRow = Prisma.JellyfinEpisodeGenerationRowModel
+/**
+ * Model JellyfinEpisodeGenerationShowReceipt
+ * Readback-verified, generation-bound proof for a single requested show.
+ */
+export type JellyfinEpisodeGenerationShowReceipt = Prisma.JellyfinEpisodeGenerationShowReceiptModel
+/**
+ * Model JellyfinEpisodePreparation
+ * Durable CAS lease and verified manifest for an unpublished episode generation.
+ */
+export type JellyfinEpisodePreparation = Prisma.JellyfinEpisodePreparationModel
+/**
+ * Model JellyfinNativeWatchPublication
+ * Display-only native Jellyfin episode watch evidence; never cleanup authority.
+ */
+export type JellyfinNativeWatchPublication = Prisma.JellyfinNativeWatchPublicationModel
+/**
+ * Model JellyfinNativeWatchScopeReceipt
+ * 
+ */
+export type JellyfinNativeWatchScopeReceipt = Prisma.JellyfinNativeWatchScopeReceiptModel
+/**
+ * Model JellyfinNativeWatchRow
+ * 
+ */
+export type JellyfinNativeWatchRow = Prisma.JellyfinNativeWatchRowModel
+/**
+ * Model JellyfinPositiveWatchRow
+ * Display-only stable positive observations. Absence never grants negative or cleanup authority.
+ */
+export type JellyfinPositiveWatchRow = Prisma.JellyfinPositiveWatchRowModel
+/**
  * Model TautulliCache
  * Cached Tautulli watch statistics per media item
  */
@@ -343,6 +425,32 @@ export type CacheRefreshStatus = Prisma.CacheRefreshStatusModel
  * 
  */
 export type ProviderObservationRun = Prisma.ProviderObservationRunModel
+/**
+ * Model ProviderNativeInventoryRun
+ * One durable native-inventory work slot per owned provider instance.
+ * A Plex run owns library and episode together; Jellyfin/Emby use separate slots.
+ */
+export type ProviderNativeInventoryRun = Prisma.ProviderNativeInventoryRunModel
+/**
+ * Model ProviderNativeInventoryPass
+ * Unpublished, restartable pass. Only a completed pass may become a snapshot head.
+ */
+export type ProviderNativeInventoryPass = Prisma.ProviderNativeInventoryPassModel
+/**
+ * Model ProviderNativeInventoryPageReceipt
+ * Page receipt and rows are committed in the same bounded transaction.
+ */
+export type ProviderNativeInventoryPageReceipt = Prisma.ProviderNativeInventoryPageReceiptModel
+/**
+ * Model ProviderNativeInventorySeenItem
+ * Raw provider identities include filtered containers, so page overlap cannot disappear during normalization.
+ */
+export type ProviderNativeInventorySeenItem = Prisma.ProviderNativeInventorySeenItemModel
+/**
+ * Model ProviderNativeInventoryStageItem
+ * 
+ */
+export type ProviderNativeInventoryStageItem = Prisma.ProviderNativeInventoryStageItemModel
 /**
  * Model ProviderNativeInventorySnapshot
  * Generation-bound native provider presence, independent of TMDB and watch data.
@@ -441,6 +549,16 @@ export type TraktListCache = Prisma.TraktListCacheModel
  */
 export type ListCacheRefreshStatus = Prisma.ListCacheRefreshStatusModel
 /**
+ * Model QuiObservationPublication
+ * 
+ */
+export type QuiObservationPublication = Prisma.QuiObservationPublicationModel
+/**
+ * Model QuiTorrentObservation
+ * 
+ */
+export type QuiTorrentObservation = Prisma.QuiTorrentObservationModel
+/**
  * Model QuiActivityLog
  * One discrete event from arr-dashboard's qui-related operations.
  * eventType vocabulary (extensible — new types can land alongside future phases):
@@ -457,6 +575,16 @@ export type ListCacheRefreshStatus = Prisma.ListCacheRefreshStatusModel
  */
 export type QuiActivityLog = Prisma.QuiActivityLogModel
 /**
+ * Model SearchGrabAttempt
+ * Durable operator intent and exact provider-target binding for manual Search Grab.
+ */
+export type SearchGrabAttempt = Prisma.SearchGrabAttemptModel
+/**
+ * Model SearchGrabClaim
+ * 
+ */
+export type SearchGrabClaim = Prisma.SearchGrabClaimModel
+/**
  * Model QuiActionLog
  * Per-user audit log of arr-dashboard-initiated mutations against qui torrents (Phase 4.1).
  * 
@@ -466,12 +594,18 @@ export type QuiActivityLog = Prisma.QuiActivityLogModel
  * reannounce, tag changes — so the operator has a tamper-evident record of every
  * change arr-dashboard made on their behalf.
  * 
- * Each row goes through `pending` → `success` or `failed`. Failed rows keep the
- * raw error string so the operator can diagnose without re-running. Rows are
+ * Each row goes through `pending` → `success` or an explicitly unresolved
+ * `uncertain` state. Operator resolution is distinct from qUI confirmation. Rows are
  * indexed by `(userId, requestedAt)` for the My Actions feed and
  * `(serviceInstanceId, torrentHash)` for per-torrent history drill-downs.
  */
 export type QuiActionLog = Prisma.QuiActionLogModel
+/**
+ * Model QuiActionClaim
+ * A live database claim holds one target across API restarts and workers.
+ * Never expire by time alone: qUI can apply a request after our response is lost.
+ */
+export type QuiActionClaim = Prisma.QuiActionClaimModel
 /**
  * Model QuiEventLog
  * Inbound qui webhook event log (Phase 5.1).

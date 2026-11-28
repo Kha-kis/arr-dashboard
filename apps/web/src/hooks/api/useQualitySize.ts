@@ -60,8 +60,12 @@ export function useApplyQualitySize() {
 
 	return useMutation<ApplyQualitySizeResponse, Error, ApplyQualitySizePayload>({
 		mutationFn: (payload) => applyQualitySize(payload),
-		onSuccess: (data) => {
-			if (data.warning) {
+		onSuccess: (data, variables) => {
+			if (data.resetStatus === "requested" || variables.presetTrashId === "default") {
+				toast.info(
+					"Factory-default reset requested. Completion is not confirmed; check Sonarr/Radarr task status and Quality settings.",
+				);
+			} else if (data.warning) {
 				toast.warning(data.message);
 			} else {
 				toast.success(data.message);

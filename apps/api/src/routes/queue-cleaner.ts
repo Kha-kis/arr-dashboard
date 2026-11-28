@@ -804,11 +804,9 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 			const now = new Date();
 			const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 			const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-			const fourWeeksAgo = new Date(today.getTime() - 28 * 24 * 60 * 60 * 1000);
 
 			// Filter logs for different time periods
 			const logsLast7Days = allLogs.filter((l) => l.startedAt >= sevenDaysAgo);
-			const logsLast4Weeks = allLogs.filter((l) => l.startedAt >= fourWeeksAgo);
 
 			// Calculate daily stats (last 7 days)
 			const dailyMap = new Map<
@@ -847,12 +845,15 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 				weeklyMap.set(weekKey, { itemsCleaned: 0, itemsWarned: 0, runsCompleted: 0 });
 			}
 
-			for (const logEntry of logsLast4Weeks) {
-				const daysDiff = Math.floor(
-					(today.getTime() - logEntry.startedAt.getTime()) / (24 * 60 * 60 * 1000),
-				);
-				const weekIndex = Math.floor(daysDiff / 7);
-				if (weekIndex < 4) {
+			// Compare local dates on a fixed-length calendar axis so time of day and
+			// daylight-saving changes cannot shift a run into another week.
+			const calendarDate = (date: Date) =>
+				Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+			const todayDate = calendarDate(today);
+			const weekMs = 7 * 24 * 60 * 60 * 1000;
+			for (const logEntry of allLogs) {
+				const weekIndex = Math.floor((todayDate - calendarDate(logEntry.startedAt)) / weekMs);
+				if (weekIndex >= 0 && weekIndex < 4) {
 					const weekKey = `Week ${4 - weekIndex}`;
 					const existing = weeklyMap.get(weekKey);
 					if (existing) {

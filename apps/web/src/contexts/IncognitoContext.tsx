@@ -12,16 +12,18 @@ interface IncognitoContextValue {
 const IncognitoContext = createContext<IncognitoContextValue | undefined>(undefined);
 
 export function IncognitoProvider({ children }: { children: ReactNode }) {
-	const [incognitoMode, setIncognitoModeState] = useState(false);
+	// Keep server and first client render masked until the preference is known.
+	const [incognitoMode, setIncognitoModeState] = useState(true);
 	const [mounted, setMounted] = useState(false);
 
 	// Load from localStorage only after mounting on client
 	useEffect(() => {
 		setMounted(true);
 		if (typeof window !== "undefined") {
-			const stored = localStorage.getItem(INCOGNITO_STORAGE_KEY);
-			if (stored === "true") {
-				setIncognitoModeState(true);
+			try {
+				setIncognitoModeState(localStorage.getItem(INCOGNITO_STORAGE_KEY) === "true");
+			} catch {
+				// Unavailable storage must not expose private content or prevent rendering.
 			}
 		}
 	}, []);
@@ -37,8 +39,11 @@ export function IncognitoProvider({ children }: { children: ReactNode }) {
 		};
 
 		const handleCustomEvent = () => {
-			const stored = localStorage.getItem(INCOGNITO_STORAGE_KEY);
-			setIncognitoModeState(stored === "true");
+			try {
+				setIncognitoModeState(localStorage.getItem(INCOGNITO_STORAGE_KEY) === "true");
+			} catch {
+				// Preserve the current session's explicit choice when storage is unavailable.
+			}
 		};
 
 		window.addEventListener("storage", handleStorageChange);
@@ -53,7 +58,12 @@ export function IncognitoProvider({ children }: { children: ReactNode }) {
 	const setIncognitoMode = (value: boolean) => {
 		setIncognitoModeState(value);
 		if (typeof window !== "undefined") {
-			localStorage.setItem(INCOGNITO_STORAGE_KEY, String(value));
+			try {
+				localStorage.setItem(INCOGNITO_STORAGE_KEY, String(value));
+			} catch {
+				// This explicit choice is session-only; do not announce a persisted change.
+				return;
+			}
 			window.dispatchEvent(new Event("incognito-mode-changed"));
 		}
 	};

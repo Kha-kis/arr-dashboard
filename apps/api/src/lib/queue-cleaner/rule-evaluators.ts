@@ -22,6 +22,7 @@ import {
 } from "./constants.js";
 import {
 	collectStatusTexts,
+	isUsenetQueueProtocol,
 	matchesKeywords,
 	parseDate,
 	type RawQueueItem,
@@ -37,11 +38,11 @@ export function evaluateSeedingTimeout(
 	item: RawQueueItem,
 	config: QueueCleanerConfig,
 	now: Date,
+	service?: string,
 ): { rule: "seeding_timeout"; reason: string } | null {
 	if (!config.seedingTimeoutEnabled) return null;
 
-	const protocol = typeof item.protocol === "string" ? item.protocol.toLowerCase() : "";
-	if (protocol === "usenet") return null;
+	if (isUsenetQueueProtocol(item.protocol, service)) return null;
 
 	const status =
 		typeof item.trackedDownloadStatus === "string" ? item.trackedDownloadStatus.toLowerCase() : "";
@@ -192,6 +193,7 @@ export function evaluateQueueItem(
 	item: RawQueueItem,
 	config: QueueCleanerConfig,
 	now: Date,
+	service?: string,
 ): { rule: CleanerResultItem["rule"]; reason: string } | null {
 	const statusTexts = collectStatusTexts(item);
 	const trackedState = (
@@ -239,6 +241,23 @@ export function evaluateQueueItem(
 				return {
 					rule: "stalled",
 					reason: `No progress for ${Math.round(ageMins)} minutes (threshold: ${config.stalledThresholdMins}m)`,
+				};
+			}
+
+			// Queue age is the existing stalled threshold, not time spent fetching metadata.
+			if (
+				trackedState === "downloading" &&
+				trackedStatus === "ok" &&
+				typeof item.protocol === "string" &&
+				item.protocol.toLowerCase() === "torrent" &&
+				item.size === 0 &&
+				item.sizeleft === 0 &&
+				matchesKeywords(statusTexts, ["downloading metadata"]) &&
+				ageMins > config.stalledThresholdMins
+			) {
+				return {
+					rule: "stalled",
+					reason: `Torrent metadata unavailable; in queue for ${Math.round(ageMins)} minutes (threshold: ${config.stalledThresholdMins}m)`,
 				};
 			}
 		}
@@ -384,7 +403,7 @@ export function evaluateQueueItem(
 	}
 
 	// Rule 8: Seeding timeout
-	const seedingResult = evaluateSeedingTimeout(item, config, now);
+	const seedingResult = evaluateSeedingTimeout(item, config, now, service);
 	if (seedingResult) {
 		return seedingResult;
 	}

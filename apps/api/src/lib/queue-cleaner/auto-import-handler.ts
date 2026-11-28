@@ -7,96 +7,23 @@
 
 import type { AutoImportResult } from "@arr/shared";
 import type { FastifyInstance } from "fastify";
-import {
-	autoImportByDownloadIdWithSdk,
-	ManualImportError,
-} from "../../routes/manual-import-utils.js";
-import type { QueueCapableClient } from "../arr/client-factory.js";
+import { submitTrackedAutomaticImport } from "../arr/import-operations/submission.js";
+import type { ManualImportCommandOutcome } from "../arr/manual-import-command.js";
 import { loggers } from "../logger.js";
-import type { QueueCleanerConfig, QueueCleanerStrike, ServiceInstance } from "../prisma.js";
-import { isString, parseJsonArray } from "../utils/json.js";
-import { AUTO_IMPORT_NEVER_KEYWORDS, AUTO_IMPORT_SAFE_KEYWORDS } from "./constants.js";
-import { matchesKeywords } from "./queue-item-utils.js";
+import type { ServiceInstance } from "../prisma.js";
+import { importConnectionFingerprint, type QueueSourceActionPermit } from "./import-receipt.js";
+import type { RawQueueItem } from "./queue-item-utils.js";
+
+export { evaluateAutoImportEligibility } from "./auto-import-policy.js";
 
 const log = loggers.queueCleaner;
 
-/**
- * Evaluate if an item is eligible for auto-import.
- *
- * @param statusTexts - Status messages from the queue item
- * @param config - Queue cleaner config with auto-import settings
- * @param existingStrike - Existing strike record (if any) with import attempt tracking
- * @param now - Current timestamp
- * @returns Eligibility status and reason
- */
-export function evaluateAutoImportEligibility(
-	statusTexts: string[],
-	config: QueueCleanerConfig,
-	existingStrike: QueueCleanerStrike | null,
-	now: Date,
-): { eligible: boolean; reason: string } {
-	if (!config.autoImportEnabled) {
-		return { eligible: false, reason: "Auto-import disabled" };
-	}
-
-	const maxAttempts = config.autoImportMaxAttempts;
-	const attempts = existingStrike?.importAttempts ?? 0;
-	if (attempts >= maxAttempts) {
-		return { eligible: false, reason: `Max attempts reached (${attempts}/${maxAttempts})` };
-	}
-
-	const cooldownMins = config.autoImportCooldownMins;
-	if (existingStrike?.lastImportAttempt) {
-		const cooldownMs = cooldownMins * 60 * 1000;
-		const timeSinceLastAttempt = now.getTime() - existingStrike.lastImportAttempt.getTime();
-		if (timeSinceLastAttempt < cooldownMs) {
-			const remainingMins = Math.ceil((cooldownMs - timeSinceLastAttempt) / 60000);
-			return { eligible: false, reason: `Cooldown active (${remainingMins}m remaining)` };
-		}
-	}
-
-	const neverMatch = matchesKeywords(statusTexts, AUTO_IMPORT_NEVER_KEYWORDS);
-	if (neverMatch) {
-		return { eligible: false, reason: `Cannot auto-import: ${neverMatch}` };
-	}
-
-	const customNeverPatterns = parseJsonArray(
-		config.autoImportNeverPatterns,
-		isString,
-		"autoImportNeverPatterns",
-		log,
-		{ configId: config.id },
-	);
-	if (customNeverPatterns.length > 0) {
-		const customNeverMatch = matchesKeywords(statusTexts, customNeverPatterns);
-		if (customNeverMatch) {
-			return { eligible: false, reason: `Blocked by custom pattern: ${customNeverMatch}` };
-		}
-	}
-
-	if (config.autoImportSafeOnly) {
-		const safeMatch = matchesKeywords(statusTexts, AUTO_IMPORT_SAFE_KEYWORDS);
-
-		let customMatch: string | null = null;
-		if (!safeMatch) {
-			const customPatterns = parseJsonArray(
-				config.autoImportCustomPatterns,
-				isString,
-				"autoImportCustomPatterns",
-				log,
-				{ configId: config.id },
-			);
-			if (customPatterns.length > 0) {
-				customMatch = matchesKeywords(statusTexts, customPatterns);
-			}
-		}
-
-		if (!safeMatch && !customMatch) {
-			return { eligible: false, reason: "No safe pattern matched (safeOnly mode)" };
-		}
-	}
-
-	return { eligible: true, reason: "Eligible for auto-import" };
+export interface TrackedAutoImportOptions {
+	queueId: number;
+	queueFingerprint: string;
+	attemptOrdinal: number;
+	sourcePermit: QueueSourceActionPermit;
+	currentQueueGate: (item: RawQueueItem, preparedOperationId?: string) => Promise<boolean>;
 }
 
 /**
@@ -105,46 +32,96 @@ export function evaluateAutoImportEligibility(
  * @param app - Fastify instance with ARR client factory
  * @param instance - Service instance to import on
  * @param downloadId - Download ID of the item to import
- * @param itemTitle - Title for logging
+ * @param _itemTitle - Compatibility display value; never logged
  * @returns Import result with success/failure status
  */
 export async function attemptAutoImport(
 	app: FastifyInstance,
 	instance: ServiceInstance,
 	downloadId: string,
-	itemTitle: string,
-): Promise<AutoImportResult> {
-	const serviceLower = instance.service.toLowerCase();
-	const validServices = ["sonarr", "radarr", "lidarr", "readarr"] as const;
-	if (!validServices.includes(serviceLower as (typeof validServices)[number])) {
+	_itemTitle: string,
+	options: TrackedAutoImportOptions,
+): Promise<
+	AutoImportResult & {
+		safetyBlocked?: boolean;
+		commandId?: number;
+		commandState?: ManualImportCommandOutcome["state"];
+	}
+> {
+	const service = instance.service.toLowerCase();
+	if (
+		service !== "sonarr" &&
+		service !== "radarr" &&
+		service !== "lidarr" &&
+		service !== "readarr"
+	) {
+		return {
+			attempted: false,
+			success: false,
+			safetyBlocked: true,
+			skippedReason: "Automatic import is unavailable for this service.",
+		};
+	}
+
+	try {
+		const operation = await submitTrackedAutomaticImport(
+			{
+				prisma: app.prisma,
+				encryptor: app.encryptor,
+				createClient: (connection, clientOptions) => {
+					if (
+						connection.service !== "SONARR" &&
+						connection.service !== "RADARR" &&
+						connection.service !== "LIDARR" &&
+						connection.service !== "READARR"
+					) {
+						throw new Error("Automatic import connection is unavailable.");
+					}
+					return app.arrClientFactory.create(
+						{ ...connection, service: connection.service },
+						clientOptions,
+					);
+				},
+			},
+			{
+				userId: instance.userId,
+				instanceId: instance.id,
+				service,
+				downloadId,
+				queueId: options.queueId,
+				queueFingerprint: options.queueFingerprint,
+				attemptOrdinal: options.attemptOrdinal,
+				connectionFingerprint: importConnectionFingerprint(instance),
+			},
+			{ sourcePermit: options.sourcePermit, currentQueueGate: options.currentQueueGate },
+		);
+		const commandState =
+			operation.commandState === "failed"
+				? "failed"
+				: operation.commandState === "pending"
+					? "pending"
+					: "unknown";
+		log.info({ category: commandState }, "Automatic import attempt recorded; source retained");
+		// A POST receipt cannot verify per-file import results. Reconcile completed
+		// commands with positive provider history on the next invocation.
+		return {
+			attempted: operation.submissionStartedAt !== null,
+			success: false,
+			commandId: operation.commandId ?? undefined,
+			commandState,
+		};
+	} catch {
+		// Neither failed preparation nor an unobserved write grants cleanup authority.
 		log.warn(
-			{ instanceId: instance.id, service: instance.service },
-			"Auto-import not supported for this service type",
+			{ category: "automatic-import-unavailable" },
+			"Automatic import unavailable; source retained",
 		);
 		return {
 			attempted: false,
 			success: false,
-			skippedReason: `Unsupported service: ${instance.service}`,
+			safetyBlocked: true,
+			error:
+				"Automatic import evidence or preparation is unavailable; source retained. Observe import progress before retrying.",
 		};
-	}
-	const service = serviceLower as "sonarr" | "radarr" | "lidarr" | "readarr";
-
-	const client = app.arrClientFactory.create(instance) as QueueCapableClient;
-
-	try {
-		await autoImportByDownloadIdWithSdk(client, service, downloadId);
-
-		log.info({ instanceId: instance.id, downloadId, itemTitle }, "Auto-import succeeded");
-		return { attempted: true, success: true };
-	} catch (error) {
-		const errorMsg =
-			error instanceof ManualImportError
-				? error.message
-				: error instanceof Error
-					? error.message
-					: "Unknown error";
-
-		log.warn({ instanceId: instance.id, downloadId, itemTitle, err: error }, "Auto-import failed");
-		return { attempted: true, success: false, error: errorMsg };
 	}
 }

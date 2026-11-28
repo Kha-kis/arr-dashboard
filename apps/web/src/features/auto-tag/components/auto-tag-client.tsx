@@ -4,6 +4,7 @@ import type { AutoTagPreviewResponse, AutoTagRule } from "@arr/shared";
 import { CheckCircle2, Eye, Pencil, Play, Plus, Tag, Trash2, XCircle } from "lucide-react";
 import { useState } from "react";
 import { GlassmorphicCard, PageLayout } from "../../../components/layout";
+import { Alert, AlertDescription } from "../../../components/ui";
 import { Button } from "../../../components/ui/button";
 import {
 	Dialog,
@@ -27,7 +28,8 @@ import { WebhookConfigPanel } from "./webhook-config-panel";
 
 export const AutoTagClient = () => {
 	const { gradient } = useThemeGradient();
-	const { data: rules = [], isLoading } = useAutoTagRules();
+	const rulesQuery = useAutoTagRules();
+	const { data: rules, isLoading } = rulesQuery;
 	const deleteMutation = useDeleteAutoTagRule();
 	const runMutation = useRunAutoTagRule();
 	const [runningId, setRunningId] = useState<string | null>(null);
@@ -102,10 +104,27 @@ export const AutoTagClient = () => {
 				<WebhookConfigPanel />
 
 				<GlassmorphicCard>
+					{rulesQuery.isError || (!isLoading && rules === undefined) ? (
+						<Alert variant="danger">
+							<AlertDescription>
+								Auto-tag rules unavailable.
+								{rules !== undefined ? " Showing last-known rules." : ""}
+								<Button
+									variant="secondary"
+									disabled={rulesQuery.isFetching}
+									onClick={() => void rulesQuery.refetch()}
+								>
+									Retry
+								</Button>
+							</AlertDescription>
+						</Alert>
+					) : null}
 					{isLoading ? (
 						<div className="p-6 text-sm text-muted-foreground">Loading rules…</div>
-					) : rules.length === 0 ? (
-						<EmptyState onCreateClick={openCreate} />
+					) : rules === undefined ? null : rules.length === 0 ? (
+						rulesQuery.isError ? null : (
+							<EmptyState onCreateClick={openCreate} />
+						)
 					) : (
 						<RuleTable
 							rules={rules}

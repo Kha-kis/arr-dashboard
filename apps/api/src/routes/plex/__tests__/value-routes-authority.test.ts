@@ -74,6 +74,10 @@ vi.mock("../../../lib/plex/plex-authority-service.js", async (importOriginal) =>
 				return mocks.loadInstanceSelectedEpisodeEvidence(this.prisma, input);
 			}
 
+			readInstanceSelectedEpisodeDisplay(input: unknown) {
+				return mocks.loadInstanceSelectedEpisodeEvidence(this.prisma, input);
+			}
+
 			readPositiveEpisodeDisplayEvidence(input: unknown) {
 				return mocks.readPositiveEpisodeDisplayEvidence(this.prisma, input);
 			}

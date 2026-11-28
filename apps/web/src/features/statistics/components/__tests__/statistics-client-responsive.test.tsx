@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockRefreshState = vi.hoisted(() => vi.fn());
@@ -57,10 +58,34 @@ vi.mock("../overview-tab", () => ({
 
 import { StatisticsClient } from "../statistics-client";
 
+function renderClient() {
+	return render(
+		<QueryClientProvider client={new QueryClient()}>
+			<StatisticsClient />
+		</QueryClientProvider>,
+	);
+}
+
 const statisticsData = {
+	statisticsState: {
+		availability: "current",
+		observedAt: "2026-09-29T11:59:00.000Z",
+		data: {
+			sonarr: { instances: [] },
+			radarr: { instances: [] },
+			prowlarr: { instances: [] },
+			lidarr: { instances: [] },
+			readarr: { instances: [] },
+		},
+	},
+	availability: "current",
+	observedAt: "2026-09-29T11:59:00.000Z",
+	hasStatistics: true,
 	isLoading: false,
 	isFetching: false,
 	error: null,
+	incompleteServices: [],
+	configuredInstanceCounts: { sonarr: 1, radarr: 1, lidarr: 1, readarr: 1, prowlarr: 1 },
 	refetch: vi.fn(),
 	sonarrRows: [{ instanceId: "sonarr-1" }],
 	radarrRows: [{ instanceId: "radarr-1" }],
@@ -96,7 +121,7 @@ describe("StatisticsClient responsive navigation", () => {
 	});
 
 	it("wraps every service tab and keeps the refresh control reachable with the warning state", () => {
-		render(<StatisticsClient />);
+		renderClient();
 
 		const overviewTab = screen.getByRole("button", { name: /^Overview$/ });
 		const tabStrip = overviewTab.parentElement;
@@ -124,11 +149,38 @@ describe("StatisticsClient responsive navigation", () => {
 	});
 
 	it("preserves navigation when selecting a service tab", () => {
-		render(<StatisticsClient />);
+		renderClient();
 
 		fireEvent.click(screen.getByRole("button", { name: /^Jellyfin/ }));
 
 		expect(screen.getByTestId("jellyfin-content")).toBeInTheDocument();
 		expect(screen.getByRole("button", { name: /^Overview$/ })).toBeInTheDocument();
+	});
+
+	it("warns that totals exclude unavailable provider observations", () => {
+		mockStatisticsData.mockReturnValue({
+			...statisticsData,
+			incompleteServices: ["sonarr"],
+			sonarrRows: [],
+		});
+		renderClient();
+		expect(screen.getByText(/totals exclude unavailable provider data/i)).toBeVisible();
+		expect(screen.getByRole("button", { name: /^Sonarr\s*1$/ })).toBeVisible();
+	});
+
+	it("withholds ARR totals without a snapshot but keeps the independent Plex tab available", () => {
+		mockStatisticsData.mockReturnValue({
+			...statisticsData,
+			statisticsState: { availability: "collecting", observedAt: null, data: null },
+			availability: "collecting",
+			observedAt: null,
+			hasStatistics: false,
+		});
+		renderClient();
+		expect(screen.getByText(/collecting statistics/i)).toBeVisible();
+		expect(screen.queryByTestId("overview-content")).not.toBeInTheDocument();
+		expect(screen.getByRole("button", { name: /^Sonarr$/ })).toBeVisible();
+		fireEvent.click(screen.getByRole("button", { name: /^Plex$/ }));
+		expect(screen.getByTestId("plex-content")).toBeInTheDocument();
 	});
 });

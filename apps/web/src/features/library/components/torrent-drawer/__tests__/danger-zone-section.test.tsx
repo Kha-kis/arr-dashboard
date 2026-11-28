@@ -1,11 +1,9 @@
 /**
  * Trust-critical tests for the per-torrent danger-zone section.
  *
- * The audit specifically flagged this surface: "a copy-paste swapping
- * `confirm === 'files'` would silently delete files when the user
- * picked 'keep torrent only.'" Since this is an irreversible destructive
- * action, the boolean that gets sent to qui MUST correspond exactly to
- * the variant the operator clicked. These tests pin that wiring.
+ * File deletion remains unavailable until physical ownership across shared
+ * storage can be proven. These tests pin both the visible explanation and
+ * the sole supported delete payload (`deleteFiles: false`).
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -112,17 +110,21 @@ describe("DangerZoneSection — confirm gating", () => {
 		expect(screen.queryByText(/all files on disk/i)).toBeNull();
 	});
 
-	it("shows the destructive confirmation message when 'with files' was clicked", async () => {
+	it("keeps file deletion visible but unavailable until shared storage is verified", async () => {
 		renderWithClient(<DangerZoneSection copy={makeCopy()} canAct={true} />);
-		fireEvent.click(screen.getByRole("button", { name: /Delete with files/i }));
-		expect(screen.getByText(/all files on disk/i)).toBeTruthy();
-		expect(screen.queryByText(/Files on disk are kept/i)).toBeNull();
+		const withFiles = screen.getByRole("button", {
+			name: /Delete with files/i,
+		}) as HTMLButtonElement;
+		expect(withFiles.disabled).toBe(true);
+		expect(screen.getByText(/shared-storage ownership cannot be verified/i)).toBeTruthy();
+		fireEvent.click(withFiles);
+		expect(screen.queryByRole("button", { name: /Yes, delete everything/i })).toBeNull();
 	});
 
 	it("Cancel returns to the initial state without firing the mutation", async () => {
 		vi.spyOn(quiApi, "postQuiTorrentAction").mockResolvedValue({} as never);
 		renderWithClient(<DangerZoneSection copy={makeCopy()} canAct={true} />);
-		fireEvent.click(screen.getByRole("button", { name: /Delete with files/i }));
+		fireEvent.click(screen.getByRole("button", { name: /Delete \(keep files\)/i }));
 		fireEvent.click(screen.getByRole("button", { name: /Cancel/i }));
 		// Back to initial buttons; mutation never called.
 		expect(screen.getByRole("button", { name: /Delete \(keep files\)/i })).toBeTruthy();
@@ -131,9 +133,8 @@ describe("DangerZoneSection — confirm gating", () => {
 });
 
 describe("DangerZoneSection — payload correctness (the audit-flagged risk)", () => {
-	// THIS IS THE CRITICAL BLOCK. A copy-paste error swapping `confirm
-	// === "files"` would silently delete files when the user picked
-	// "keep torrent only" — exactly what the audit said to guard against.
+	// A future refactor must not turn the keep-files control into a
+	// destructive file deletion request.
 
 	it("sends deleteFiles=false when the operator picked 'keep files'", async () => {
 		const postQuiTorrentAction = vi
@@ -156,25 +157,14 @@ describe("DangerZoneSection — payload correctness (the audit-flagged risk)", (
 		);
 	});
 
-	it("sends deleteFiles=true when the operator picked 'with files'", async () => {
+	it("never sends deleteFiles=true from the unavailable control", async () => {
 		const postQuiTorrentAction = vi
 			.spyOn(quiApi, "postQuiTorrentAction")
 			.mockResolvedValue({} as never);
 
 		renderWithClient(<DangerZoneSection copy={makeCopy()} canAct={true} />);
 		fireEvent.click(screen.getByRole("button", { name: /Delete with files/i }));
-		fireEvent.click(screen.getByRole("button", { name: /Yes, delete everything/i }));
-
-		await waitFor(() => {
-			expect(postQuiTorrentAction).toHaveBeenCalledTimes(1);
-		});
-
-		expect(postQuiTorrentAction).toHaveBeenCalledWith(
-			expect.objectContaining({
-				action: "delete",
-				payload: { deleteFiles: true },
-			}),
-		);
+		expect(postQuiTorrentAction).not.toHaveBeenCalled();
 	});
 
 	it("passes the correct hash + instance identifiers to the mutation", async () => {
@@ -188,8 +178,8 @@ describe("DangerZoneSection — payload correctness (the audit-flagged risk)", (
 		});
 
 		renderWithClient(<DangerZoneSection copy={copy} canAct={true} />);
-		fireEvent.click(screen.getByRole("button", { name: /Delete with files/i }));
-		fireEvent.click(screen.getByRole("button", { name: /Yes, delete everything/i }));
+		fireEvent.click(screen.getByRole("button", { name: /Delete \(keep files\)/i }));
+		fireEvent.click(screen.getByRole("button", { name: /Yes, delete/i }));
 
 		await waitFor(() => {
 			expect(postQuiTorrentAction).toHaveBeenCalledTimes(1);

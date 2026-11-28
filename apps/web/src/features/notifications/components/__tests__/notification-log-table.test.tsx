@@ -62,7 +62,8 @@ describe("NotificationLogTable — AsyncStateView wiring", () => {
 
 		expect(screen.getByRole("alert")).toBeInTheDocument();
 		expect(screen.getByText(/couldn't load notification logs/i)).toBeInTheDocument();
-		expect(screen.getByText(/notification api offline/i)).toBeInTheDocument();
+		expect(screen.getByText(/notification logs are unavailable/i)).toBeInTheDocument();
+		expect(screen.queryByText(/notification api offline/i)).not.toBeInTheDocument();
 
 		fireEvent.click(screen.getByRole("button", { name: /try again/i }));
 		expect(refetch).toHaveBeenCalledTimes(1);

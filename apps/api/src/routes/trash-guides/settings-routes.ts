@@ -40,14 +40,15 @@ import type {
 	FastifyRequest,
 } from "fastify";
 import { z } from "zod";
+import { withRestoreRuntimeOperation } from "../../lib/backup/restore-runtime-admission.js";
 import type { TrashCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import type { TrashGitHubFetcher } from "../../lib/trash-guides/github-fetcher.js";
 import {
 	createTrashFetcher,
 	githubDirectoryEntrySchema,
-	githubRepoInfoSchema,
 	githubErrorBodySchema,
+	githubRepoInfoSchema,
 } from "../../lib/trash-guides/github-fetcher.js";
 import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
@@ -117,34 +118,96 @@ function populateCacheInBackground(
 	fetcher: TrashGitHubFetcher,
 	log: FastifyBaseLogger,
 	label: string,
-): void {
-	void (async () => {
+	signal: AbortSignal,
+): Promise<void> {
+	return (async () => {
 		try {
-			for (const serviceType of ["RADARR", "SONARR"] as const) {
-				for (const configType of LIGHTWEIGHT_CONFIG_TYPES) {
-					try {
-						const data = await fetcher.fetchConfigs(serviceType, configType);
-						await cacheManager.set(serviceType, configType, data);
-						log.info(
-							{ serviceType, configType, itemCount: Array.isArray(data) ? data.length : 0 },
-							"Auto-populated cache entry",
-						);
-					} catch (error) {
-						log.warn(
-							{ err: error, serviceType, configType },
-							`Failed to auto-populate cache entry (${label})`,
-						);
+			// Enroll while the request's actor context is live; the background work
+			// owns independent admission rather than borrowing an expired ticket.
+			await withRestoreRuntimeOperation(
+				async () => {
+					let succeeded = 0,
+						failed = 0;
+					for (const serviceType of ["RADARR", "SONARR"] as const) {
+						for (const configType of LIGHTWEIGHT_CONFIG_TYPES) {
+							signal.throwIfAborted();
+							try {
+								const data = await fetcher.fetchConfigs(serviceType, configType);
+								signal.throwIfAborted();
+								await cacheManager.set(serviceType, configType, data);
+								succeeded++;
+								log.info(
+									{ serviceType, configType, itemCount: Array.isArray(data) ? data.length : 0 },
+									"Auto-populated cache entry",
+								);
+							} catch (error) {
+								signal.throwIfAborted();
+								failed++;
+								log.warn(
+									{ err: error, serviceType, configType },
+									`Failed to auto-populate cache entry (${label})`,
+								);
+							}
+						}
 					}
-				}
-			}
-			log.info(`Cache auto-population complete (${label})`);
+					log.info(
+						{ succeeded, failed },
+						`Cache auto-population ${failed > 0 ? "incomplete" : "complete"} (${label})`,
+					);
+				},
+				{ independent: true },
+			);
 		} catch (error) {
-			log.error({ err: error }, `Cache auto-population failed unexpectedly (${label})`);
+			if (signal.aborted) log.info(`Cache auto-population canceled (${label})`);
+			else log.error({ err: error }, `Cache auto-population failed unexpectedly (${label})`);
 		}
 	})();
 }
 
 export async function registerSettingsRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
+	const warmupController = new AbortController();
+	const pendingWarmups = new Set<{ controller: AbortController; task: Promise<void> }>();
+	let repositoryTransitions = Promise.resolve();
+	function serializeRepositoryTransition<T>(operation: () => Promise<T>): Promise<T> {
+		const transition = repositoryTransitions.then(() => {
+			warmupController.signal.throwIfAborted();
+			return operation();
+		});
+		repositoryTransitions = transition.then(
+			() => {},
+			() => {},
+		);
+		return transition;
+	}
+	async function cancelAndJoinWarmups() {
+		const accepted = [...pendingWarmups];
+		for (const producer of accepted) producer.controller.abort();
+		await Promise.all(accepted.map((producer) => producer.task));
+	}
+	function warmCache(
+		cacheManager: TrashCacheManager,
+		repoConfig: Awaited<ReturnType<typeof getRepoConfig>>,
+		label: string,
+	) {
+		warmupController.signal.throwIfAborted();
+		const controller = new AbortController();
+		const signal = AbortSignal.any([warmupController.signal, controller.signal]);
+		const fetcher = createTrashFetcher({
+			repoConfig,
+			logger: app.log,
+			signal,
+			strictContent: true,
+		});
+		const task = populateCacheInBackground(cacheManager, fetcher, app.log, label, signal);
+		const producer = { controller, task };
+		pendingWarmups.add(producer);
+		void task.then(() => pendingWarmups.delete(producer));
+	}
+	app.addHook("preClose", async () => {
+		warmupController.abort();
+		await cancelAndJoinWarmups();
+		await repositoryTransitions;
+	});
 	/**
 	 * GET /api/trash-guides/settings
 	 *
@@ -211,54 +274,49 @@ export async function registerSettingsRoutes(app: FastifyInstance, _opts: Fastif
 			updates.customRepoBranch !== undefined ||
 			updates.customRepoMode !== undefined;
 
-		let previousRepoConfig: Awaited<ReturnType<typeof app.prisma.trashSettings.findUnique>> | null =
-			null;
-		if (repoFieldsChanging) {
-			previousRepoConfig = await app.prisma.trashSettings.findUnique({
-				where: { userId },
-			});
-		}
-
-		// Upsert settings
-		const settings = await app.prisma.trashSettings.upsert({
-			where: { userId },
-			create: {
-				userId,
-				...updates,
-			},
-			update: updates,
-		});
-
-		// Invalidate cache if repo config actually changed
-		let cacheCleared = false;
-		if (repoFieldsChanging && previousRepoConfig) {
+		const update = async () => {
+			// Compare under the transition queue, before saving. A no-op repository
+			// PATCH must not cancel the producer without replacing it.
+			const previousRepoConfig = repoFieldsChanging
+				? await app.prisma.trashSettings.findUnique({ where: { userId } })
+				: null;
 			const repoActuallyChanged =
-				settings.customRepoOwner !== previousRepoConfig.customRepoOwner ||
-				settings.customRepoName !== previousRepoConfig.customRepoName ||
-				settings.customRepoBranch !== previousRepoConfig.customRepoBranch ||
-				settings.customRepoMode !== previousRepoConfig.customRepoMode;
-
+				repoFieldsChanging &&
+				((updates.customRepoOwner !== undefined &&
+					updates.customRepoOwner !== (previousRepoConfig?.customRepoOwner ?? null)) ||
+					(updates.customRepoName !== undefined &&
+						updates.customRepoName !== (previousRepoConfig?.customRepoName ?? null)) ||
+					(updates.customRepoBranch !== undefined &&
+						updates.customRepoBranch !== (previousRepoConfig?.customRepoBranch ?? null)) ||
+					(updates.customRepoMode !== undefined &&
+						updates.customRepoMode !== (previousRepoConfig?.customRepoMode ?? "fork")));
+			// Global service/config keys cannot admit an obsolete writer after a
+			// subsequent repository transition, including an in-flight async set.
+			if (repoActuallyChanged) await cancelAndJoinWarmups();
+			const settings = await app.prisma.trashSettings.upsert({
+				where: { userId },
+				create: { userId, ...updates },
+				update: updates,
+			});
 			if (repoActuallyChanged) {
 				const cacheManager = createCacheManager(app.prisma);
 				await cacheManager.clearAll();
-				cacheCleared = true;
 				app.log.info(
-					`Cache cleared due to repo config change: ${previousRepoConfig.customRepoOwner ?? "official"}/${previousRepoConfig.customRepoName ?? "Guides"} → ${settings.customRepoOwner ?? "official"}/${settings.customRepoName ?? "Guides"}`,
+					`Cache cleared due to repo config change: ${previousRepoConfig?.customRepoOwner ?? "official"}/${previousRepoConfig?.customRepoName ?? "Guides"} → ${settings.customRepoOwner ?? "official"}/${settings.customRepoName ?? "Guides"}`,
 				);
 
 				const repoConfig = await getRepoConfig(app.prisma, userId);
-				const fetcher = createTrashFetcher({ repoConfig, logger: app.log });
-				populateCacheInBackground(cacheManager, fetcher, app.log, "repo config change");
+				warmCache(cacheManager, repoConfig, "repo config change");
 			}
-		}
-
-		return reply.send({
-			settings,
-			message: cacheCleared
-				? "Settings updated — cache is being populated from the new repository"
-				: "Settings updated successfully",
-			cacheCleared,
-		});
+			return reply.send({
+				settings,
+				message: repoActuallyChanged
+					? "Settings updated — cache is being populated from the new repository"
+					: "Settings updated successfully",
+				cacheCleared: repoActuallyChanged,
+			});
+		};
+		return repoFieldsChanging ? serializeRepositoryTransition(update) : update();
 	});
 
 	/**
@@ -393,33 +451,35 @@ export async function registerSettingsRoutes(app: FastifyInstance, _opts: Fastif
 	 */
 	app.post("/reset-repo", async (request: FastifyRequest, reply: FastifyReply) => {
 		const userId = request.currentUser!.id; // preHandler guarantees auth
+		return serializeRepositoryTransition(async () => {
+			await cancelAndJoinWarmups();
 
-		// Clear custom repo fields and reset mode
-		const settings = await app.prisma.trashSettings.upsert({
-			where: { userId },
-			create: { userId },
-			update: {
-				customRepoOwner: null,
-				customRepoName: null,
-				customRepoBranch: null,
-				customRepoMode: "fork",
-			},
-		});
+			// Clear custom repo fields and reset mode
+			const settings = await app.prisma.trashSettings.upsert({
+				where: { userId },
+				create: { userId },
+				update: {
+					customRepoOwner: null,
+					customRepoName: null,
+					customRepoBranch: null,
+					customRepoMode: "fork",
+				},
+			});
 
-		// Clear all caches
-		const cacheManager = createCacheManager(app.prisma);
-		const deletedCount = await cacheManager.clearAll();
+			// Clear all caches
+			const cacheManager = createCacheManager(app.prisma);
+			const deletedCount = await cacheManager.clearAll();
 
-		app.log.info(`Reset to official repo. Cleared ${deletedCount} cache entries.`);
+			app.log.info(`Reset to official repo. Cleared ${deletedCount} cache entries.`);
 
-		const repoConfig = await getRepoConfig(app.prisma, userId);
-		const fetcher = createTrashFetcher({ repoConfig, logger: app.log });
-		populateCacheInBackground(cacheManager, fetcher, app.log, "reset to official repo");
+			const repoConfig = await getRepoConfig(app.prisma, userId);
+			warmCache(cacheManager, repoConfig, "reset to official repo");
 
-		return reply.send({
-			settings,
-			message: `Reset to official TRaSH-Guides repository — cache is being repopulated.`,
-			cacheEntriesCleared: deletedCount,
+			return reply.send({
+				settings,
+				message: `Reset to official TRaSH-Guides repository — cache is being repopulated.`,
+				cacheEntriesCleared: deletedCount,
+			});
 		});
 	});
 

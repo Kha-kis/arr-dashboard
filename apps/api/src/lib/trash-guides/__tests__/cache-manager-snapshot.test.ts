@@ -30,7 +30,7 @@ describe("TrashCacheManager snapshots", () => {
 			},
 		});
 		expect(findUnique).toHaveBeenCalledTimes(1);
-		expect(updateMany).toHaveBeenCalledTimes(1);
+		expect(updateMany).not.toHaveBeenCalled();
 	});
 
 	it("does not trust a legacy plain commit hash after restart", async () => {

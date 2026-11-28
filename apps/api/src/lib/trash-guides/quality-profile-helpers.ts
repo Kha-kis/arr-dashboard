@@ -7,10 +7,7 @@
 
 import type { TrashCustomFormat } from "@arr/shared";
 import type { RadarrClient, SonarrClient } from "arr-sdk";
-import { loggers } from "../logger.js";
 import { calculateScoreAndSource } from "./template-score-utils.js";
-
-const log = loggers.deployment;
 
 // SDK CustomFormat type for internal use
 type SdkCustomFormat = Awaited<ReturnType<SonarrClient["customFormat"]["getAll"]>>[number];
@@ -20,43 +17,6 @@ export interface TemplateCF {
 	name: string;
 	scoreOverride: number;
 	originalConfig: TrashCustomFormat;
-}
-
-/**
- * Feature flag for TRaSH Guides quality format change.
- *
- * TRaSH Guides PR #2590 changes the quality ordering in their JSON files:
- * - OLD format (current): Highest quality at index 0 (Remux → Unknown) - matches Sonarr/Radarr API
- * - NEW format (PR #2590): Lowest quality at index 0 (Unknown → Remux) - human-readable
- *
- * Sonarr/Radarr API expects highest quality first, so when PR #2590 is merged,
- * we need to reverse the quality items before sending to the API.
- *
- * HOW TO UPDATE WHEN PR #2590 IS MERGED:
- * 1. Change this flag to `true`
- * 2. Run tests to verify quality ordering is correct
- * 3. Test deployment with a profile to verify order matches expected
- *
- * See: https://github.com/TRaSH-Guides/Guides/pull/2590
- * See: https://github.com/Kha-kis/arr-dashboard/issues/85
- */
-export const TRASH_GUIDES_NEW_QUALITY_FORMAT_MERGED = true;
-
-/**
- * Reverses quality items if TRaSH Guides uses NEW format (PR #2590).
- * Sonarr/Radarr API expects highest quality first (index 0).
- */
-export function reverseQualityItemsIfNeeded<T>(items: T[]): T[] {
-	if (!items || items.length === 0) {
-		return items;
-	}
-
-	if (TRASH_GUIDES_NEW_QUALITY_FORMAT_MERGED) {
-		log.info("TRaSH Guides NEW format active, reversing quality items for API compatibility");
-		return [...items].reverse();
-	}
-
-	return items;
 }
 
 /**

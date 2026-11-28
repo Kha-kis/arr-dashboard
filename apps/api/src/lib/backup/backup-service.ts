@@ -24,9 +24,9 @@ import type {
 	BackupData,
 	BackupFileInfo,
 	BackupFileInfoInternal,
-	BackupMetadata,
 	BackupPasswordStatus,
 } from "@arr/shared";
+import { MAX_RESTORE_PASSWORD_LENGTH } from "@arr/shared";
 import type { PrismaClient } from "../../lib/prisma.js";
 import type { Encryptor } from "../auth/encryption.js";
 import { withCleanupMaintenanceGuard } from "../library-cleanup/cleanup-maintenance-gate.js";
@@ -40,6 +40,16 @@ import {
 	readSecrets,
 } from "./backup-file-utils.js";
 import { BACKUP_VERSION } from "./backup-validation.js";
+import {
+	MAX_STORED_RESTORE_ENVELOPE_BYTES,
+	readStoredRestoreEnvelope,
+} from "./backup-restore-input.js";
+import {
+	prepareRestoreData,
+	RestorePreparationError,
+	type PreparedRestoreData,
+	type RestoreDestinationContext,
+} from "./backup-restore-preparation.js";
 
 const log = loggers.backup;
 
@@ -70,17 +80,6 @@ export class BackupPasswordConfigurationError extends Error {
 			"The stored backup password is invalid. Reset it in Settings > Backup or set the BACKUP_PASSWORD environment variable.",
 		);
 		this.name = "BackupPasswordConfigurationError";
-	}
-}
-
-export class BackupRestoreUnavailableError extends Error {
-	readonly statusCode = 503;
-
-	constructor() {
-		super(
-			"Restore is disabled because this version cannot yet guarantee crash-safe database and secrets recovery. No data was changed.",
-		);
-		this.name = "BackupRestoreUnavailableError";
 	}
 }
 
@@ -708,13 +707,71 @@ export class BackupService {
 		});
 	}
 
-	/** Refuse stored-file restore before backup lookup or filesystem access. */
-	async restoreBackupFromFile(_id: string): Promise<BackupMetadata> {
-		throw new BackupRestoreUnavailableError();
+	/** Read-only preparation. This does not acquire authority to replace a database. */
+	async prepareBackupRestore(
+		envelopeJson: string,
+		passwordOverride: string | undefined,
+		destination: RestoreDestinationContext,
+	): Promise<PreparedRestoreData> {
+		if (!this.secretsSynchronized || destination.stableForRestart !== true)
+			throw new RestorePreparationError("destination-unavailable");
+		let envelope: unknown;
+		try {
+			if (
+				typeof envelopeJson !== "string" ||
+				Buffer.byteLength(envelopeJson, "utf8") > MAX_STORED_RESTORE_ENVELOPE_BYTES
+			)
+				throw new Error();
+			envelope = JSON.parse(envelopeJson);
+		} catch {
+			throw new RestorePreparationError("invalid-envelope");
+		}
+		// The parsed envelope now owns the ciphertext. Do not retain the entire
+		// encrypted-file text while decrypting and parsing its plaintext.
+		envelopeJson = "";
+		const password = await this.getRestorePassword(passwordOverride);
+		const preparation = prepareRestoreData({ envelope, password, destination });
+		envelope = undefined;
+		const prepared = await preparation;
+		// Legacy inspection can represent missing safety coverage; public Restore cannot
+		// reserve maintenance or publish by treating omitted held state as an empty set.
+		if (prepared.safetyCoverage !== "complete" || prepared.publicationBlockers.length !== 0)
+			throw new RestorePreparationError("invalid-backup");
+		return prepared;
 	}
 
-	/** Refuse uploaded restore before parsing, decryption, filesystem, or database access. */
-	async restoreBackup(_backupData: string): Promise<BackupMetadata> {
-		throw new BackupRestoreUnavailableError();
+	/** Resolve/read the actual stored file, never a prior list entry or supplied path. */
+	async prepareBackupRestoreFromFile(
+		id: string,
+		passwordOverride: string | undefined,
+		destination: RestoreDestinationContext,
+	): Promise<PreparedRestoreData> {
+		if (!this.secretsSynchronized || destination.stableForRestart !== true)
+			throw new RestorePreparationError("destination-unavailable");
+		let envelope = await readStoredRestoreEnvelope(
+			["manual", "scheduled", "update"].map((type) => path.join(this.backupsDir, type)),
+			id,
+		);
+		const preparation = this.prepareBackupRestore(envelope, passwordOverride, destination);
+		envelope = "";
+		return preparation;
+	}
+
+	private async getRestorePassword(override: string | undefined): Promise<string> {
+		if (override !== undefined) {
+			if (
+				typeof override !== "string" ||
+				override.length === 0 ||
+				override.length > MAX_RESTORE_PASSWORD_LENGTH
+			)
+				throw new RestorePreparationError("authentication-failed");
+			return override;
+		}
+		const stored = await this.getStoredBackupPassword();
+		if (stored.state === "valid") return stored.password;
+		if (process.env.BACKUP_PASSWORD) return process.env.BACKUP_PASSWORD;
+		if (stored.state === "invalid") throw new BackupPasswordConfigurationError();
+		// Never call the creation path's development password generator here.
+		throw new RestorePreparationError("authentication-failed");
 	}
 }

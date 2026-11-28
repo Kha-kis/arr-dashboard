@@ -35,10 +35,11 @@ function fetchWatchedMonitored(params: { limit?: number }): Promise<WatchedMonit
 }
 
 export function useWatchedMonitoredInsights(params?: { limit?: number; enabled?: boolean }) {
+	const { enabled = true, ...queryParams } = params ?? {};
 	return useQuery<WatchedMonitoredResponse>({
-		queryKey: ["library", "insights", "watched-monitored", params],
+		queryKey: ["library", "insights", "watched-monitored", params ? queryParams : undefined],
 		queryFn: () => fetchWatchedMonitored({ limit: params?.limit }),
-		enabled: params?.enabled ?? true,
+		enabled,
 		staleTime: 5 * 60 * 1000,
 	});
 }

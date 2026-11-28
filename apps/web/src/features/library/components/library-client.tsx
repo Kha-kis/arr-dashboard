@@ -20,10 +20,12 @@ import {
 import { useLibraryMonitorMutation } from "../../../hooks/api/useLibrary";
 import { usePlexIdentity, useSeriesProgress, useWatchEnrichment } from "../../../hooks/api/usePlex";
 import { useLibraryEnrichment } from "../../../hooks/api/useSeerr";
+import { UnauthorizedError } from "../../../lib/api-client/base";
 import { fetchLibraryItemByTmdbId } from "../../../lib/api-client/library";
 import { useSeerrInstances } from "../../seerr/hooks/use-seerr-instances";
 import { useLibraryActions, useLibraryData, useLibraryFilters } from "../hooks";
 import { buildJellyfinUrl, buildLibraryExternalLink, buildPlexUrl } from "../lib/library-utils";
+import { showMonitoringUnconfirmedToast } from "../lib/monitoring-feedback";
 import { AlbumBreakdownModal } from "./album-breakdown-modal";
 import { BookBreakdownModal } from "./book-breakdown-modal";
 import { ItemDetailsModal } from "./item-details-modal";
@@ -31,7 +33,15 @@ import { LibraryCard } from "./library-card";
 import { LibraryContent, type SeriesProgressByProvider } from "./library-content";
 import { LibraryHeader } from "./library-header";
 import { LibraryInsightsSection } from "./library-insights-section";
-import { ProviderNativeInventoryPanel } from "./provider-native-inventory-panel";
+import {
+	ProviderNativeInventoryPanel,
+	useProviderNativeInventoryPanelState,
+} from "./provider-native-inventory-panel";
+import { SeerrEnrichmentNotice } from "./seerr-enrichment-notice";
+
+function monitoringTargetKey(item: LibraryItem): string {
+	return JSON.stringify([item.instanceId, item.service, String(item.id)]);
+}
 
 const EnrichedDetailModal = React.lazy(() =>
 	import("./enriched-detail-modal").then((m) => ({ default: m.EnrichedDetailModal })),
@@ -46,6 +56,9 @@ const JELLYFIN_LIBRARY_REQUIRED_DOMAINS = [
 ] as const satisfies readonly ProviderObservationDomain[];
 const TAUTULLI_REQUIRED_DOMAINS = [
 	"watch-count",
+] as const satisfies readonly ProviderObservationDomain[];
+const JELLYFIN_EPISODE_REQUIRED_DOMAINS = [
+	"episode-inventory",
 ] as const satisfies readonly ProviderObservationDomain[];
 
 type LibraryWatchItem = WatchEnrichmentItem & { episodeProvider: "plex" | "jellyfin" };
@@ -139,9 +152,12 @@ function mergeWatchEnrichmentMaps(
  */
 export const LibraryClient: React.FC = () => {
 	// Modal state
-	const [itemDetail, setItemDetail] = useState<LibraryItem | null>(null);
+	const [selectedItemDetail, setItemDetail] = useState<LibraryItem | null>(null);
 	const [albumDetail, setAlbumDetail] = useState<LibraryItem | null>(null);
 	const [bookDetail, setBookDetail] = useState<LibraryItem | null>(null);
+	const inventory = useProviderNativeInventoryPanelState();
+	const nativeReadSettled = inventory.readSettled;
+	const [insightsEnabled, setInsightsEnabled] = useState(false);
 
 	// Deep link: auto-open detail modal when ?tmdbId= is in the URL
 	const searchParams = useSearchParams();
@@ -155,9 +171,16 @@ export const LibraryClient: React.FC = () => {
 		const tmdbId = Number(deepLinkTmdbId);
 		if (!Number.isFinite(tmdbId) || tmdbId <= 0) return;
 
-		fetchLibraryItemByTmdbId(tmdbId).then((item) => {
-			if (item) setItemDetail(item);
-		});
+		void fetchLibraryItemByTmdbId(tmdbId)
+			.then((item) => {
+				if (item) setItemDetail(item);
+			})
+			.catch((error: unknown) => {
+				// AuthGate owns session recovery after a protected 401.
+				if (!(error instanceof UnauthorizedError)) {
+					toast.warning("Could not open the linked library item");
+				}
+			});
 	}, [deepLinkTmdbId]);
 
 	// Seerr integration — detect if any Seerr instance is configured
@@ -180,14 +203,73 @@ export const LibraryClient: React.FC = () => {
 		pageSize: filters.pageSize,
 	});
 	const actions = useLibraryActions();
+	const quiStatus = data.quiObservationStatus?.status;
+	const appliedTorrentState = data.appliedFilters?.torrentState;
+	const appliedSortBy = data.appliedFilters?.sortBy;
+	const torrentStateParam = searchParams.get("torrentState");
+	const { torrentStateFilter, sortBy, setTorrentStateFilter, setSortBy } = filters;
+	useEffect(() => {
+		if (!quiStatus || quiStatus === "available") return;
+		if (appliedTorrentState === "all") {
+			if (torrentStateFilter !== "all") setTorrentStateFilter("all");
+			// Existing filter setters are intentionally state-only. Remove only a
+			// now-unusable deep-link selection so reload/share agrees with fallback.
+			if (torrentStateParam && torrentStateParam !== "all") {
+				const url = new URL(window.location.href);
+				if (
+					url.searchParams.has("torrentState") &&
+					url.searchParams.get("torrentState") !== "all"
+				) {
+					url.searchParams.delete("torrentState");
+					window.history.replaceState(
+						window.history.state,
+						"",
+						url.pathname + url.search + url.hash,
+					);
+				}
+			}
+		}
+		if (appliedSortBy === "sortTitle" && sortBy === "torrentRatio") setSortBy("sortTitle");
+	}, [
+		quiStatus,
+		appliedTorrentState,
+		appliedSortBy,
+		torrentStateParam,
+		torrentStateFilter,
+		sortBy,
+		setTorrentStateFilter,
+		setSortBy,
+	]);
+	// Prefer the exact current list item while retaining off-page/deep-link state.
+	const itemDetail = selectedItemDetail
+		? (data.items.find(
+				(candidate) =>
+					candidate.instanceId === selectedItemDetail.instanceId &&
+					candidate.service === selectedItemDetail.service &&
+					String(candidate.id) === String(selectedItemDetail.id),
+			) ?? selectedItemDetail)
+		: null;
 
 	// Seerr enrichment — fetch TMDB ratings + issue counts for current page items
 	const enrichmentQuery = useLibraryEnrichment(seerrInstanceId, data.items);
-	const enrichmentMap = enrichmentQuery.data?.items ?? null;
+	const enrichmentMap = enrichmentQuery.isError ? null : (enrichmentQuery.data?.items ?? null);
+
+	const seriesTmdbIds = useMemo(
+		() =>
+			data.items
+				.filter((item) => item.type === "series" && item.remoteIds?.tmdbId)
+				.map((item) => item.remoteIds!.tmdbId!),
+		[data.items],
+	);
 
 	// Watch enrichment — fetch watch counts, on-deck status, last watched from Plex + Jellyfin/Emby
 	const plexWatchQuery = useWatchEnrichment(data.items);
-	const jellyfinWatchQuery = useJellyfinWatchEnrichment(data.items);
+	// Give a cold inventory selection priority over new heavy reads.
+	const jellyfinWatchQuery = useJellyfinWatchEnrichment(
+		data.items,
+		seriesTmdbIds,
+		nativeReadSettled,
+	);
 	const watchEnrichmentMap = useMemo(() => {
 		const plexItems = plexWatchQuery.data?.items;
 		const jfItems = jellyfinWatchQuery.data?.items;
@@ -226,18 +308,32 @@ export const LibraryClient: React.FC = () => {
 	}, [jellyfinIdentityQuery.data]);
 
 	// Series progress — fetch watched/total episode counts from Plex + Jellyfin/Emby
-	const seriesTmdbIds = useMemo(
-		() =>
-			data.items
-				.filter((item) => item.type === "series" && item.remoteIds?.tmdbId)
-				.map((item) => item.remoteIds!.tmdbId!),
-		[data.items],
+	const plexProgressQuery = useSeriesProgress(seriesTmdbIds, nativeReadSettled);
+	const bundledJellyfinProgress = jellyfinWatchQuery.data?.seriesProgress;
+	const jellyfinProgressQuery = useJellyfinSeriesProgress(
+		seriesTmdbIds,
+		nativeReadSettled &&
+			!bundledJellyfinProgress &&
+			(!jellyfinWatchQuery.isEnabled || jellyfinWatchQuery.isError || jellyfinWatchQuery.isSuccess),
 	);
-	const plexProgressQuery = useSeriesProgress(seriesTmdbIds);
-	const jellyfinProgressQuery = useJellyfinSeriesProgress(seriesTmdbIds);
+	const jellyfinProgress = bundledJellyfinProgress ?? jellyfinProgressQuery.data;
 	const seriesProgressMap = useMemo(() => {
-		return groupSeriesProgress(plexProgressQuery.data, jellyfinProgressQuery.data);
-	}, [plexProgressQuery.data, jellyfinProgressQuery.data]);
+		return groupSeriesProgress(plexProgressQuery.data, jellyfinProgress);
+	}, [plexProgressQuery.data, jellyfinProgress]);
+
+	const requiredWatchOrProgressPending = [
+		plexWatchQuery,
+		jellyfinWatchQuery,
+		plexProgressQuery,
+		jellyfinProgressQuery,
+	].some((query) => query.isEnabled && query.isPending);
+	// Wait for cold required reads once. Cached evidence and terminal errors let
+	// Insights start, and later filters or reloads leave it enabled.
+	useEffect(() => {
+		if (nativeReadSettled && !data.isLoading && !requiredWatchOrProgressPending) {
+			setInsightsEnabled(true);
+		}
+	}, [nativeReadSettled, data.isLoading, requiredWatchOrProgressPending]);
 
 	// hasQui gates UI surfaces that only make sense with a qui instance configured
 	// (Torrent state filter dropdown, per-card badge). Each card now reads its
@@ -247,6 +343,9 @@ export const LibraryClient: React.FC = () => {
 		() =>
 			Object.values(data.serviceLookup).some((s) => s.service.toLowerCase() === "qui" && s.enabled),
 		[data.serviceLookup],
+	);
+	const hasPlexInstances = Object.values(data.serviceLookup).some(
+		(service) => service.service.toLowerCase() === "plex" && service.enabled,
 	);
 
 	// Notify user if Seerr enrichment fails (one-time per error transition)
@@ -259,10 +358,14 @@ export const LibraryClient: React.FC = () => {
 	// Monitor mutation for toggling item monitoring
 	const monitorMutation = useLibraryMonitorMutation();
 
-	// Calculate pending key for monitor mutation
-	const pendingKey = monitorMutation.isPending
-		? `${monitorMutation.variables?.service ?? ""}:${monitorMutation.variables?.itemId ?? ""}`
-		: null;
+	const pendingMonitorTargetsRef = useRef(new Set<string>());
+	const [pendingMonitorTargets, setPendingMonitorTargets] = useState<ReadonlySet<string>>(
+		() => new Set<string>(),
+	);
+	const isMonitorPending = useCallback(
+		(item: LibraryItem) => pendingMonitorTargets.has(monitoringTargetKey(item)),
+		[pendingMonitorTargets],
+	);
 
 	// Update albumDetail when data changes to reflect fresh artist data
 	useEffect(() => {
@@ -331,12 +434,22 @@ export const LibraryClient: React.FC = () => {
 	// Item monitoring handler (memoized)
 	const handleToggleMonitor = useCallback(
 		(item: LibraryItem) => {
-			monitorMutation.mutate({
-				instanceId: item.instanceId,
-				service: item.service,
-				itemId: item.id,
-				monitored: !(item.monitored ?? false),
-			});
+			const target = monitoringTargetKey(item);
+			if (pendingMonitorTargetsRef.current.has(target)) return;
+			pendingMonitorTargetsRef.current.add(target);
+			setPendingMonitorTargets(new Set(pendingMonitorTargetsRef.current));
+			void monitorMutation
+				.mutateAsync({
+					instanceId: item.instanceId,
+					service: item.service,
+					itemId: item.id,
+					monitored: !(item.monitored ?? false),
+				})
+				.catch(showMonitoringUnconfirmedToast)
+				.finally(() => {
+					pendingMonitorTargetsRef.current.delete(target);
+					setPendingMonitorTargets(new Set(pendingMonitorTargetsRef.current));
+				});
 		},
 		[monitorMutation],
 	);
@@ -369,6 +482,8 @@ export const LibraryClient: React.FC = () => {
 	return (
 		<>
 			<LibraryHeader
+				hasPlexInstances={hasPlexInstances}
+				quiObservationStatus={data.quiObservationStatus}
 				serviceFilter={filters.serviceFilter}
 				onServiceFilterChange={filters.setServiceFilter}
 				instanceFilter={filters.instanceFilter}
@@ -392,6 +507,7 @@ export const LibraryClient: React.FC = () => {
 				instanceOptions={data.instanceOptions}
 				syncStatus={data.syncStatus}
 				isSyncing={data.isSyncing}
+				hasSyncError={data.hasSyncError}
 			/>
 
 			<PlexQueryEvidenceNotice
@@ -402,7 +518,7 @@ export const LibraryClient: React.FC = () => {
 			<ProviderObservationNotice
 				providerStatus={[
 					jellyfinWatchQuery.data?.providerStatus,
-					jellyfinProgressQuery.data?.providerStatus,
+					jellyfinProgress?.providerStatus,
 					plexWatchQuery.data?.tautulliStatus,
 					jellyfinWatchQuery.data?.tautulliStatus,
 				]}
@@ -412,19 +528,29 @@ export const LibraryClient: React.FC = () => {
 					TAUTULLI_REQUIRED_DOMAINS,
 					TAUTULLI_REQUIRED_DOMAINS,
 				]}
-				isError={jellyfinWatchQuery.isError || jellyfinProgressQuery.isError}
+				requiredDomainsByCacheType={{ jellyfin_episode: JELLYFIN_EPISODE_REQUIRED_DOMAINS }}
+				isError={
+					jellyfinWatchQuery.isError || (!bundledJellyfinProgress && jellyfinProgressQuery.isError)
+				}
 				label="Library watch and progress values"
 			/>
+			<SeerrEnrichmentNotice
+				configured={Boolean(seerrInstanceId)}
+				isError={enrichmentQuery.isError}
+				issueCountsAvailable={enrichmentQuery.data?.issueCountsAvailable}
+				enrichmentFailures={enrichmentQuery.data?.enrichmentFailures}
+			/>
 
-			<ProviderNativeInventoryPanel />
+			<ProviderNativeInventoryPanel inventory={inventory} />
 
-			<LibraryInsightsSection />
+			<LibraryInsightsSection enabled={insightsEnabled} />
 
 			<div
 				className="animate-in fade-in slide-in-from-bottom-4 duration-500"
 				style={{ animationDelay: "200ms", animationFillMode: "backwards" }}
 			>
 				<LibraryContent
+					quiObservationStatus={data.quiObservationStatus}
 					isLoading={data.isLoading}
 					isError={data.isError}
 					error={data.error}
@@ -435,8 +561,7 @@ export const LibraryClient: React.FC = () => {
 					onPageChange={filters.setPage}
 					onPageSizeChange={filters.setPageSize}
 					onToggleMonitor={handleToggleMonitor}
-					pendingKey={pendingKey}
-					isMonitorPending={monitorMutation.isPending}
+					isMonitorPending={isMonitorPending}
 					serviceLookup={data.serviceLookup}
 					onSearchMovie={actions.handleMovieSearch}
 					pendingMovieSearch={actions.pendingMovieSearch}
@@ -452,6 +577,7 @@ export const LibraryClient: React.FC = () => {
 					buildLibraryExternalLink={buildLibraryExternalLink}
 					LibraryCard={LibraryCard}
 					isSyncing={data.isSyncing}
+					isCached={data.syncStatus?.isCached ?? false}
 					enrichmentMap={enrichmentMap}
 					watchEnrichmentMap={watchEnrichmentMap}
 					seriesProgressMap={seriesProgressMap}

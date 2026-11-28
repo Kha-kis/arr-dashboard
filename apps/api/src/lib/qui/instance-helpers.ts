@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { withIsolatedRuntimePrismaReadClient } from "../backup/restore-runtime-client.js";
 import { InstanceNotFoundError } from "../errors.js";
 import type { ServiceInstance } from "../prisma.js";
 
@@ -33,8 +34,10 @@ export async function listQuiInstances(
 	app: FastifyInstance,
 	userId: string,
 ): Promise<ServiceInstance[]> {
-	return app.prisma.serviceInstance.findMany({
-		where: { userId, service: "QUI", enabled: true },
-		orderBy: { createdAt: "asc" },
-	});
+	return withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+		prisma.serviceInstance.findMany({
+			where: { userId, service: "QUI", enabled: true },
+			orderBy: { createdAt: "asc" },
+		}),
+	);
 }

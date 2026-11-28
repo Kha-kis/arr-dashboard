@@ -1,11 +1,17 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { Bell, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { useState } from "react";
-import { AsyncStateView, StatusBadge } from "@/components/layout/premium-components";
+import {
+	AsyncErrorCard,
+	AsyncStateView,
+	StatusBadge,
+} from "@/components/layout/premium-components";
 import { useThemeGradient } from "@/hooks/useThemeGradient";
 import { useNotificationLogs } from "../../../hooks/api/useNotifications";
 import { getLinuxIsoName, useIncognitoMode } from "../../../lib/incognito";
+import { notificationKeys } from "../../../lib/query-keys";
 
 const STATUS_OPTIONS = [
 	{ value: "", label: "All" },
@@ -54,17 +60,22 @@ interface Filters {
 }
 
 export function NotificationLogTable() {
+	const queryClient = useQueryClient();
 	const { gradient } = useThemeGradient();
 	const [incognitoMode] = useIncognitoMode();
 	const [page, setPage] = useState(1);
 	const [filters, setFilters] = useState<Filters>({ status: "", eventType: "" });
 
-	const activeFilters = {
-		status: filters.status || undefined,
-		eventType: filters.eventType || undefined,
+	const activeFilters: Record<string, string> = {
+		...(filters.status ? { status: filters.status } : {}),
+		...(filters.eventType ? { eventType: filters.eventType } : {}),
 	};
 
-	const { data, isLoading, isError, error, refetch } = useNotificationLogs(page, 15, activeFilters);
+	const { data, isLoading, isError, isFetching, refetch } = useNotificationLogs(
+		page,
+		15,
+		activeFilters,
+	);
 
 	const setFilter = <K extends keyof Filters>(key: K, value: Filters[K]) => {
 		setFilters((prev) => ({ ...prev, [key]: value }));
@@ -76,7 +87,23 @@ export function NotificationLogTable() {
 		setPage(1);
 	};
 
+	const recoverEmptyPage = () => {
+		if (page === 1) {
+			void refetch();
+			return;
+		}
+		// The latest page contradicted the earlier count. Reread only the
+		// selected first page, retaining its last-known rows while it loads.
+		void queryClient.invalidateQueries({
+			queryKey: notificationKeys.logs(1, activeFilters),
+			exact: true,
+			refetchType: "none",
+		});
+		setPage(1);
+	};
+
 	const hasFilters = filters.status !== "" || filters.eventType !== "";
+	const isEmptyPageWithHistory = data != null && data.logs.length === 0 && data.total > 0;
 
 	const selectClass =
 		"bg-background/50 border border-border/50 rounded-lg px-3 py-1.5 text-sm focus:outline-none transition-colors";
@@ -92,6 +119,7 @@ export function NotificationLogTable() {
 							type="button"
 							key={opt.value}
 							onClick={() => setFilter("status", opt.value)}
+							aria-pressed={filters.status === opt.value}
 							className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
 								filters.status === opt.value
 									? "text-white"
@@ -106,6 +134,7 @@ export function NotificationLogTable() {
 
 				{/* Event type dropdown */}
 				<select
+					aria-label="Event type"
 					value={filters.eventType}
 					onChange={(e) => setFilter("eventType", e.target.value)}
 					className={selectClass}
@@ -132,20 +161,55 @@ export function NotificationLogTable() {
 				)}
 			</div>
 
+			{data && isFetching && (
+				<p
+					role="status"
+					aria-live="polite"
+					aria-busy="true"
+					className="text-sm text-muted-foreground"
+				>
+					Showing last-known notification logs while refreshing.
+				</p>
+			)}
+			{data && isError && !isFetching && (
+				<AsyncErrorCard
+					title="Couldn't refresh notification logs"
+					description="Showing last-known notification logs. Refresh failed. Try again to read current history."
+					onRetry={() => void refetch()}
+				/>
+			)}
+
 			<AsyncStateView
 				isLoading={isLoading}
-				isError={isError}
-				error={error}
+				isError={!data && isError}
+				errorDescription="Notification logs are unavailable. Please try again."
 				isEmpty={!data || data.logs.length === 0}
-				onRetry={() => refetch()}
+				onRetry={isFetching ? undefined : () => void refetch()}
 				errorTitle="Couldn't load notification logs"
 				emptyState={{
 					icon: Bell,
-					title: hasFilters ? "No matching logs" : "No notification logs yet",
-					description: hasFilters
-						? "No logs match the current filters. Try clearing them."
-						: "Logs appear here after notifications are sent.",
-					action: hasFilters ? (
+					title: isEmptyPageWithHistory
+						? "No logs on this page"
+						: hasFilters
+							? "No matching logs"
+							: "No notification logs yet",
+					description: isEmptyPageWithHistory
+						? page > 1
+							? "This page returned no rows, but history is available. Return to the first page."
+							: "History is available, but this page returned no rows. Try reading it again."
+						: hasFilters
+							? "No logs match the current filters. Try clearing them."
+							: "Logs appear here after notifications are sent.",
+					action: isEmptyPageWithHistory ? (
+						<button
+							type="button"
+							onClick={recoverEmptyPage}
+							disabled={isFetching}
+							className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground bg-card/30 border border-border/50 disabled:opacity-30"
+						>
+							{page > 1 ? "Back to first page" : "Try again"}
+						</button>
+					) : hasFilters ? (
 						<button
 							type="button"
 							onClick={clearFilters}
@@ -228,6 +292,7 @@ export function NotificationLogTable() {
 							<div className="flex items-center justify-center gap-4">
 								<button
 									type="button"
+									aria-label="Previous page"
 									onClick={() => setPage((p) => Math.max(1, p - 1))}
 									disabled={page === 1}
 									className="rounded-md p-1.5 text-muted-foreground hover:text-foreground disabled:opacity-30"
@@ -239,6 +304,7 @@ export function NotificationLogTable() {
 								</span>
 								<button
 									type="button"
+									aria-label="Next page"
 									onClick={() =>
 										setPage((p) => Math.min(Math.ceil(data.total / data.limit), p + 1))
 									}

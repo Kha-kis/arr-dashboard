@@ -70,7 +70,7 @@ describe("monitored and IMDb cleanup rule routes", () => {
 		app.decorate("prisma", {
 			libraryCleanupConfig: {
 				findUnique: vi.fn().mockResolvedValue({ id: "config-1" }),
-				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+				update: vi.fn().mockResolvedValue({ id: "config-1" }),
 			},
 			libraryCleanupRule: { create: createRule, findFirst: findRule, update: updateRule },
 			serviceInstance: { findMany: findServiceInstances },

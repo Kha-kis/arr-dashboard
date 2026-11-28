@@ -23,15 +23,15 @@ import { WatchedMonitoredPanel } from "./watched-monitored-panel";
  * Groups advisory insight panels under a shared heading.
  * Auto-hides entirely when no panels have content to show.
  */
-export function LibraryInsightsSection() {
+export function LibraryInsightsSection({ enabled = true }: { enabled?: boolean } = {}) {
 	const searchParams = useSearchParams();
 	const insightParam = searchParams.get("insight");
 	const { isDismissed, dismiss } = useInsightDismissals();
 
 	// Check if any panel has data — used to control section visibility
-	const diskWaste = useDiskWasteInsights({ minSizeGb: 1, minAgeDays: 30, limit: 25 });
-	const watchedMonitored = useWatchedMonitoredInsights({ limit: 25 });
-	const requestedUnwatched = useRequestedUnwatchedInsights({ minAgeDays: 7, limit: 25 });
+	const diskWaste = useDiskWasteInsights({ minSizeGb: 1, minAgeDays: 30, limit: 25, enabled });
+	const watchedMonitored = useWatchedMonitoredInsights({ limit: 25, enabled });
+	const requestedUnwatched = useRequestedUnwatchedInsights({ minAgeDays: 7, limit: 25, enabled });
 
 	const diskWasteCount = diskWaste.data?.data?.items?.length ?? 0;
 	const diskWasteUnknownCount = diskWaste.data?.data?.unknownItems?.length ?? 0;

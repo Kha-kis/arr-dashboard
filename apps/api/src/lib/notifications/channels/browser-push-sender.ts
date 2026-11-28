@@ -1,6 +1,17 @@
 import type { BrowserPushConfig } from "@arr/shared";
 import webpush from "web-push";
+import {
+	httpFailureCategory,
+	networkFailureCategory,
+	notificationFailure,
+	NotificationFailureError,
+} from "../failure-diagnostics.js";
 import type { ChannelSender, NotificationPayload, SendResult } from "../types.js";
+
+function pushStatusCode(err: unknown): number | undefined {
+	if (typeof err !== "object" || err === null || !("statusCode" in err)) return undefined;
+	return typeof err.statusCode === "number" ? err.statusCode : undefined;
+}
 
 /**
  * Browser Push sender using the Web Push protocol (VAPID).
@@ -39,35 +50,22 @@ export function createBrowserPushSender(
 				);
 				return { success: true, retryable: false };
 			} catch (err) {
-				const statusCode = (err as { statusCode?: number }).statusCode;
-				const error = err instanceof Error ? err.message : String(err);
+				const statusCode = pushStatusCode(err);
 
 				// 410 Gone = subscription expired, not retryable
 				if (statusCode === 410) {
-					return {
-						success: false,
-						retryable: false,
-						error: `Browser push subscription expired (410 Gone): ${error}`,
-					};
+					return notificationFailure("subscription-expired", false);
 				}
 				// 429 or 5xx = retryable
 				if (statusCode === 429 || (statusCode && statusCode >= 500)) {
-					return {
-						success: false,
-						retryable: true,
-						error: `Browser push failed (${statusCode}): ${error}`,
-					};
+					return notificationFailure(httpFailureCategory(statusCode), true);
 				}
 				// 4xx = not retryable
 				if (statusCode && statusCode >= 400 && statusCode < 500) {
-					return {
-						success: false,
-						retryable: false,
-						error: `Browser push failed (${statusCode}): ${error}`,
-					};
+					return notificationFailure(httpFailureCategory(statusCode), false);
 				}
 				// Network/other errors = retryable
-				return { success: false, retryable: true, error: `Browser push error: ${error}` };
+				return notificationFailure(networkFailureCategory(err), true);
 			}
 		},
 
@@ -82,14 +80,25 @@ export function createBrowserPushSender(
 				},
 			};
 
-			await webpush.sendNotification(
-				subscription,
-				JSON.stringify({
-					title: "Test Notification",
-					body: "Arr Dashboard browser push is working!",
-				}),
-				{ TTL: 300 },
-			);
+			try {
+				await webpush.sendNotification(
+					subscription,
+					JSON.stringify({
+						title: "Test Notification",
+						body: "Arr Dashboard browser push is working!",
+					}),
+					{ TTL: 300 },
+				);
+			} catch (err) {
+				const statusCode = pushStatusCode(err);
+				throw new NotificationFailureError(
+					statusCode === 410
+						? "subscription-expired"
+						: statusCode && statusCode >= 400
+							? httpFailureCategory(statusCode)
+							: networkFailureCategory(err),
+				);
+			}
 		},
 	};
 }

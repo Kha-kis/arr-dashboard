@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Prisma, PrismaClientInstance } from "../prisma.js";
+import { SQLITE_DATETIME_SQL_FORMAT, SQLITE_NOW_SQL } from "../sqlite-datetime.js";
 
 export const HISTORY_COLLECTION_LEASE_TTL_MS = 5 * 60_000;
 export const HISTORY_COLLECTION_LEASE_HEARTBEAT_MS = 30_000;
@@ -47,22 +48,22 @@ FROM "history_collection_leases" WHERE "userId" = $1`,
 
 const INSERT_LEASE_SQL = {
 	sqlite: `INSERT OR IGNORE INTO "history_collection_leases" ("userId", "updatedAt")
-VALUES (?, CURRENT_TIMESTAMP)`,
+VALUES (?, ${SQLITE_NOW_SQL})`,
 	postgresql: `INSERT INTO "history_collection_leases" ("userId", "updatedAt")
 VALUES ($1, CURRENT_TIMESTAMP) ON CONFLICT ("userId") DO NOTHING`,
 } as const;
 
 const ACQUIRE_LEASE_SQL = {
 	sqlite: `UPDATE "history_collection_leases"
-SET "claimToken" = ?, "claimedAt" = CURRENT_TIMESTAMP,
-    "heartbeatAt" = CURRENT_TIMESTAMP,
-    "expiresAt" = datetime(CURRENT_TIMESTAMP, '+300 seconds'),
-    "lastAttemptAt" = CURRENT_TIMESTAMP, "lastAttemptResult" = ?,
-    "lastAttemptReason" = NULL, "updatedAt" = CURRENT_TIMESTAMP
+SET "claimToken" = ?, "claimedAt" = ${SQLITE_NOW_SQL},
+    "heartbeatAt" = ${SQLITE_NOW_SQL},
+    "expiresAt" = strftime(${SQLITE_DATETIME_SQL_FORMAT}, 'now', '+300 seconds'),
+    "lastAttemptAt" = ${SQLITE_NOW_SQL}, "lastAttemptResult" = ?,
+    "lastAttemptReason" = NULL, "updatedAt" = ${SQLITE_NOW_SQL}
 WHERE "userId" = ?
   AND (("claimToken" IS NULL AND "claimedAt" IS NULL AND "heartbeatAt" IS NULL AND "expiresAt" IS NULL)
     OR ("claimToken" IS NOT NULL AND "claimedAt" IS NOT NULL AND "heartbeatAt" IS NOT NULL
-      AND "expiresAt" IS NOT NULL AND julianday("expiresAt") <= julianday(CURRENT_TIMESTAMP)))`,
+      AND "expiresAt" IS NOT NULL AND julianday("expiresAt") <= julianday('now')))`,
 	postgresql: `UPDATE "history_collection_leases"
 SET "claimToken" = $1, "claimedAt" = CURRENT_TIMESTAMP,
     "heartbeatAt" = CURRENT_TIMESTAMP,
@@ -77,12 +78,12 @@ WHERE "userId" = $3
 
 const HEARTBEAT_LEASE_SQL = {
 	sqlite: `UPDATE "history_collection_leases"
-SET "heartbeatAt" = CURRENT_TIMESTAMP,
-    "expiresAt" = datetime(CURRENT_TIMESTAMP, '+300 seconds'),
-    "nextSourceCursor" = ?, "updatedAt" = CURRENT_TIMESTAMP
+SET "heartbeatAt" = ${SQLITE_NOW_SQL},
+    "expiresAt" = strftime(${SQLITE_DATETIME_SQL_FORMAT}, 'now', '+300 seconds'),
+    "nextSourceCursor" = ?, "updatedAt" = ${SQLITE_NOW_SQL}
 WHERE "userId" = ? AND "claimToken" = ?
   AND "claimedAt" IS NOT NULL AND "heartbeatAt" IS NOT NULL AND "expiresAt" IS NOT NULL
-  AND julianday("expiresAt") > julianday(CURRENT_TIMESTAMP)`,
+  AND julianday("expiresAt") > julianday('now')`,
 	postgresql: `UPDATE "history_collection_leases"
 SET "heartbeatAt" = CURRENT_TIMESTAMP,
     "expiresAt" = CURRENT_TIMESTAMP + INTERVAL '300 seconds',
@@ -94,12 +95,12 @@ WHERE "userId" = $2 AND "claimToken" = $3
 
 const HEARTBEAT_PRESERVE_CURSOR_SQL = {
 	sqlite: `UPDATE "history_collection_leases"
-SET "heartbeatAt" = CURRENT_TIMESTAMP,
-    "expiresAt" = datetime(CURRENT_TIMESTAMP, '+300 seconds'),
-    "updatedAt" = CURRENT_TIMESTAMP
+SET "heartbeatAt" = ${SQLITE_NOW_SQL},
+    "expiresAt" = strftime(${SQLITE_DATETIME_SQL_FORMAT}, 'now', '+300 seconds'),
+    "updatedAt" = ${SQLITE_NOW_SQL}
 WHERE "userId" = ? AND "claimToken" = ?
   AND "claimedAt" IS NOT NULL AND "heartbeatAt" IS NOT NULL AND "expiresAt" IS NOT NULL
-  AND julianday("expiresAt") > julianday(CURRENT_TIMESTAMP)`,
+  AND julianday("expiresAt") > julianday('now')`,
 	postgresql: `UPDATE "history_collection_leases"
 SET "heartbeatAt" = CURRENT_TIMESTAMP,
     "expiresAt" = CURRENT_TIMESTAMP + INTERVAL '300 seconds',
@@ -112,7 +113,7 @@ WHERE "userId" = $1 AND "claimToken" = $2
 const RELEASE_LEASE_SQL = {
 	sqlite: `UPDATE "history_collection_leases"
 SET "claimToken" = NULL, "claimedAt" = NULL, "heartbeatAt" = NULL,
-    "expiresAt" = NULL, "updatedAt" = CURRENT_TIMESTAMP
+    "expiresAt" = NULL, "updatedAt" = ${SQLITE_NOW_SQL}
 WHERE "userId" = ? AND "claimToken" = ?
   AND "claimedAt" IS NOT NULL AND "heartbeatAt" IS NOT NULL AND "expiresAt" IS NOT NULL`,
 	postgresql: `UPDATE "history_collection_leases"
@@ -124,12 +125,12 @@ WHERE "userId" = $1 AND "claimToken" = $2
 
 const FENCE_LEASE_SQL = {
 	sqlite: `UPDATE "history_collection_leases"
-SET "heartbeatAt" = CURRENT_TIMESTAMP,
-    "expiresAt" = datetime(CURRENT_TIMESTAMP, '+300 seconds'),
-    "updatedAt" = CURRENT_TIMESTAMP
+SET "heartbeatAt" = ${SQLITE_NOW_SQL},
+    "expiresAt" = strftime(${SQLITE_DATETIME_SQL_FORMAT}, 'now', '+300 seconds'),
+    "updatedAt" = ${SQLITE_NOW_SQL}
 WHERE "userId" = ? AND "claimToken" = ?
   AND "claimedAt" IS NOT NULL AND "heartbeatAt" IS NOT NULL AND "expiresAt" IS NOT NULL
-  AND julianday("expiresAt") > julianday(CURRENT_TIMESTAMP)`,
+  AND julianday("expiresAt") > julianday('now')`,
 	postgresql: `UPDATE "history_collection_leases"
 SET "heartbeatAt" = CURRENT_TIMESTAMP,
     "expiresAt" = CURRENT_TIMESTAMP + INTERVAL '300 seconds',
@@ -141,12 +142,12 @@ WHERE "userId" = $1 AND "claimToken" = $2
 
 const FENCE_LEASE_WITH_CURSOR_SQL = {
 	sqlite: `UPDATE "history_collection_leases"
-SET "heartbeatAt" = CURRENT_TIMESTAMP,
-    "expiresAt" = datetime(CURRENT_TIMESTAMP, '+300 seconds'),
-    "nextSourceCursor" = ?, "updatedAt" = CURRENT_TIMESTAMP
+SET "heartbeatAt" = ${SQLITE_NOW_SQL},
+    "expiresAt" = strftime(${SQLITE_DATETIME_SQL_FORMAT}, 'now', '+300 seconds'),
+    "nextSourceCursor" = ?, "updatedAt" = ${SQLITE_NOW_SQL}
 WHERE "userId" = ? AND "claimToken" = ?
   AND "claimedAt" IS NOT NULL AND "heartbeatAt" IS NOT NULL AND "expiresAt" IS NOT NULL
-  AND julianday("expiresAt") > julianday(CURRENT_TIMESTAMP)`,
+  AND julianday("expiresAt") > julianday('now')`,
 	postgresql: `UPDATE "history_collection_leases"
 SET "heartbeatAt" = CURRENT_TIMESTAMP,
     "expiresAt" = CURRENT_TIMESTAMP + INTERVAL '300 seconds',

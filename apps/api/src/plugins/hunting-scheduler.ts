@@ -17,14 +17,18 @@ const huntingSchedulerPlugin = fastifyPlugin(
 	async (app: FastifyInstance) => {
 		// Pre-decorate with disabled state (will be updated on successful init)
 		app.decorate("huntingSchedulerEnabled", false);
+		let initializedScheduler: ReturnType<typeof getHuntingScheduler> | null = null;
 
 		app.addHook("onReady", async () => {
 			try {
 				app.log.info("Initializing hunting scheduler");
 
 				const scheduler = getHuntingScheduler();
-				scheduler.initialize(app);
+				await scheduler.initialize(app);
+				initializedScheduler = scheduler;
 				scheduler.setTrackTick((fn) => app.schedulerRegistry.track(JOB_ID.hunting, fn));
+				// Retain result handoff before the first lookup, for timer and manual entry points.
+				scheduler.setTrackHunt((fn) => app.notificationService.runProducer(fn));
 
 				// Check if any instances have hunting enabled
 				const enabledCount = await app.prisma.huntConfig.count({
@@ -57,18 +61,21 @@ const huntingSchedulerPlugin = fastifyPlugin(
 			}
 		});
 
+		app.addHook("preClose", async () => {
+			// Close admission without delaying sibling schedulers' preClose hooks.
+			// The onClose hook awaits settlement before dependent resources close.
+			void initializedScheduler?.shutdown();
+		});
+
 		app.addHook("onClose", async () => {
-			if (!app.huntingSchedulerEnabled) return;
-			const scheduler = getHuntingScheduler();
-			if (scheduler.isRunning()) {
-				app.log.info("Stopping hunting scheduler");
-				scheduler.stop();
-			}
+			if (!initializedScheduler) return;
+			app.log.info("Draining hunting scheduler");
+			await initializedScheduler.shutdown();
 		});
 	},
 	{
 		name: "hunting-scheduler",
-		dependencies: ["prisma", "scheduler-registry"],
+		dependencies: ["prisma", "scheduler-registry", "notification-service"],
 	},
 );
 

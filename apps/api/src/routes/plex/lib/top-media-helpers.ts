@@ -20,13 +20,18 @@
  */
 
 import type { TopMediaItem, TopMediaResponse, TopMediaType } from "@arr/shared";
+import {
+	type ActivitySnapshotIdentity,
+	readActivityIdentity,
+	readActivityReceipt,
+} from "./native-activity-identity.js";
 import type { AggregationMeta } from "./user-analytics-helpers.js";
 
 /** Normalized media type as stored in EnrichedSession.mediaType */
 type SnapshotMediaType = "movie" | "series" | "music" | "other";
 
 /** Snapshot row required for media aggregation */
-export interface SnapshotForTopMedia {
+export interface SnapshotForTopMedia extends ActivitySnapshotIdentity {
 	capturedAt: Date;
 	sessionsJson: string;
 }
@@ -37,6 +42,7 @@ interface ParsedSession {
 	title?: string;
 	grandparentTitle?: string;
 	mediaType?: SnapshotMediaType;
+	[key: string]: unknown;
 }
 
 /** Internal aggregate row before sort/slice/projection to TopMediaItem */
@@ -45,6 +51,8 @@ interface AggregatedItem {
 	mediaType: TopMediaType;
 	playCount: number;
 	distinctUsers: Set<string>;
+	unattributedSessions: number;
+	unidentifiedPlaybackSessions: number;
 	tickCount: number;
 	lastWatchedAt: Date;
 }
@@ -61,10 +69,9 @@ const DEDUP_WINDOW_MS = 10 * 60 * 1000;
  * - For movies/music/other: use title directly
  */
 function deriveGroupingTitle(session: ParsedSession): string | null {
-	if (session.mediaType === "series") {
-		return session.grandparentTitle ?? session.title ?? null;
-	}
-	return session.title ?? null;
+	const title =
+		session.mediaType === "series" ? (session.grandparentTitle ?? session.title) : session.title;
+	return typeof title === "string" && title.trim() ? title : null;
 }
 
 /** Project an internal aggregate row into the public TopMediaItem shape. */
@@ -74,146 +81,157 @@ function projectItem(item: AggregatedItem): TopMediaItem {
 		mediaType: item.mediaType,
 		playCount: item.playCount,
 		distinctUserCount: item.distinctUsers.size,
+		unattributedSessions: item.unattributedSessions,
+		unidentifiedPlaybackSessions: item.unidentifiedPlaybackSessions,
 		totalDurationMinutes: item.tickCount * SNAPSHOT_INTERVAL_MINUTES,
 		lastWatchedAt: item.lastWatchedAt.toISOString(),
 	};
 }
 
-/**
- * Walk snapshots once and build a Map<groupingTitle, AggregatedItem>. Both
- * aggregateTopMedia and aggregatePopularMedia consume this output and only
- * differ in how they sort the resulting items.
- */
-function buildMediaAggregate(
-	snapshots: SnapshotForTopMedia[],
-	mediaType: TopMediaType,
-): { items: AggregatedItem[]; meta: AggregationMeta } {
+export type TopMediaRanking = "top" | "popular" | "last-watched";
+
+export interface TopMediaAccumulator {
+	addBatch(snapshots: readonly SnapshotForTopMedia[]): void;
+	getResult(ranking: TopMediaRanking, limit: number): TopMediaResponse & AggregationMeta;
+}
+
+/** Incremental title aggregates for stable reverse-chronological snapshot pages. */
+export function createTopMediaAccumulator(mediaType: TopMediaType): TopMediaAccumulator {
 	const itemMap = new Map<string, AggregatedItem>();
 	const lastPlayAnchorByUserKey = new Map<string, number>();
 	let parseFailures = 0;
+	let totalSnapshots = 0;
 	const failedPreviews: string[] = [];
 
-	// Sort snapshots descending so dedup walks "newest first" (matches watch-history pattern)
-	const ordered = [...snapshots].sort((a, b) => b.capturedAt.getTime() - a.capturedAt.getTime());
-
-	for (const snap of ordered) {
-		let sessions: unknown;
-		try {
-			sessions = JSON.parse(snap.sessionsJson);
-		} catch {
-			parseFailures++;
-			continue;
-		}
-
-		// JSON.parse can return any valid JSON value (null, object, number, ...)
-		// — guard against non-iterable shapes so a corrupt row doesn't TypeError
-		// and abort the whole snapshot walk silently.
-		if (!Array.isArray(sessions)) {
-			parseFailures++;
-			continue;
-		}
-
-		for (const session of sessions as ParsedSession[]) {
-			// Skip rows missing the new fields (snapshots written before 2026-04 enrichment)
-			if (session.mediaType === undefined || session.mediaType !== mediaType) continue;
-
-			const groupingTitle = deriveGroupingTitle(session);
-			if (!groupingTitle) continue;
-
-			const user = session.user ?? "Unknown";
-			const userKey = `${groupingTitle}::${user}`;
-			const tickTime = snap.capturedAt.getTime();
-
-			const existingItem = itemMap.get(groupingTitle) ?? {
-				title: groupingTitle,
-				mediaType,
-				playCount: 0,
-				distinctUsers: new Set<string>(),
-				tickCount: 0,
-				lastWatchedAt: snap.capturedAt,
-			};
-
-			existingItem.tickCount += 1;
-			existingItem.distinctUsers.add(user);
-			if (snap.capturedAt > existingItem.lastWatchedAt) {
-				existingItem.lastWatchedAt = snap.capturedAt;
+	function addBatch(snapshots: readonly SnapshotForTopMedia[]): void {
+		totalSnapshots += snapshots.length;
+		for (const snap of snapshots) {
+			let sessions: unknown;
+			try {
+				sessions = JSON.parse(snap.sessionsJson);
+			} catch {
+				parseFailures++;
+				continue;
 			}
 
-			const prevAnchor = lastPlayAnchorByUserKey.get(userKey);
-			const isNewPlay = prevAnchor === undefined || prevAnchor - tickTime > DEDUP_WINDOW_MS;
-
-			if (isNewPlay) {
-				existingItem.playCount += 1;
+			// JSON.parse can return any valid JSON value (null, object, number, ...)
+			// — guard against non-iterable shapes so a corrupt row doesn't TypeError
+			// and abort the whole snapshot walk silently.
+			if (!Array.isArray(sessions)) {
+				parseFailures++;
+				continue;
 			}
-			// Either way, refresh the anchor so chained ticks keep collapsing
-			lastPlayAnchorByUserKey.set(userKey, tickTime);
 
-			itemMap.set(groupingTitle, existingItem);
+			const receipt = readActivityReceipt(snap, sessions.length);
+			for (const value of sessions) {
+				if (value === null || typeof value !== "object" || Array.isArray(value)) continue;
+				const session = value as ParsedSession;
+				// Skip rows missing the new fields (snapshots written before 2026-04 enrichment)
+				if (session.mediaType === undefined || session.mediaType !== mediaType) continue;
+
+				const groupingTitle = deriveGroupingTitle(session);
+				if (!groupingTitle) continue;
+
+				const identity = readActivityIdentity(snap, session, receipt);
+				const userKey = identity.playback;
+				const tickTime = snap.capturedAt.getTime();
+
+				const existingItem = itemMap.get(groupingTitle) ?? {
+					title: groupingTitle,
+					mediaType,
+					playCount: 0,
+					distinctUsers: new Set<string>(),
+					unattributedSessions: 0,
+					unidentifiedPlaybackSessions: 0,
+					tickCount: 0,
+					lastWatchedAt: snap.capturedAt,
+				};
+
+				existingItem.tickCount += 1;
+				if (identity.actor) existingItem.distinctUsers.add(identity.actor);
+				else existingItem.unattributedSessions++;
+				if (!userKey) existingItem.unidentifiedPlaybackSessions++;
+				if (snap.capturedAt > existingItem.lastWatchedAt) {
+					existingItem.lastWatchedAt = snap.capturedAt;
+				}
+
+				const prevAnchor = userKey ? lastPlayAnchorByUserKey.get(userKey) : undefined;
+				const isNewPlay = prevAnchor === undefined || prevAnchor - tickTime > DEDUP_WINDOW_MS;
+
+				if (userKey && isNewPlay) {
+					existingItem.playCount += 1;
+				}
+				// Either way, refresh the anchor so chained ticks keep collapsing
+				if (userKey) lastPlayAnchorByUserKey.set(userKey, tickTime);
+
+				itemMap.set(groupingTitle, existingItem);
+			}
 		}
 	}
 
-	return {
-		items: [...itemMap.values()],
-		meta: { parseFailures, totalSnapshots: snapshots.length, failedPreviews },
-	};
+	function getResult(ranking: TopMediaRanking, limit: number): TopMediaResponse & AggregationMeta {
+		const items = [...itemMap.values()];
+		const sorted = items
+			.sort((a, b) => {
+				if (ranking === "top") {
+					if (b.playCount !== a.playCount) return b.playCount - a.playCount;
+					return b.tickCount - a.tickCount;
+				}
+				if (ranking === "popular") {
+					const aUsers = a.distinctUsers.size;
+					const bUsers = b.distinctUsers.size;
+					if (bUsers !== aUsers) return bUsers - aUsers;
+					return b.playCount - a.playCount;
+				}
+				return b.lastWatchedAt.getTime() - a.lastWatchedAt.getTime();
+			})
+			.slice(0, limit)
+			.map(projectItem);
+
+		return {
+			items: sorted,
+			parseFailures,
+			totalSnapshots,
+			failedPreviews,
+		};
+	}
+
+	return { addBatch, getResult };
 }
 
-/**
- * Top media by total play count. Ties broken by total duration so a title
- * watched longer in aggregate ranks above an equally-played but shorter one.
- */
+function withAllSnapshots(
+	snapshots: SnapshotForTopMedia[],
+	mediaType: TopMediaType,
+	ranking: TopMediaRanking,
+	limit: number,
+): TopMediaResponse & AggregationMeta {
+	const accumulator = createTopMediaAccumulator(mediaType);
+	accumulator.addBatch(
+		[...snapshots].sort((left, right) => right.capturedAt.getTime() - left.capturedAt.getTime()),
+	);
+	return accumulator.getResult(ranking, limit);
+}
+
+/** Top media by total play count; ties are broken by aggregate duration. */
 export function aggregateTopMedia(
 	snapshots: SnapshotForTopMedia[],
 	opts: { mediaType: TopMediaType; limit: number },
 ): TopMediaResponse & AggregationMeta {
-	const { items, meta } = buildMediaAggregate(snapshots, opts.mediaType);
-	const sorted = items
-		.sort((a, b) => {
-			if (b.playCount !== a.playCount) return b.playCount - a.playCount;
-			return b.tickCount - a.tickCount;
-		})
-		.slice(0, opts.limit)
-		.map(projectItem);
-
-	return { items: sorted, ...meta };
+	return withAllSnapshots(snapshots, opts.mediaType, "top", opts.limit);
 }
 
-/**
- * Popular media by distinct watcher count. Ties broken by play count so
- * a title with the same audience size but more rewatching ranks higher.
- */
+/** Popular media by distinct watcher count, with play count as the tie-breaker. */
 export function aggregatePopularMedia(
 	snapshots: SnapshotForTopMedia[],
 	opts: { mediaType: TopMediaType; limit: number },
 ): TopMediaResponse & AggregationMeta {
-	const { items, meta } = buildMediaAggregate(snapshots, opts.mediaType);
-	const sorted = items
-		.sort((a, b) => {
-			const aUsers = a.distinctUsers.size;
-			const bUsers = b.distinctUsers.size;
-			if (bUsers !== aUsers) return bUsers - aUsers;
-			return b.playCount - a.playCount;
-		})
-		.slice(0, opts.limit)
-		.map(projectItem);
-
-	return { items: sorted, ...meta };
+	return withAllSnapshots(snapshots, opts.mediaType, "popular", opts.limit);
 }
 
-/**
- * Most recently watched media (deduped by title). Mirrors Tautulli's
- * `last_watched` home stat — answers "what did anyone watch most recently?"
- * Distinct from WatchHistoryResponse, which is event-level (per user×title).
- */
+/** Recently watched titles deduped by title and sorted by latest activity. */
 export function aggregateLastWatched(
 	snapshots: SnapshotForTopMedia[],
 	opts: { mediaType: TopMediaType; limit: number },
 ): TopMediaResponse & AggregationMeta {
-	const { items, meta } = buildMediaAggregate(snapshots, opts.mediaType);
-	const sorted = items
-		.sort((a, b) => b.lastWatchedAt.getTime() - a.lastWatchedAt.getTime())
-		.slice(0, opts.limit)
-		.map(projectItem);
-
-	return { items: sorted, ...meta };
+	return withAllSnapshots(snapshots, opts.mediaType, "last-watched", opts.limit);
 }

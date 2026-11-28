@@ -105,6 +105,8 @@ export const multiInstanceQueueResponseSchema = z.object({
 			instanceId: z.string(),
 			instanceName: z.string(),
 			service: z.enum(["sonarr", "radarr", "lidarr", "readarr"]),
+			// This GET observation only; absence on a legacy response is unknown.
+			success: z.boolean().optional(),
 			data: z.array(queueItemSchema),
 		}),
 	),
@@ -138,6 +140,13 @@ export const queueActionRequestSchema = z.object({
 });
 
 export type QueueActionRequest = z.infer<typeof queueActionRequestSchema>;
+
+/** Search submission is independent of the already acknowledged removal. */
+export const queueSearchOutcomeSchema = z.object({
+	removal: z.literal("completed"),
+	search: z.enum(["submitted", "unconfirmed"]),
+});
+export type QueueSearchOutcome = z.infer<typeof queueSearchOutcomeSchema>;
 
 export const queueBulkActionRequestSchema = z.object({
 	instanceId: z.string(),
@@ -484,18 +493,135 @@ export const calendarItemSchema = z.object({
 
 export type CalendarItem = z.infer<typeof calendarItemSchema>;
 
-export const multiInstanceCalendarResponseSchema = z.object({
-	instances: z.array(
-		z.object({
-			instanceId: z.string(),
-			instanceName: z.string(),
-			service: z.enum(["sonarr", "radarr", "lidarr", "readarr"]),
-			data: z.array(calendarItemSchema),
-		}),
-	),
-	aggregated: z.array(calendarItemSchema),
-	totalCount: z.number(),
-});
+/** Validate the literal Gregorian date before parsing timestamps (which can roll dates over). */
+export const isValidCalendarDate = (value: unknown): value is string => {
+	if (typeof value !== "string") return false;
+	const match = /^(\d{4})-(\d{2})-(\d{2})(?:$|T)/.exec(value);
+	if (!match) return false;
+	const year = Number(match[1]);
+	const month = Number(match[2]);
+	const day = Number(match[3]);
+	const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+	const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+	return (
+		year > 0 &&
+		month >= 1 &&
+		month <= 12 &&
+		day >= 1 &&
+		day <= days[month - 1]! &&
+		Number.isFinite(Date.parse(value))
+	);
+};
+
+export const scheduledCalendarItemSchema = calendarItemSchema
+	.extend({
+		id: z.union([
+			z.string().trim().min(1),
+			z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+		]),
+		airDate: z.string().refine(isValidCalendarDate).optional(),
+		airDateUtc: z.string().refine(isValidCalendarDate).optional(),
+		releaseDate: z.string().refine(isValidCalendarDate).optional(),
+	})
+	.refine((item) => Boolean(item.airDateUtc ?? item.airDate ?? item.releaseDate), {
+		message: "Calendar schedule is required",
+	});
+
+export const calendarSourceAvailabilitySchema = z.enum(["available", "partial", "unavailable"]);
+export const calendarAvailabilitySchema = z.enum([
+	"not-configured",
+	"available",
+	"partial",
+	"unavailable",
+]);
+export type CalendarAvailability = z.infer<typeof calendarAvailabilitySchema>;
+export type CalendarSourceAvailability = z.infer<typeof calendarSourceAvailabilitySchema>;
+
+export const getCalendarAvailability = (
+	sources: ReadonlyArray<{ availability: CalendarSourceAvailability }>,
+): CalendarAvailability => {
+	if (sources.length === 0) return "not-configured";
+	if (sources.every((source) => source.availability === "available")) return "available";
+	if (sources.every((source) => source.availability === "unavailable")) return "unavailable";
+	return "partial";
+};
+
+const calendarInstanceSchema = z
+	.object({
+		instanceId: z.string(),
+		instanceName: z.string(),
+		service: z.enum(["sonarr", "radarr", "lidarr", "readarr"]),
+		data: z.array(scheduledCalendarItemSchema),
+		availability: calendarSourceAvailabilitySchema,
+		reason: z.enum(["provider-unavailable", "invalid-response", "invalid-items"]).nullable(),
+		rejectedItemCount: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+	})
+	.refine(
+		(source) => {
+			if (
+				source.data.some(
+					(item) =>
+						item.instanceId !== source.instanceId ||
+						item.instanceName !== source.instanceName ||
+						item.service !== source.service,
+				)
+			)
+				return false;
+			if (source.availability === "available")
+				return source.reason === null && source.rejectedItemCount === 0;
+			if (source.availability === "partial")
+				return (
+					source.data.length > 0 &&
+					source.reason === "invalid-items" &&
+					source.rejectedItemCount > 0
+				);
+			return (
+				source.data.length === 0 &&
+				(source.reason === "invalid-items"
+					? source.rejectedItemCount > 0
+					: source.reason !== null && source.rejectedItemCount === 0)
+			);
+		},
+		{ message: "Calendar source evidence is inconsistent" },
+	);
+
+export const multiInstanceCalendarResponseSchema = z
+	.object({
+		instances: z.array(calendarInstanceSchema),
+		aggregated: z.array(scheduledCalendarItemSchema),
+		totalCount: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+		availability: calendarAvailabilitySchema,
+	})
+	.refine(
+		(response) => {
+			if (
+				response.availability !== getCalendarAvailability(response.instances) ||
+				response.totalCount !== response.aggregated.length
+			)
+				return false;
+			if (
+				new Set(response.instances.map((source) => source.instanceId)).size !==
+				response.instances.length
+			)
+				return false;
+			const published = response.instances.flatMap((source) => source.data);
+			if (published.length !== response.totalCount) return false;
+			// Compare parsed rows as a multiset: order may differ, identities and evidence may not.
+			const remaining = new Map<string, number>();
+			for (const item of published) {
+				const key = JSON.stringify(item);
+				remaining.set(key, (remaining.get(key) ?? 0) + 1);
+			}
+			for (const item of response.aggregated) {
+				const key = JSON.stringify(item);
+				const count = remaining.get(key) ?? 0;
+				if (count === 0) return false;
+				remaining.set(key, count - 1);
+			}
+			return true;
+		},
+		{ message: "Calendar aggregate evidence is inconsistent" },
+	);
 
 export type MultiInstanceCalendarResponse = z.infer<typeof multiInstanceCalendarResponseSchema>;
 
@@ -821,3 +947,18 @@ export const dashboardStatisticsResponseSchema = z.object({
 });
 
 export type DashboardStatisticsResponse = z.infer<typeof dashboardStatisticsResponseSchema>;
+
+export const dashboardStatisticsEnvelopeSchema = z.discriminatedUnion("availability", [
+	z.object({
+		availability: z.enum(["current", "partial", "last-known"]),
+		observedAt: z.iso.datetime(),
+		data: dashboardStatisticsResponseSchema,
+	}),
+	z.object({
+		availability: z.enum(["collecting", "unavailable"]),
+		observedAt: z.null(),
+		data: z.null(),
+	}),
+]);
+
+export type DashboardStatisticsEnvelope = z.infer<typeof dashboardStatisticsEnvelopeSchema>;

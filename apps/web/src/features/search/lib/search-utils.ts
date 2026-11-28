@@ -125,49 +125,50 @@ export const compareNumbers = (a: number, b: number) => {
 	return a > b ? 1 : -1;
 };
 
+const compareOptionalNumbers = (
+	a: number | null | undefined,
+	b: number | null | undefined,
+	direction: "asc" | "desc",
+): number => {
+	// Unknown is not zero, and remains last regardless of the value sort direction.
+	if (a == null && b == null) return 0;
+	if (a == null) return 1;
+	if (b == null) return -1;
+	const comparison = compareNumbers(a, b);
+	return direction === "asc" ? comparison : -comparison;
+};
+
 /**
  * Compares two search results by a specific sort key
  * @param sortKey - Key to sort by
  * @param a - First search result
  * @param b - Second search result
+ * @param direction - Order for known values; unknown values always sort last
  * @returns -1, 0, or 1 for comparison
  */
-export const compareBySortKey = (sortKey: SortKey, a: SearchResult, b: SearchResult): number => {
+export const compareBySortKey = (
+	sortKey: SortKey,
+	a: SearchResult,
+	b: SearchResult,
+	direction: "asc" | "desc" = "asc",
+): number => {
 	switch (sortKey) {
 		case "seeders":
-			return compareNumbers(a.seeders ?? 0, b.seeders ?? 0);
+			return compareOptionalNumbers(a.seeders, b.seeders, direction);
 		case "size":
-			return compareNumbers(a.size ?? 0, b.size ?? 0);
-		case "publishDate": {
-			const timeA = getPublishTimestamp(a.publishDate);
-			const timeB = getPublishTimestamp(b.publishDate);
-			if (timeA === null && timeB === null) {
-				return 0;
-			}
-			if (timeA === null) {
-				return 1;
-			}
-			if (timeB === null) {
-				return -1;
-			}
-			return compareNumbers(timeA, timeB);
+			return compareOptionalNumbers(a.size, b.size, direction);
+		case "publishDate":
+			return compareOptionalNumbers(
+				getPublishTimestamp(a.publishDate),
+				getPublishTimestamp(b.publishDate),
+				direction,
+			);
+		case "age":
+			return compareOptionalNumbers(getAgeHours(a), getAgeHours(b), direction);
+		case "title": {
+			const comparison = a.title.localeCompare(b.title, undefined, { sensitivity: "base" });
+			return direction === "asc" ? comparison : -comparison;
 		}
-		case "age": {
-			const ageA = getAgeHours(a);
-			const ageB = getAgeHours(b);
-			if (ageA === null && ageB === null) {
-				return 0;
-			}
-			if (ageA === null) {
-				return 1;
-			}
-			if (ageB === null) {
-				return -1;
-			}
-			return compareNumbers(ageA, ageB);
-		}
-		case "title":
-			return a.title.localeCompare(b.title, undefined, { sensitivity: "base" });
 		default:
 			return 0;
 	}
@@ -230,7 +231,12 @@ const isStackTrace = (text: string): boolean => {
  * @param error - Error object from API
  * @returns User-friendly error message
  */
-export const deriveGrabErrorMessage = (error: unknown): string => {
+export const deriveGrabErrorMessage = (error: unknown, redactUnknown = false): string => {
+	const displayMessage = (message: string): string =>
+		interpretGrabError(message) ??
+		(redactUnknown
+			? "Could not confirm the grab result. Check Prowlarr and the download client before retrying."
+			: message);
 	// Check if it's an ApiError with payload
 	if (error && typeof error === "object" && "payload" in error) {
 		const payload = (error as Record<string, unknown>).payload;
@@ -261,25 +267,23 @@ export const deriveGrabErrorMessage = (error: unknown): string => {
 				(entry) => entry.length > 0,
 			);
 			if (combined.length > 0) {
-				const friendly = interpretGrabError(combined.join(" "));
-				return friendly ?? combined.join(" ");
+				return displayMessage(combined.join(" "));
 			}
 		} else if (typeof payload === "string" && payload.trim().length > 0) {
-			const friendly = interpretGrabError(payload);
-			return friendly ?? payload.trim();
+			return displayMessage(payload.trim());
 		}
 
 		if ("message" in error && typeof (error as Record<string, unknown>).message === "string") {
 			const msg = (error as Record<string, unknown>).message as string;
-			const friendly = interpretGrabError(msg);
-			return friendly ?? msg;
+			return displayMessage(msg);
 		}
 	}
 
 	if (error instanceof Error && error.message) {
-		const friendly = interpretGrabError(error.message);
-		return friendly ?? error.message;
+		return displayMessage(error.message);
 	}
 
-	return "Failed to send release to the download client.";
+	return redactUnknown
+		? "Could not confirm the grab result. Check Prowlarr and the download client before retrying."
+		: "Failed to send release to the download client.";
 };

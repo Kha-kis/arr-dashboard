@@ -90,7 +90,7 @@ describe("sync rollback route", () => {
 	const profileGetById = vi.fn();
 	const profileGetAll = vi.fn();
 	const rawRequest = vi.fn();
-	const cleanupUpdateMany = vi.fn();
+	const cleanupUpdate = vi.fn();
 	const transaction = vi.fn();
 	let syncRecord: Record<string, unknown>;
 	const mockDeploymentOwnershipRows = (rows: Record<string, unknown>[]) => {
@@ -190,8 +190,10 @@ describe("sync rollback route", () => {
 		};
 		const prisma = {
 			libraryCleanupConfig: {
-				upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
-				updateMany: cleanupUpdateMany.mockResolvedValue({ count: 1 }),
+				findUnique: vi.fn().mockResolvedValue(null),
+				create: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
+				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+				update: cleanupUpdate.mockResolvedValue({ id: "cleanup-config" }),
 			},
 			trashSyncHistory: {
 				findFirst: syncFindFirst,
@@ -265,23 +267,30 @@ describe("sync rollback route", () => {
 		const response = await createInjectAuthenticated(app)("POST", "/sync-1/rollback");
 
 		expect(response.statusCode, response.body).toBe(200);
-		const acquireIndexes = cleanupUpdateMany.mock.calls.flatMap(([args], index) =>
+		const acquireIndexes = cleanupUpdate.mock.calls.flatMap(([args], index) =>
 			args.data.runClaimToken ? [index] : [],
 		);
-		const releaseIndexes = cleanupUpdateMany.mock.calls.flatMap(([args], index) =>
-			args.data.runClaimToken === null ? [index] : [],
-		);
 		expect(acquireIndexes).toHaveLength(1);
-		expect(releaseIndexes).toHaveLength(1);
+		const token = cleanupUpdate.mock.calls[acquireIndexes[0]!]![0].data.runClaimToken;
+		expect(token).toEqual(expect.any(String));
+		const releaseIndex = cleanupUpdate.mock.calls.findIndex(
+			([args]) => args.data.runClaimToken === null,
+		);
+		expect(releaseIndex).toBeGreaterThan(acquireIndexes[0]!);
+		expect(cleanupUpdate.mock.calls[releaseIndex]?.[0]).toEqual({
+			where: { id: "cleanup-config", userId, runClaimToken: token },
+			data: { runClaimToken: null, runClaimedAt: null },
+			select: { id: true },
+		});
 		const finalWriteIndex = syncUpdate.mock.calls.findIndex(
 			([args]) => args.data.rollbackStatus === "PARTIAL",
 		);
 		expect(finalWriteIndex).toBeGreaterThanOrEqual(0);
-		expect(cleanupUpdateMany.mock.invocationCallOrder[acquireIndexes[0]!]).toBeLessThan(
+		expect(cleanupUpdate.mock.invocationCallOrder[acquireIndexes[0]!]).toBeLessThan(
 			syncUpdate.mock.invocationCallOrder[0]!,
 		);
 		expect(syncUpdate.mock.invocationCallOrder[finalWriteIndex]).toBeLessThan(
-			cleanupUpdateMany.mock.invocationCallOrder[releaseIndexes[0]!]!,
+			cleanupUpdate.mock.invocationCallOrder[releaseIndex]!,
 		);
 	});
 

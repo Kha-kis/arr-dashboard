@@ -57,7 +57,7 @@ export async function registerEpisodeRoutes(app: FastifyInstance, _opts: Fastify
 			encryptor: app.encryptor,
 			log: request.log,
 		});
-		const exactEvidence = await authority.readInstanceSelectedEpisodes({
+		const exactEvidence = await authority.readInstanceSelectedEpisodeDisplay({
 			userId,
 			instanceId,
 			showTmdbIds: [showTmdbId],

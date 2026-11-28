@@ -1,4 +1,5 @@
 import type { NotificationChannelType } from "@arr/shared";
+import { NotificationFailureError } from "./failure-diagnostics.js";
 import { discordPlugin } from "./channels/discord-sender.js";
 import { emailPlugin } from "./channels/email-sender.js";
 import { gotifyPlugin } from "./channels/gotify-sender.js";
@@ -76,7 +77,7 @@ export class NotificationDispatcher {
 	async test(type: NotificationChannelType, config: Record<string, unknown>): Promise<void> {
 		const sender = this.senders.get(type);
 		if (!sender) {
-			throw new Error(`No sender registered for channel type: ${type}`);
+			throw new NotificationFailureError("unsupported");
 		}
 		await sender.test(config);
 	}

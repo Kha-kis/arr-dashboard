@@ -1,9 +1,10 @@
 "use client";
 
 import { SEERR_MEDIA_STATUS, type SeerrDiscoverResult } from "@arr/shared";
-import { Clock, Compass, Eye, EyeOff, Film, Tag, TrendingUp, Tv } from "lucide-react";
+import { Clock, Compass, Eye, EyeOff, Film, RefreshCw, Tag, TrendingUp, Tv } from "lucide-react";
 import { lazy, Suspense, useCallback, useMemo, useState } from "react";
 import { PremiumSkeleton } from "../../../components/layout";
+import { Button } from "../../../components/ui";
 import {
 	useSeerrDiscoverByGenre,
 	useSeerrDiscoverMovies,
@@ -33,7 +34,16 @@ const DiscoverRequestDialog = lazy(() =>
 
 export const DiscoverClient = () => {
 	const { gradient: themeGradient } = useThemeGradient();
-	const { seerrInstances, defaultInstance, isLoading: isLoadingInstances } = useSeerrInstances();
+	const {
+		seerrInstances,
+		defaultInstance,
+		isLoading: isLoadingInstances,
+		error: instancesError,
+		hasFailedInitialRead,
+		isFetching: isFetchingInstances,
+		refetch: refetchInstances,
+	} = useSeerrInstances();
+	const hasConnectionError = !!instancesError || hasFailedInitialRead;
 	const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
 	const instanceId = selectedInstanceId ?? defaultInstance?.id ?? "";
 
@@ -128,7 +138,7 @@ export const DiscoverClient = () => {
 	);
 
 	// Page loading skeleton
-	if (isLoadingInstances) {
+	if (isLoadingInstances && !hasConnectionError) {
 		return (
 			<div className="space-y-8">
 				<PageHeader themeGradient={themeGradient} />
@@ -162,12 +172,35 @@ export const DiscoverClient = () => {
 		);
 	}
 
-	// No instance configured
+	const connectionNotice = hasConnectionError && (
+		<div
+			role="alert"
+			aria-busy={isFetchingInstances}
+			className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-warning/50 bg-warning/10 p-4 text-sm text-warning"
+		>
+			<p>
+				{seerrInstances.length > 0
+					? "Seerr connections could not be verified. Showing last-known connections; availability may have changed."
+					: "Unable to verify Seerr connections. Retry to check again."}
+			</p>
+			<Button
+				variant="secondary"
+				onClick={() => void refetchInstances()}
+				disabled={isFetchingInstances}
+				className="gap-2"
+			>
+				<RefreshCw className={`h-4 w-4${isFetchingInstances ? " animate-spin" : ""}`} />
+				Retry
+			</Button>
+		</div>
+	);
+
+	// Only a successful connection read can confirm an empty configuration.
 	if (seerrInstances.length === 0) {
 		return (
 			<div className="space-y-8">
 				<PageHeader themeGradient={themeGradient} />
-				<DiscoverEmptyState />
+				{hasConnectionError ? connectionNotice : <DiscoverEmptyState />}
 			</div>
 		);
 	}
@@ -179,6 +212,8 @@ export const DiscoverClient = () => {
 		<div className="space-y-8 overflow-x-hidden">
 			{/* Page header */}
 			<PageHeader themeGradient={themeGradient} />
+
+			{connectionNotice}
 
 			{/* Search bar + controls */}
 			<div

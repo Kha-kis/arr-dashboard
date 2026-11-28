@@ -9,25 +9,26 @@ export interface ApiCallCounter {
 
 /**
  * Default page size for fetching wanted items.
- * Larger pages = fewer API calls to cover the full list.
- * Sonarr/Radarr support page sizes up to 10,000+.
+ * Larger requested pages reduce API calls when the provider honors the size.
+ * Provider totals, not an assumed server page-size limit, establish completion.
  */
 const DEFAULT_PAGE_SIZE = 500;
 
 /**
  * Maximum pages to fetch to prevent runaway API calls on very large libraries.
  * 20 pages × 500 items = 10,000 items max, using at most 20 API calls (~20%
- * of the default hourlyApiCap of 100). Libraries beyond 10K wanted items are
- * exceptionally rare for home server use.
+ * of the default hourlyApiCap of 100). Exhausting this budget is an explicit
+ * unavailable inventory, never permission to search a silently truncated pool.
  */
 const MAX_PAGES = 20;
 
 /**
- * Fetch ALL wanted records by paginating through the complete list.
+ * Fetch a complete wanted inventory within the bounded read budget.
  *
  * Uses large page sizes (500) to minimize API calls while loading the full
- * wanted list. This ensures every item is visible to the downstream filter
- * and search logic, guaranteeing complete coverage over multiple hunt cycles.
+ * wanted list. Incomplete or inconsistent coverage throws before downstream
+ * search logic runs. Large-inventory continuation is a separate contract;
+ * this helper does not claim complete coverage over multiple hunt cycles.
  *
  * The caller's filter logic (passesFilters, wasRecentlySearched) handles
  * deduplication and eligibility — this function just provides the full pool.
@@ -62,12 +63,41 @@ export async function fetchWantedWithWrapAround<TRaw, TProjected = TRaw>(
 	const allRecords: TProjected[] = [];
 	let page = 1;
 	let totalRawSeen = 0;
+	let expectedTotal: number | undefined;
+	let complete = false;
 
 	while (page <= MAX_PAGES) {
 		counter.count++;
 		const data = await fetcher(page, fetchSize);
-		const records = data.records ?? [];
+		if (!data || !Array.isArray(data.records)) {
+			throw new Error(
+				"Wanted inventory is invalid; no searches were submitted. Retry after checking provider availability.",
+			);
+		}
+		const records = data.records;
+		if (data.totalRecords != null) {
+			if (!Number.isSafeInteger(data.totalRecords) || data.totalRecords < 0) {
+				throw new Error(
+					"Wanted inventory total is invalid; no searches were submitted. Check provider availability.",
+				);
+			}
+			if (expectedTotal !== undefined && expectedTotal !== data.totalRecords) {
+				throw new Error(
+					"Wanted inventory changed during pagination; no searches were submitted. Retry the hunt.",
+				);
+			}
+			expectedTotal = data.totalRecords;
+		} else {
+			throw new Error(
+				"Wanted inventory total is invalid; no searches were submitted. Retry the hunt.",
+			);
+		}
 		totalRawSeen += records.length;
+		if (expectedTotal !== undefined && totalRawSeen > expectedTotal) {
+			throw new Error(
+				"Wanted inventory coverage is invalid; no searches were submitted. Retry the hunt.",
+			);
+		}
 
 		if (records.length > 0) {
 			if (project) {
@@ -83,14 +113,21 @@ export async function fetchWantedWithWrapAround<TRaw, TProjected = TRaw>(
 			}
 		}
 
-		// Stop when the page is empty or partial — page completion is judged
-		// from the *raw* count so a fully-loaded page where projection drops
-		// everything still advances correctly.
-		if (records.length < fetchSize) {
+		// A provider can clamp the requested page size. When a total exists,
+		// only covering that total proves completion; projection drops must
+		// never affect pagination. Missing totals are not evidence of completion.
+		if (totalRawSeen === expectedTotal) {
+			complete = true;
 			break;
 		}
+		if (records.length === 0) break;
 
 		page++;
+	}
+	if (!complete) {
+		throw new Error(
+			"Wanted inventory is incomplete within the bounded read budget; no searches were submitted. Retry or review Hunting coverage limits.",
+		);
 	}
 
 	// Log whenever we did any work so single-page fetches whose projection

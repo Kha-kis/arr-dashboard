@@ -47,7 +47,7 @@ describe("classifySessionDecisions", () => {
 		expect(result.transcodeCount).toBe(0);
 	});
 
-	it("defaults missing videoDecision to direct play", () => {
+	it("keeps missing videoDecision separate from all known methods", () => {
 		const sessions: SessionInput[] = [
 			{ bandwidth: 5000, videoDecision: null },
 			{ bandwidth: 3000, videoDecision: undefined },
@@ -55,10 +55,53 @@ describe("classifySessionDecisions", () => {
 		];
 
 		const result = classifySessionDecisions(sessions);
-		expect(result.directPlayCount).toBe(3);
+		expect(result.directPlayCount).toBe(0);
 		expect(result.transcodeCount).toBe(0);
 		expect(result.directStreamCount).toBe(0);
+		expect(result.unknownDecisionCount).toBe(3);
 		expect(result.totalBandwidth).toBe(10000);
+	});
+
+	it("does not treat unrecognized method strings as direct play", () => {
+		const result = classifySessionDecisions([
+			{ videoDecision: "" },
+			{ videoDecision: "buffering" },
+			{ videoDecision: "not direct play" },
+			{ videoDecision: "transcode failed" },
+		]);
+		expect(result.directPlayCount).toBe(0);
+		expect(result.directStreamCount).toBe(0);
+		expect(result.transcodeCount).toBe(0);
+		expect(result.unknownDecisionCount).toBe(4);
+	});
+
+	it("conserves known and unknown counts in a mixed native-method batch", () => {
+		const result = classifySessionDecisions([
+			{ videoDecision: "DirectPlay" },
+			{ videoDecision: "  direct play  " },
+			{ videoDecision: "DirectStream" },
+			{ videoDecision: "  COPY  " },
+			{ videoDecision: "Transcode" },
+			{},
+			{ videoDecision: "unknown" },
+		]);
+		expect(result).toEqual({
+			totalBandwidth: 0,
+			directPlayCount: 2,
+			directStreamCount: 2,
+			transcodeCount: 1,
+			unknownDecisionCount: 2,
+		});
+	});
+
+	it("returns no known or unknown observations for an empty batch", () => {
+		expect(classifySessionDecisions([])).toEqual({
+			totalBandwidth: 0,
+			directPlayCount: 0,
+			transcodeCount: 0,
+			directStreamCount: 0,
+			unknownDecisionCount: 0,
+		});
 	});
 
 	it("handles null/undefined bandwidth as 0", () => {

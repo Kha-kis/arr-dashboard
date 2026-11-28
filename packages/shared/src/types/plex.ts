@@ -11,7 +11,11 @@ import type {
 	ProviderObservationStatusEnvelope,
 	ProviderUiCondition,
 } from "./provider-observation";
-import type { SessionAvailability } from "./session";
+import type {
+	SessionAvailability,
+	SessionBandwidthBasis,
+	SessionBandwidthCoverage,
+} from "./session";
 
 // ============================================================================
 // Published cache evidence
@@ -307,6 +311,7 @@ export interface WatchEnrichmentResponse {
 
 export interface PlexSection {
 	sectionId: string;
+	sectionUuid: string;
 	sectionTitle: string;
 	mediaType: string;
 	instanceId: string;
@@ -315,6 +320,11 @@ export interface PlexSection {
 
 export interface PlexSectionsResponse {
 	sections: PlexSection[];
+	/** Independent section-catalog evidence; does not grant canonical mutation authority. */
+	catalog: {
+		availability: "current" | "last-known" | "unavailable";
+		observedAt: string | null;
+	};
 	evidence?: PlexEvidenceSummary;
 }
 
@@ -330,7 +340,8 @@ export interface PlexSessionPlayer {
 }
 
 export interface PlexSessionUser {
-	id: number;
+	/** Exact provider coordinate, or null when optional identity is unavailable. */
+	id: string | null;
 	title: string;
 	thumb?: string;
 }
@@ -349,6 +360,9 @@ export interface PlexSession {
 	videoDecision: string;
 	audioDecision: string;
 	bandwidth?: number;
+	videoCodec?: string;
+	audioCodec?: string;
+	videoResolution?: string;
 	thumb?: string;
 	instanceId: string;
 	instanceName: string;
@@ -356,8 +370,11 @@ export interface PlexSession {
 
 export interface PlexNowPlayingResponse {
 	sessions: PlexSession[];
+	/** Compatibility known subtotal; use bandwidthCoverage to determine coverage. */
 	totalBandwidth: number;
 	availability: SessionAvailability;
+	bandwidthCoverage?: SessionBandwidthCoverage;
+	bandwidthBasis?: SessionBandwidthBasis;
 }
 
 // ============================================================================
@@ -520,19 +537,47 @@ export interface CacheHealthResponse {
 export type SeriesProgressItem =
 	| { status: "exact"; total: number; watched: number; percent: number; watchedSemantics: "exact" }
 	| {
+			status: "mapped";
+			total: number;
+			watched: number;
+			percent: number;
+			watchedSemantics: "matched";
+			observedAt: string;
+	  }
+	| {
+			status: "mapped-last-known";
+			total: number;
+			watched: number;
+			percent: number;
+			watchedSemantics: "matched";
+			observedAt: string;
+			currentWatchedLowerBound: number | null;
+	  }
+	| {
 			status: "partial";
 			total: null;
 			watched: number;
 			percent: null;
 			watchedSemantics: "lower-bound";
 	  }
-	| { status: "unknown"; total: null; watched: null; percent: null; watchedSemantics: "unknown" };
+	| {
+			status: "unknown";
+			total: null;
+			watched: null;
+			percent: null;
+			watchedSemantics: "unknown";
+			reason?: "no-verified-match";
+	  };
 
 export interface SeriesProgressResponse {
 	configured: boolean;
 	progress: Record<number, SeriesProgressItem>;
 	evidence?: PlexEvidenceSummary;
 	providerStatus?: ProviderObservationStatusEnvelope;
+}
+
+export interface JellyfinWatchEnrichmentResponse extends WatchEnrichmentResponse {
+	seriesProgress?: SeriesProgressResponse;
 }
 
 // ============================================================================
@@ -543,29 +588,74 @@ export interface TranscodeAnalytics {
 	directPlay: number;
 	transcode: number;
 	directStream: number;
+	/** Unverified or unavailable video decisions, never imputed as Direct Play. */
+	unknown?: number;
 	totalSessions: number;
+	/** Absent on old API responses: method basis and coverage are unverified. */
+	measurement?: SessionMethodMeasurementSummary;
 	dailyBreakdown: Array<{
 		date: string;
 		directPlay: number;
 		transcode: number;
 		directStream: number;
+		unknown?: number;
+		measurement?: SessionMethodMeasurementSummary;
 	}>;
+}
+
+/** Native video processing observations; audio and overall decisions are separate. */
+export interface SessionMethodMeasurementSummary {
+	version: 1;
+	methodAxis: "video";
+	status: "complete" | "partial" | "unavailable";
+	observedSessions: number;
+	measuredSessions: number;
+	invalidDetailSnapshots: number;
+	collection: SnapshotCollectionCoverage;
+	configuredSources?: number;
 }
 
 // ============================================================================
 // Bandwidth Analytics (F16)
 // ============================================================================
 
+/** Recorded collection outcomes, not proof of continuous historical coverage. */
+export interface SnapshotCollectionCoverage {
+	activeSnapshots: number;
+	idleSnapshots: number;
+	failedSnapshots: number;
+	legacySnapshots: number;
+	invalidSnapshots: number;
+}
+
+export interface BandwidthMeasurementSummary {
+	version: 1;
+	status: "complete" | "partial" | "unavailable";
+	bandwidthBasis: "provider-reported" | "encoding-estimate" | "mixed" | null;
+	observedSessions: number;
+	measuredSessions: number;
+	observedSnapshots: number;
+	measuredSnapshots: number;
+	collection: SnapshotCollectionCoverage;
+	configuredSources?: number;
+}
+
 export interface BandwidthAnalytics {
-	peakConcurrent: number;
-	peakBandwidth: number;
-	avgBandwidth: number;
+	/** Maximum observed sample count; null without valid activity/idle evidence. */
+	peakConcurrent: number | null;
+	/** Known rate/subtotal; null when native evidence cannot establish a value. */
+	peakBandwidth: number | null;
+	/** Average of known-rate active snapshots only; see measured coverage. */
+	avgBandwidth: number | null;
+	/** Absent on old API responses: legacy/unverified, not complete coverage. */
+	measurement?: BandwidthMeasurementSummary;
 	timeSeries: Array<{
 		date: string;
-		concurrent: number;
-		bandwidth: number;
-		lanBandwidth: number;
-		wanBandwidth: number;
+		concurrent: number | null;
+		bandwidth: number | null;
+		lanBandwidth: number | null;
+		wanBandwidth: number | null;
+		measurement?: BandwidthMeasurementSummary;
 	}>;
 }
 
@@ -573,18 +663,48 @@ export interface BandwidthAnalytics {
 // User Analytics (Tier 1)
 // ============================================================================
 
+export interface UserAnalyticsMeasurementSummary {
+	version: 1;
+	attribution: "source-provider-user-id";
+	status: "complete" | "partial" | "unavailable";
+	observedSessions: number;
+	attributedSessions: number;
+	unattributedSessions: number;
+	invalidDetailSnapshots: number;
+	collection: SnapshotCollectionCoverage;
+	configuredSources?: number;
+}
+
+export interface UserAnalyticsBandwidthMeasurement {
+	version: 1;
+	bandwidthBasis: "provider-reported" | "encoding-estimate";
+	status: "complete" | "partial" | "unavailable";
+	observedSessions: number;
+	measuredSessions: number;
+}
+
 export interface UserAnalytics {
 	users: Array<{
 		username: string;
+		/** Sample observations, not distinct sessions or continuous playback events. */
 		totalSessions: number;
-		totalBandwidth: number;
+		/** Deprecated: summing sampled rates does not establish traffic volume. */
+		totalBandwidth: number | null;
+		/** Five-minute sample weighting, not verified continuous watch duration. */
 		estimatedWatchTimeMinutes: number;
 		mostRecentActivity: string;
+		key?: string;
+		avgBandwidth?: number | null;
+		bandwidthMeasurement?: UserAnalyticsBandwidthMeasurement;
 	}>;
 	dailyBreakdown: Array<{
 		date: string;
+		/** Native responses use source/provider/user identity keys, not labels. */
 		userSessions: Record<string, number>;
+		measurement?: UserAnalyticsMeasurementSummary;
 	}>;
+	/** Absent on old responses: attribution and rates remain unverified. */
+	measurement?: UserAnalyticsMeasurementSummary;
 }
 
 // ============================================================================
@@ -592,6 +712,8 @@ export interface UserAnalytics {
 // ============================================================================
 
 export interface WatchHistoryEvent {
+	/** Opaque observation key; raw native identifiers are not returned. */
+	key?: string;
 	user: string;
 	title: string;
 	timestamp: string;
@@ -601,27 +723,86 @@ export interface WatchHistoryEvent {
 
 export interface WatchHistoryResponse {
 	events: WatchHistoryEvent[];
+	/** Missing on old responses: collection coverage is unverified. */
+	measurement?: SampledActivityCollection;
+}
+
+/** One owned, consistent read for the mounted provider Statistics view. */
+export interface MediaAnalyticsReport {
+	version: 1;
+	provider: "plex" | "jellyfin";
+	days: number;
+	/** Report assembly time, not proof of provider collection freshness. */
+	generatedAt: string;
+	transcode: TranscodeAnalytics;
+	bandwidth: BandwidthAnalytics;
+	userAnalytics: UserAnalytics;
+	watchHistory: WatchHistoryResponse;
+	codec: CodecAnalytics;
+	devices: DeviceAnalytics;
+	qualityScore: QualityScoreAnalytics;
+	forecast: BandwidthForecast;
+	topMedia: Record<TopMediaType, TopMediaResponse>;
+	popularMedia: Record<TopMediaType, TopMediaResponse>;
+}
+
+/** Recorded sampling outcomes, not continuous provider-history coverage. */
+export interface SampledActivityCollection {
+	version: 1;
+	configuredSources: number;
+	collection: SnapshotCollectionCoverage;
+	collectionByDate?: Record<string, SnapshotCollectionCoverage>;
 }
 
 // ============================================================================
 // Codec/Resolution Analytics (Tier 1 / Tier 2)
 // ============================================================================
 
+export interface CodecAnalyticsMeasurementSummary {
+	version: 1;
+	status: "complete" | "partial" | "unavailable";
+	observedSessions: number;
+	videoCodecMeasuredSessions: number;
+	audioCodecMeasuredSessions: number;
+	resolutionMeasuredSessions: number;
+	invalidDetailSnapshots: number;
+	collection: SnapshotCollectionCoverage;
+	configuredSources?: number;
+}
+
 export interface CodecAnalytics {
 	videoCodecs: Array<{ codec: string; count: number; percent: number }>;
 	audioCodecs: Array<{ codec: string; count: number; percent: number }>;
 	resolutions: Array<{ resolution: string; count: number; percent: number }>;
 	totalSessions: number;
+	/** Missing on old responses: codec categories remain legacy/unverified. */
+	measurement?: CodecAnalyticsMeasurementSummary;
 }
 
 // ============================================================================
 // Device/Platform Analytics (Tier 2)
 // ============================================================================
 
+export interface DeviceAnalyticsMeasurementSummary {
+	version: 1;
+	status: "complete" | "partial" | "unavailable";
+	observedSessions: number;
+	platformMeasuredSessions: number;
+	playerMeasuredSessions: number;
+	/** Plex reports platforms; Jellyfin/Emby report client-app labels. */
+	platformAxis: "platform" | "client" | "mixed" | "unverified";
+	unverifiedPlatformSnapshots: number;
+	invalidDetailSnapshots: number;
+	collection: SnapshotCollectionCoverage;
+	configuredSources?: number;
+}
+
 export interface DeviceAnalytics {
 	platforms: Array<{ platform: string; sessions: number; percent: number }>;
 	players: Array<{ player: string; platform: string; sessions: number }>;
 	totalSessions: number;
+	/** Absent on legacy responses, whose label provenance is unverified. */
+	measurement?: DeviceAnalyticsMeasurementSummary;
 }
 
 // ============================================================================
@@ -666,15 +847,52 @@ export interface UserEpisodeCompletion {
 // Quality Score (Tier 3)
 // ============================================================================
 
+export interface QualityScoreComponents {
+	directPlayScore: number | null;
+	resolutionScore: number | null;
+	transcodeScore: number | null;
+}
+
+export interface QualityScoreCoverage {
+	observedSessions: number;
+	methodMeasuredSessions: number;
+	resolutionMeasuredSessions: number;
+	scoredSessions: number;
+}
+
+export interface QualityScoreMeasurementSummary extends QualityScoreCoverage {
+	version: 1;
+	methodAxis: "video";
+	status: "complete" | "partial" | "unavailable";
+	invalidDetailSnapshots: number;
+	unattributedSessions: number;
+	collection: SnapshotCollectionCoverage;
+	configuredSources?: number;
+}
+
 export interface QualityScoreAnalytics {
-	overallScore: number;
-	breakdown: {
-		directPlayScore: number;
-		resolutionScore: number;
-		transcodeScore: number;
-	};
-	trend: Array<{ date: string; score: number }>;
-	perUser: Array<{ username: string; score: number; sessions: number }>;
+	/** Weighted heuristic on observations with BOTH native video and resolution evidence. */
+	overallScore: number | null;
+	/** Components on the same jointly measured cohort as overallScore. */
+	breakdown: QualityScoreComponents;
+	/** Independent known components; their measured cohorts may differ. */
+	components?: QualityScoreComponents;
+	/** Absent on old API responses: measurement authority is unverified. */
+	measurement?: QualityScoreMeasurementSummary;
+	trend: Array<{
+		date: string;
+		score: number | null;
+		components?: QualityScoreComponents;
+		measurement?: QualityScoreMeasurementSummary;
+	}>;
+	perUser: Array<{
+		username: string;
+		score: number | null;
+		sessions: number;
+		key?: string;
+		components?: QualityScoreComponents;
+		coverage?: QualityScoreCoverage;
+	}>;
 }
 
 // ============================================================================
@@ -687,11 +905,15 @@ export interface TopMediaItem {
 	/** Display title — show name for episodes, movie name for movies, album/track for music */
 	title: string;
 	mediaType: TopMediaType;
-	/** Number of distinct user×title viewing sessions (deduplicated across consecutive 5-min ticks) */
+	/** Known native playback subtotal, deduplicated across consecutive sampled ticks. */
 	playCount: number;
-	/** Number of distinct users who watched this title at least once in the window */
+	/** Known source-generation-scoped actors; not globally distinct people. */
 	distinctUserCount: number;
-	/** Approximate total time (in minutes) the title was actively streaming, summed across users */
+	/** Observations without verified captured actor scope; not a shared Unknown user. */
+	unattributedSessions?: number;
+	/** Observations lacking native playback identity; excluded from known play subtotal. */
+	unidentifiedPlaybackSessions?: number;
+	/** Sample-weighted activity at five minutes per observation, not verified playback time. */
 	totalDurationMinutes: number;
 	/** ISO timestamp of the most recent watch event */
 	lastWatchedAt: string;
@@ -699,6 +921,7 @@ export interface TopMediaItem {
 
 export interface TopMediaResponse {
 	items: TopMediaItem[];
+	measurement?: SampledActivityCollection;
 }
 
 // ============================================================================
@@ -709,13 +932,18 @@ export interface PlaysByDateSeries {
 	/** Display name — "Movies" | "TV" | "Music". Matches the legacy Tautulli shape. */
 	name: string;
 	/** One entry per date in `categories`, in the same order. */
-	data: number[];
+	data: Array<number | null>;
 }
 
 export interface PlaysByDateResponse {
 	/** Date strings (YYYY-MM-DD) covering the full window, ascending. */
 	categories: string[];
 	series: PlaysByDateSeries[];
+	measurement?: SampledActivityCollection;
+	/** Same date order; retained observations excluded from known playback counts. */
+	unidentifiedPlaybackSessions?: number[];
+	/** Same date order; invalid detail never establishes a zero-play day. */
+	invalidDetailSnapshots?: number[];
 }
 
 // ============================================================================
@@ -726,25 +954,73 @@ export interface MostConcurrentEntry {
 	/** ISO timestamp of the snapshot tick where this peak was observed */
 	capturedAt: string;
 	concurrentStreams: number;
-	totalBandwidth: number;
+	/** Complete native event total only; missing/partial/legacy evidence is null. */
+	totalBandwidth: number | null;
+	/** Preserves partial native rates without certifying a complete total. */
+	knownBandwidthSubtotal?: number | null;
+	measurement?: {
+		version: 1;
+		concurrencyStatus: "native" | "legacy-unverified";
+		bandwidthBasis: "provider-reported" | "encoding-estimate" | null;
+		bandwidthStatus: "complete" | "partial" | "unavailable";
+		observedSessions: number;
+		measuredSessions: number;
+	};
 }
 
 export interface MostConcurrentResponse {
-	/** Highest concurrent-stream count seen anywhere in the time window */
-	peakConcurrent: number;
+	/** Highest per-source sample count, not a simultaneous all-server total. */
+	peakConcurrent: number | null;
 	/** Top-N peak events, deduped by 30-min proximity so a held peak collapses to one entry */
 	events: MostConcurrentEntry[];
+	measurement?: {
+		version: 1;
+		scope: "per-source-snapshot";
+		/** Native count coverage, independent of event rate availability. */
+		status: "complete" | "partial" | "unavailable";
+		observedSnapshots: number;
+		/** Includes successful idle observations excluded from active events. */
+		nativeSnapshots: number;
+		collection: SnapshotCollectionCoverage;
+		configuredSources?: number;
+	};
 }
 
 // ============================================================================
 // Bandwidth Forecast (Tier 3)
 // ============================================================================
 
+export interface ForecastSampleCoverage extends BandwidthMeasurementSummary {
+	/** Active snapshots whose native total includes every observed session. */
+	completeTotalSnapshots: number;
+}
+
+export interface ForecastMeasurementSummary extends ForecastSampleCoverage {
+	eligibleDays: number;
+	projectionStatus: "available" | "insufficient-data" | "mixed-basis" | "numeric-unavailable";
+}
+
 export interface BandwidthForecast {
-	historicalDaily: Array<{ date: string; avgBandwidth: number; peakBandwidth: number }>;
+	historicalDaily: Array<{
+		date: string;
+		/** Mean and peak of completely measured active sample totals only. */
+		avgBandwidth: number | null;
+		peakBandwidth: number | null;
+		/** Known subtotals retain partial evidence; never certify a complete total. */
+		avgKnownSubtotal?: number | null;
+		peakKnownSubtotal?: number | null;
+		measurement?: ForecastSampleCoverage;
+	}>;
 	forecast: Array<{ date: string; predictedPeak: number }>;
-	peakHours: Array<{ hour: number; avgConcurrent: number; avgBandwidth: number }>;
-	trend: "increasing" | "stable" | "decreasing";
+	peakHours: Array<{
+		hour: number;
+		avgConcurrent: number | null;
+		avgBandwidth: number | null;
+		avgKnownSubtotal?: number | null;
+		measurement?: ForecastSampleCoverage;
+	}>;
+	trend: "increasing" | "stable" | "decreasing" | "unknown";
+	measurement?: ForecastMeasurementSummary;
 }
 
 // ============================================================================

@@ -1,12 +1,113 @@
 # Development Reference
 
-## Quick Start
+## Isolated development setup
+
+Start from a clean checkout or task worktree with Node.js 22 and the pnpm
+version declared by the root package manager field. Run the native test
+harness on Linux or WSL using a private, writable Linux filesystem for
+temporary files. Install or activate tools through your existing environment
+manager. The repository setup command only installs the frozen dependencies.
 
 ```bash
-pnpm install && pnpm run dev  # API (3001) + Web (3000)
+node --version
+pnpm --version
+docker compose version
+pnpm run setup:worktree
+pnpm --filter @arr/shared build
+pnpm --filter @arr/api exec vitest run src/config/env.test.ts --maxWorkers=1
+pnpm --filter @arr/api run test:node
+pnpm --filter @arr/api run test:properties
+CI=1 pnpm exec playwright test --list --project chromium
 ```
 
-Requirements: Node.js 22+ and pnpm 10+.
+The opt-in provider properties use fast-check 3.23.2. They run 300 generated
+cases per property with seed 20261127. Replay a failure by setting
+`FC_SEED=<seed> FC_PATH=<path>` and passing `-t '<failing property name>'`
+to the property command. Keep the failure's seed and minimized replay path in
+the qualification record.
+
+The browser discovery command lists tests in the CI Chromium project
+without starting an app or creating browser sessions.
+
+The full native gate needs a local Docker daemon and access to the repository's
+pinned PostgreSQL fixture image. The harness owns its disposable database,
+native actors, and loopback-only connection details. Keep live database URLs,
+service credentials, and production mounts outside the checkout. Building
+the shared package first gives test and typecheck commands its current output.
+
+On a private development host, `pnpm run dev` starts the workspace watchers
+on the default web and API ports (3000 and 3001). For a loopback-only source
+smoke, reserve both ports and run these commands in separate terminals from
+the repository root. The temporary directory holds a fresh SQLite database,
+logs, and generated local secrets.
+
+```bash
+dev_data=$(mktemp -d)
+DATABASE_URL="file:$dev_data/dev.db" LOG_DIR="$dev_data/logs" \
+  API_HOST=127.0.0.1 API_PORT=3001 TRASH_UPDATE_SCHEDULER_ENABLED=false \
+  pnpm --filter @arr/api exec tsx src/index.ts
+
+# In another terminal, set the web rewrite origin and bind the listener.
+API_HOST=http://127.0.0.1:3001 NEXT_TELEMETRY_DISABLED=1 \
+  pnpm --filter @arr/web exec next dev -H 127.0.0.1 -p 3000 --webpack
+```
+
+Check `http://127.0.0.1:3001/health` and open `http://127.0.0.1:3000/setup`.
+Stop the owned processes before cleaning up the disposable data. Use a
+dedicated persistent SQLite mount or a disposable PostgreSQL database when
+running a container. Inspect settings before starting a provider-enabled
+fixture.
+
+For the existing floating integration stack, inspect
+`docker compose -f e2e/integration/docker-compose.yml config --quiet` and
+reserve its fixed container names and published ports before
+`pnpm run e2e:integration:up`. Run one stack at a time on an isolated Docker
+host. Use `pnpm run e2e:integration` for its browser tests and
+`pnpm run e2e:integration:down` only for the disposable stack you started.
+Keep provider credentials and .env.services, browser auth state, logs, and
+traces private. The default Chromium project needs a running test app and
+isolated auth data. Use `pnpm exec playwright show-trace <trace.zip>` to inspect
+a captured run.
+
+### Verify a change
+
+1. Reproduce the failure in a disposable fixture at the original deadline.
+   Save the first failure and compare the exact base and candidate with the
+   same inputs before retrying a flaky check.
+2. Run the narrow focused test or native phase that matches the changed
+   path. A direct Vitest run is appropriate for ordinary unit tests.
+3. Run `pnpm run validate:pr` once on the coherent patch. Serialize complete
+   native runs on a single host. For a resource-constrained local run,
+   `ARR_API_TEST_WORKERS=1 pnpm run validate:pr` limits SQLite workers without
+   changing deadlines or test selections.
+4. Record the exact source and tree, commands, outcomes, fixture versions,
+   independent review, and required hosted checks. Preserve original
+   attempts beside any targeted rerun. Use the repository review contract
+   and the project's authorized Spec Kit records for engineering evidence.
+
+If a native test stalls in setup, inspect the owned actor and database
+receipts, Docker health, temporary filesystem, free ports, and worker
+overlap. Preserve evidence when a child process or cleanup is uncertain.
+For rollback, stop only the owned test stack and remove its worktree through
+the same workspace tool after saving relevant evidence.
+
+### Assistant tools
+
+Use the existing authenticated GitHub connection for exact refs, hosted
+checks, and pull requests. Keep assignment approvals and progress in the
+maintainer's existing Google Drive workspace. Use the installed skills for
+systematic debugging, test-driven correction, independent review, worktree
+isolation, and verification before completion.
+
+Use Context7 for public version-specific dependency documentation and
+Firecrawl for bounded research on public upstream contracts. Verify exact
+versions against the lockfile and primary upstream documentation. Send only
+public lookup terms. Use the repository's Playwright CLI and traces for
+repeatable browser evidence. An optional browser MCP can add interactive
+inspection if already available in the authorized environment. Confirm the
+actual connection and available operations before using any plugin on a
+workspace. Design, project tracking, and telemetry integrations require their
+own task-specific scope.
 
 ## Critical Rules
 
@@ -68,6 +169,13 @@ discarding unmatched native items. The authenticated
 status contract is documented in [API-ROUTES.md](API-ROUTES.md).
 
 Inventory presence, ARR matching, and watch history are separate evidence.
+Jellyfin episode watch display uses two independent refresh paths: a verified
+full scan supplies row-local negative evidence, while a bounded, two-pass
+watched-only scan publishes newer positive rows on a five-minute schedule.
+Both are bound to the owned provider identity and inventory coordinates.
+Missing positive rows never imply unwatched; ambiguous or stale evidence stays
+unknown or last-known. The positive generation is display-only and cannot
+authorize cleanup or another upstream mutation.
 Positive watch-count cleanup uses target-specific Jellyfin or Tautulli/Plex
 proofs and revalidates provider identity, native item, and the positive threshold
 at execution. Generic display observations cannot substitute for that proof.
@@ -109,8 +217,12 @@ provider work; exhausted or ambiguous reads remain unknown.
 
 **Database Changes:**
 1. Edit `apps/api/prisma/schema.prisma`
-2. Run `pnpm --filter @arr/api run db:push` (syncs schema + regenerates client)
-3. No migrations — uses `db push` for multi-provider support (SQLite/PostgreSQL)
+2. Use `db:push` only on a disposable/development database, then run `db:generate` explicitly
+3. Run the offline registry authoring tool and review the generated SQLite/PostgreSQL SQL, metadata and compiled hash bindings together
+4. Test native startup against populated supported historical schemas, including failure/rollback/restart conservation; never infer upgrade safety from an empty development database
+
+Runtime startup does not use destination `db push`, runtime schema diff, arbitrary
+SQL, reset, or `--accept-data-loss`. See the native startup contract below.
 
 ## Trust & UX Correctness
 
@@ -148,11 +260,100 @@ ordinary reads:
 
 ## Database
 
-- Schema: `apps/api/prisma/schema.prisma` is the single source of truth
-- `pnpm --filter @arr/api run db:push` — sync schema to database (dev, also regenerates client)
+- Application schema: `apps/api/prisma/schema.prisma`; native migration receipts are runtime-only and are not Prisma application models
+- `pnpm --filter @arr/api run db:push` — schema synchronization for disposable/development databases only
 - `pnpm --filter @arr/api run db:generate` — regenerate Prisma client only
-- `pnpm --filter @arr/api run db:sync` — sync schema only, skip client regen (production)
 - SQLite default (`file:/config/prod.db`), PostgreSQL supported via `DATABASE_URL`
+
+### Native schema startup contract
+
+`src/schema-startup.ts` is a pre-launch actor, bundled as `dist/schema-startup.js`.
+The combined container runs it as the effective runtime UID before the API launcher
+or Web server. It dispatches to native SQLite/PostgreSQL writers and emits exactly
+`{apiPort,webPort,listenAddress}` only after the schema transaction and physical
+writer closure have been proved. A successfully read missing settings singleton
+returns nulls. A failed read, malformed schema or missing ownership evidence emits
+only a generic error category and exits nonzero, never healthy defaults.
+
+SQLite native startup requires an eligible local Linux directory volume. Local
+ZFS is eligible alongside the existing local filesystems; network and unknown
+filesystems, unproved platforms, and file-only database bind mounts remain
+refused. Eligibility does not grant ownership: canonical file/directory identity,
+destination-owned coordination, and provider-held operation locks are separate
+required checks. Keep the database and its WAL/SHM files on the same local host.
+For ZFS databases, retain synchronous-write guarantees (`sync=standard` or
+`sync=always`); do not use `sync=disabled` to improve test or refresh timings.
+
+After applying database > environment > default port precedence, startup publishes
+only the validated web port as private ephemeral metadata under
+`/tmp/arr-dashboard-runtime-health`. Docker's independent health process uses this
+port for a bounded loopback `/live` request; it never opens the database. Missing,
+corrupt or unsafe metadata fails closed, and failed publication prevents either
+service from starting. Database readiness remains the separate API `/health`
+check. Restart replaces the metadata before services start.
+
+The combined image builds complete SQLite and PostgreSQL API packages under
+`/app/api/providers/sqlite` and `/app/api/providers/postgresql`. Each keeps its
+compiled entrypoints/chunks/worker, schema, generated client, native assets and
+version metadata together, linking only to the shared production dependencies.
+Startup selects a fixed package from the connection scheme and validates its
+manifest, compiled provider and pinned Prisma version as the effective runtime
+user before opening the database. The native actor and launcher use the same
+package; there is no runtime generation, bundle rewrite or application-code chown.
+Heap diagnostics match the selected inner API process, never its launcher.
+
+`lib/backup/runtime-schema-registry.ts` loads the fixed assets under
+`prisma/runtime-schema/`. Their compiled hashes bind the normalized application
+schema, SQL bytes, metadata, dependencies and registered transitions. Native
+catalog readers preflight the entire destination before the first application
+DDL. Compatible custom columns, indexes, views and triggers survive; unknown or
+incompatible shapes require an explicit migration instead of guessed repair.
+The actual SQLite descriptor or PostgreSQL backend retains owner/exclusion
+through schema changes, the startup journal and the destination-local positive
+`ArrSchemaMigrationReceipt` transaction. Receipts are never backup payload data.
+Loss of COMMIT acknowledgement remains unknown, not asserted rollback or blind
+replay. SQLite retains DELETE/WAL mode, FK checks and original storage binding;
+an interrupted unanchored coordination namespace is not automatically deleted.
+
+SQLite startup also validates every registered application `DATETIME` value
+before creating coordination files or changing data. Under the same native
+transaction it converts exact epoch-millisecond, timezone-bearing ISO and
+SQLite UTC timestamps to fixed-width UTC ISO text with millisecond precision
+(`YYYY-MM-DDTHH:mm:ss.sss+00:00`). Non-date fields, row identities and unknown
+custom columns are preserved. Malformed, lossy, extended-year or unsafe triggered
+conversions refuse with `format-migration-required`; they never imply expiry or
+freshness. A destination-local `ArrRuntimeDataFormatReceipt` commits with the
+schema/control/binding records, is excluded from backup payloads, and must remain
+consistent on restart. It grants no Restore authority. PostgreSQL is unchanged.
+
+PostgreSQL startup and ordinary admission select the same single existing
+namespace: an explicit `schema` URL field, or the effective native role/connection
+search path when absent. Ambiguous, missing or malformed selections refuse;
+ordinary admission never creates a namespace. Each runtime pins its name and
+native namespace ID, and every control/pool connection verifies that identity.
+Prisma queries use that selected schema, not an unconditional `public` fallback.
+Changed session search paths or drop/recreate identity changes fence admission.
+Owner/operation locks remain database-wide, never split by schema name.
+
+To author registry assets, use:
+
+```bash
+pnpm --filter @arr/api exec tsx scripts/build-runtime-schema-registry.ts
+```
+
+This is an offline authoring operation, not a startup migration command. It uses
+installed public schema/dependency inputs and disposable native targets, including
+its pinned local PostgreSQL fixture; it never targets an owner database. Review
+the generated SQL/JSON and compiled bindings as one change, and validate native
+SQL/metadata equivalence plus populated compatibility before deployment.
+
+First guarded adoption requires stopping and waiting for every known older API/
+container before touching its database. An available new lock cannot establish
+legacy quiescence. Keep database snapshots and corresponding storage/coordination
+recovery evidence together; rehearse provider-supported recovery on a disposable
+target. The combined container uses database > environment > default port/address
+precedence. The standalone API's existing environment-first precedence is unchanged.
+See [Docker upgrade and rollback safety](../docker/README.md#upgrade-and-rollback-safety).
 
 ## Key Backend Patterns
 
@@ -193,6 +394,47 @@ pnpm run lint
 - Components using `useIncognitoMode()` require `<IncognitoProvider>` wrapper in tests
 - Per-package `tsc` runs can hide stale `@arr/shared` output; only the root Turbo
   typecheck after building shared matches CI
+- The full API test gate requires a running local Docker daemon. It prepares
+  current native SQLite actors inside the test task, then runs PostgreSQL
+  contracts serially with a privately generated PG client in a new loopback-only
+  disposable container. No configured application database URL is inherited.
+  Uncertain child closure retains private fixture files instead of deleting them.
+- For focused iteration, use `pnpm --filter @arr/api exec vitest run <test-file>`.
+  Native multi-process cases require the preparation performed by the full gate;
+  direct Vitest without those actors is not equivalent full-gate evidence.
+
+### API phases and CI partitions
+
+The default `pnpm --filter @arr/api test` still builds shared, runs the Node
+fixture/recovery harness, then runs SQLite followed by the three serial native
+PostgreSQL phases. Explicit commands select a narrower boundary:
+
+```bash
+pnpm --filter @arr/api run test:node       # Fixture, Docker recovery and phase-selector contracts
+pnpm --filter @arr/api run test:sqlite     # Shared build, owned SQLite actors and all SQLite suites
+pnpm --filter @arr/api run test:sqlite --shard=1/2
+pnpm --filter @arr/api run test:postgres   # Shared build and all three serial native PG phases
+pnpm run test:ci-workflow                 # Actual YAML wiring and fail-closed aggregate contract
+```
+
+`run-api-tests.mjs` accepts `--phase=all|sqlite|postgres` (default `all`). It rejects
+invalid or duplicate phases before fixture preparation. Vitest filters apply to
+SQLite; PostgreSQL-only mode rejects extra Vitest arguments. Each phase owns its
+native fixtures, forwards signals, waits for physical child exit, and retains
+private files on uncertain failure. PostgreSQL-only mode allocates no SQLite actor.
+
+CI runs quality checks first, then independent database, package, API, contract,
+heap, browser and Docker jobs. Four hosted SQLite shards use one worker each
+to avoid overlapping native fixture startup on the same runner. The SQLite
+driver also supports two or four workers for local runs. PostgreSQL runs once,
+serially, on its own runner. The existing
+`Lint, Type Check & Test` required check waits for all jobs and fails if any is
+failed, cancelled, skipped or missing. The root full-test command also includes
+the workflow contract; existing full PR verification remains required.
+
+Full CI selects eligible PR updates and stable `main` pushes. A standalone
+`release/**` push receives no full CI until an eligible PR exists; removing that
+push trigger avoids duplicate full qualification for release-branch PR updates.
 
 ## Pull request review workflow
 
@@ -208,9 +450,9 @@ Follow [`CODE-REVIEW.md`](CODE-REVIEW.md) for the finite review contract.
 
 ## Environment & Deployment
 
-**Docker** (single container): Port 3000 exposed, `/config/` volume contains `prod.db` + `secrets.json`. Startup: `docker/start-combined.sh`. Schema sync is fail-closed and never approves destructive changes automatically.
+**Docker** (single container): Port 3000 exposed, `/config/` volume contains `prod.db` + `secrets.json`. Startup: `docker/start-combined.sh` runs the native schema/settings actor before services; failure stops startup without automatic reset or destructive migration approval.
 
-**Runtime topology**: Stable 2.x supports exactly one arr-dashboard API/container per database. Multiple replicas sharing one SQLite or PostgreSQL database are unsupported. Caches, scheduler timers, event fan-out, and most runtime coordination are process-local and are not coordinated across API processes. A few library-cleanup workflows use database-backed leases, but those leases do not establish general API ownership or make a multi-API topology supported. Stable 2.x does not enforce this restriction; runtime enforcement is tracked by [#829](https://github.com/Kha-kis/arr-dashboard/issues/829).
+**Runtime topology**: Stable 2.x supports exactly one arr-dashboard API/container per database. Multiple replicas sharing one SQLite or PostgreSQL database are unsupported. Native ownership guards reject competing cooperating actors; they do not authorize replicas, older unguarded processes, or external database writers. Caches, scheduler timers and event fan-out remain process-local. Stop and wait for known legacy actors before first guarded adoption.
 
 **Key env vars**: `DATABASE_URL`, `API_PORT` (3001), `PORT` (3000), `HOST` (0.0.0.0), `PUID`/`PGID`, `SESSION_TTL_HOURS` (24), `ENCRYPTION_KEY` (auto-generated), `SESSION_COOKIE_SECRET` (auto-generated), `WEBAUTHN_RP_ID`, `WEBAUTHN_ORIGIN`.
 

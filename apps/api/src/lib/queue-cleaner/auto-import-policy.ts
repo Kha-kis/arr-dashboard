@@ -1,0 +1,86 @@
+import { loggers } from "../logger.js";
+import type { QueueCleanerConfig, QueueCleanerStrike } from "../prisma.js";
+import { isString, parseJsonArray } from "../utils/json.js";
+import { AUTO_IMPORT_NEVER_KEYWORDS, AUTO_IMPORT_SAFE_KEYWORDS } from "./constants.js";
+import { matchesKeywords } from "./queue-item-utils.js";
+
+const log = loggers.queueCleaner;
+
+/**
+ * Evaluate if an item is eligible for auto-import.
+ *
+ * @param statusTexts - Status messages from the queue item
+ * @param config - Queue cleaner config with auto-import settings
+ * @param existingStrike - Existing strike record (if any) with import attempt tracking
+ * @param now - Current timestamp
+ * @returns Eligibility status and reason
+ */
+export function evaluateAutoImportEligibility(
+	statusTexts: string[],
+	config: QueueCleanerConfig,
+	existingStrike: QueueCleanerStrike | null,
+	now: Date,
+): { eligible: boolean; reason: string } {
+	if (!config.autoImportEnabled) {
+		return { eligible: false, reason: "Auto-import disabled" };
+	}
+
+	const maxAttempts = config.autoImportMaxAttempts;
+	const attempts = existingStrike?.importAttempts ?? 0;
+	if (attempts >= maxAttempts) {
+		return { eligible: false, reason: `Max attempts reached (${attempts}/${maxAttempts})` };
+	}
+
+	const cooldownMins = config.autoImportCooldownMins;
+	if (existingStrike?.lastImportAttempt) {
+		const cooldownMs = cooldownMins * 60 * 1000;
+		const timeSinceLastAttempt = now.getTime() - existingStrike.lastImportAttempt.getTime();
+		if (timeSinceLastAttempt < cooldownMs) {
+			const remainingMins = Math.ceil((cooldownMs - timeSinceLastAttempt) / 60000);
+			return { eligible: false, reason: `Cooldown active (${remainingMins}m remaining)` };
+		}
+	}
+
+	const neverMatch = matchesKeywords(statusTexts, AUTO_IMPORT_NEVER_KEYWORDS);
+	if (neverMatch) {
+		return { eligible: false, reason: `Cannot auto-import: ${neverMatch}` };
+	}
+
+	const customNeverPatterns = parseJsonArray(
+		config.autoImportNeverPatterns,
+		isString,
+		"autoImportNeverPatterns",
+		log,
+		{ configId: config.id },
+	);
+	if (customNeverPatterns.length > 0) {
+		const customNeverMatch = matchesKeywords(statusTexts, customNeverPatterns);
+		if (customNeverMatch) {
+			return { eligible: false, reason: `Blocked by custom pattern: ${customNeverMatch}` };
+		}
+	}
+
+	if (config.autoImportSafeOnly) {
+		const safeMatch = matchesKeywords(statusTexts, AUTO_IMPORT_SAFE_KEYWORDS);
+
+		let customMatch: string | null = null;
+		if (!safeMatch) {
+			const customPatterns = parseJsonArray(
+				config.autoImportCustomPatterns,
+				isString,
+				"autoImportCustomPatterns",
+				log,
+				{ configId: config.id },
+			);
+			if (customPatterns.length > 0) {
+				customMatch = matchesKeywords(statusTexts, customPatterns);
+			}
+		}
+
+		if (!safeMatch && !customMatch) {
+			return { eligible: false, reason: "No safe pattern matched (safeOnly mode)" };
+		}
+	}
+
+	return { eligible: true, reason: "Eligible for auto-import" };
+}

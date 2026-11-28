@@ -1,6 +1,6 @@
 "use client";
 
-import type { ServiceInstanceSummary } from "@arr/shared";
+import type { CalendarAvailability, ServiceInstanceSummary } from "@arr/shared";
 import { CalendarDays } from "lucide-react";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import type { DeduplicatedCalendarItem } from "../hooks/use-calendar-data";
@@ -8,6 +8,7 @@ import { formatLongDate } from "../lib/calendar-formatters";
 import { CalendarEventCard } from "./calendar-event-card";
 
 interface CalendarEventListProps {
+	availability: CalendarAvailability | "last-known";
 	selectedDate: Date | null;
 	selectedEvents: DeduplicatedCalendarItem[];
 	serviceMap: Map<string, ServiceInstanceSummary>;
@@ -16,6 +17,7 @@ interface CalendarEventListProps {
 }
 
 export const CalendarEventList = ({
+	availability,
 	selectedDate,
 	selectedEvents,
 	serviceMap,
@@ -79,7 +81,17 @@ export const CalendarEventList = ({
 							<CalendarDays className="h-6 w-6" style={{ color: `${themeGradient.from}25` }} />
 						</div>
 						<p className="text-xs text-muted-foreground/25 font-medium">
-							{selectedDate ? "No scheduled items for this date" : "Select a date to view events"}
+							{availability === "available"
+								? selectedDate
+									? "No scheduled items for this date"
+									: "Select a date to view events"
+								: availability === "partial"
+									? "No known items for this date; schedule coverage is incomplete."
+									: availability === "last-known"
+										? "No last-known items for this date; current schedules are unverified."
+										: availability === "not-configured"
+											? "Choose or configure a calendar source to view schedules."
+											: "Schedules for this date could not be verified."}
 						</p>
 					</div>
 				) : (

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	computeForecast,
+	createForecastAccumulator,
 	linearRegression,
 	type SnapshotForForecast,
 } from "../lib/forecast-helpers.js";
@@ -10,6 +11,26 @@ function snapshot(capturedAt: string, bandwidth: number, concurrent = 1): Snapsh
 		capturedAt: new Date(capturedAt),
 		totalBandwidth: bandwidth,
 		concurrentStreams: concurrent,
+		measurementJson: JSON.stringify({
+			version: 1,
+			provider: "PLEX",
+			status: "active",
+			observedSessions: concurrent,
+			bandwidthBasis: "provider-reported",
+			bandwidth: {
+				status: "complete",
+				observedSessions: concurrent,
+				measuredSessions: concurrent,
+				knownTotalKbps: bandwidth,
+			},
+			methods: {
+				directPlayCount: 0,
+				transcodeCount: 0,
+				directStreamCount: 0,
+				unknownDecisionCount: concurrent,
+			},
+			network: { status: "unavailable", lanKbps: null, wanKbps: null },
+		}),
 	};
 }
 
@@ -43,7 +64,7 @@ describe("computeForecast", () => {
 		const result = computeForecast([]);
 		expect(result.historicalDaily).toEqual([]);
 		expect(result.forecast).toEqual([]);
-		expect(result.trend).toBe("stable");
+		expect(result.trend).toBe("unknown");
 	});
 
 	it("computes daily historical averages and peaks", () => {
@@ -94,5 +115,68 @@ describe("computeForecast", () => {
 
 		const result = computeForecast(snapshots);
 		expect(result.trend).toBe("increasing");
+	});
+
+	it("groups daily and hourly sums across uneven pages before rounding and regression", () => {
+		const accumulator = createForecastAccumulator();
+		accumulator.addSnapshots([snapshot("2025-08-01T14:00:00Z", 2, 1)]);
+		accumulator.addSnapshots([
+			snapshot("2025-08-01T14:30:00Z", 4, 3),
+			snapshot("2025-08-02T14:00:00Z", 6, 5),
+		]);
+
+		const result = accumulator.getResult();
+		expect(result.historicalDaily).toMatchObject([
+			{ date: "2025-08-01", avgBandwidth: 3, peakBandwidth: 4 },
+			{ date: "2025-08-02", avgBandwidth: 6, peakBandwidth: 6 },
+		]);
+		expect(result.peakHours).toMatchObject([{ hour: 14, avgConcurrent: 3, avgBandwidth: 4 }]);
+		expect(result.forecast.slice(0, 2)).toEqual([
+			{ date: "2025-08-03", predictedPeak: 8 },
+			{ date: "2025-08-04", predictedPeak: 10 },
+		]);
+		expect(result.trend).toBe("increasing");
+		expect(accumulator.getResult()).toEqual(
+			computeForecast([
+				snapshot("2025-08-01T14:00:00Z", 2, 1),
+				snapshot("2025-08-01T14:30:00Z", 4, 3),
+				snapshot("2025-08-02T14:00:00Z", 6, 5),
+			]),
+		);
+	});
+
+	it("projects increasing, decreasing, and constant peaks from the next historical index", () => {
+		const forecastPairs = [
+			{
+				name: "increasing",
+				first: 100,
+				second: 200,
+				want: [300, 400],
+			},
+			{
+				name: "decreasing",
+				first: 300,
+				second: 200,
+				want: [100, 0],
+			},
+			{
+				name: "constant",
+				first: 200,
+				second: 200,
+				want: [200, 200],
+			},
+		];
+
+		for (const { name, first, second, want } of forecastPairs) {
+			const accumulator = createForecastAccumulator();
+			accumulator.addSnapshots([
+				snapshot("2025-10-01T12:00:00Z", first),
+				snapshot("2025-10-02T12:00:00Z", second),
+			]);
+			expect(accumulator.getResult().forecast.slice(0, 2), name).toEqual([
+				{ date: "2025-10-03", predictedPeak: want[0] },
+				{ date: "2025-10-04", predictedPeak: want[1] },
+			]);
+		}
 	});
 });

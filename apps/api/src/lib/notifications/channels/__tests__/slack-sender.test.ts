@@ -138,7 +138,7 @@ describe("slackSender", () => {
 
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(true);
-		expect(result.error).toContain("429");
+		expect(result.failureCategory).toBe("rate-limited");
 	});
 
 	it("returns non-retryable on 4xx", async () => {
@@ -153,6 +153,6 @@ describe("slackSender", () => {
 
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(false);
-		expect(result.error).toContain("400");
+		expect(result.failureCategory).toBe("rejected");
 	});
 });

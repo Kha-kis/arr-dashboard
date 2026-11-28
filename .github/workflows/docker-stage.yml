@@ -1,0 +1,320 @@
+name: Qualify Immutable Release Candidate
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha: {description: Exact main source SHA, required: true, type: string}
+      version: {description: Exact package version, required: true, type: string}
+concurrency:
+  group: release-candidate-${{ inputs.version }}-${{ inputs.source_sha }}
+  cancel-in-progress: false
+permissions: {contents: read}
+env:
+  DOCKERHUB_IMAGE: khak1s/arr-dashboard
+  GHCR_IMAGE: ghcr.io/kha-kis/arr-dashboard
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      source: ${{ steps.identity.outputs.source }}
+      tree: ${{ steps.identity.outputs.tree }}
+      version: ${{ steps.identity.outputs.version }}
+      date: ${{ steps.identity.outputs.date }}
+      tag: ${{ steps.identity.outputs.tag }}
+    steps:
+      - name: Require canonical main and exact source
+        env:
+          REF: "${{ github.ref }}"
+          REPOSITORY: "${{ github.repository }}"
+          ATTEMPT: "${{ github.run_attempt }}"
+          SHA: "${{ github.sha }}"
+          INPUT_SHA: "${{ inputs.source_sha }}"
+          INPUT_VERSION: "${{ inputs.version }}"
+        run: |
+          set -euo pipefail
+          test "$REPOSITORY" = Kha-kis/arr-dashboard && test "$REF" = refs/heads/main && test "$SHA" = "$INPUT_SHA" && test "$ATTEMPT" = 1
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ && "$INPUT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+            ref: "${{ github.sha }}"
+            persist-credentials: "false"
+      - name: Require dispatch source remains current main
+        env:
+          INPUT_SHA: "${{ inputs.source_sha }}"
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          test "$(git rev-parse FETCH_HEAD)" = "$INPUT_SHA"
+      - id: identity
+        env:
+          INPUT_SHA: "${{ inputs.source_sha }}"
+          INPUT_VERSION: "${{ inputs.version }}"
+          RUN_ID: "${{ github.run_id }}"
+          ATTEMPT: "${{ github.run_attempt }}"
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$INPUT_SHA" && test -z "$(git status --porcelain)"
+          test "$(node -p 'require("./package.json").version')" = "$INPUT_VERSION"
+          echo "source=$INPUT_SHA" >> "$GITHUB_OUTPUT"
+          echo "tree=$(git rev-parse HEAD^{tree})" >> "$GITHUB_OUTPUT"
+          echo "version=$INPUT_VERSION" >> "$GITHUB_OUTPUT"
+          echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+          echo "tag=candidate-$INPUT_VERSION-$RUN_ID-$ATTEMPT" >> "$GITHUB_OUTPUT"
+  build:
+    needs: preflight
+    runs-on: ${{ matrix.runner }}
+    permissions: {contents: read, packages: write}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: amd64, platform: linux/amd64, runner: ubuntu-latest}
+          - {arch: arm64, platform: linux/arm64, runner: ubuntu-24.04-arm}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+            ref: "${{ needs.preflight.outputs.source }}"
+            persist-credentials: "false"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+            username: "${{ secrets.DOCKERHUB_USERNAME }}"
+            password: "${{ secrets.DOCKERHUB_TOKEN }}"
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+            registry: "ghcr.io"
+            username: "${{ github.actor }}"
+            password: "${{ secrets.GITHUB_TOKEN }}"
+      - name: Require native architecture build host
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          if [[ "$ARCH" == amd64 ]]; then test "$(uname -m)" = x86_64; else test "$(uname -m)" = aarch64; fi
+      - id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          provenance: "mode=max,version=v1"
+          sbom: true
+          push: true
+          tags: |
+            ${{ env.DOCKERHUB_IMAGE }}:${{ needs.preflight.outputs.tag }}-${{ matrix.arch }}
+            ${{ env.GHCR_IMAGE }}:${{ needs.preflight.outputs.tag }}-${{ matrix.arch }}
+          build-args: |
+            VERSION=${{ needs.preflight.outputs.version }}
+            COMMIT_SHA=${{ needs.preflight.outputs.source }}
+            BUILD_DATE=${{ needs.preflight.outputs.date }}
+          cache-from: type=registry,ref=${{ env.DOCKERHUB_IMAGE }}:buildcache-linux-${{ matrix.arch }}
+          cache-to: type=registry,ref=${{ env.DOCKERHUB_IMAGE }}:buildcache-linux-${{ matrix.arch }},mode=max
+      - env:
+          ARCH: "${{ matrix.arch }}"
+          DIGEST: "${{ steps.build.outputs.digest }}"
+        run: |
+          set -euo pipefail
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          mkdir -p "$RUNNER_TEMP/build"
+          printf '{"architecture":"%s","digest":"%s"}\n' "$ARCH" "$DIGEST" > "$RUNNER_TEMP/build/$ARCH.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: "build-${{ matrix.arch }}"
+          path: "${{ runner.temp }}/build/${{ matrix.arch }}.json"
+          if-no-files-found: "error"
+  verify:
+    needs: [preflight, build]
+    runs-on: ${{ matrix.runner }}
+    permissions: {contents: read}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arch: amd64, platform: linux/amd64, runner: ubuntu-latest}
+          - {arch: arm64, platform: linux/arm64, runner: ubuntu-24.04-arm}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+            ref: "${{ needs.preflight.outputs.source }}"
+            persist-credentials: "false"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+            node-version: "24"
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5.0.0
+        with:
+            version: "10.33.0"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: "build-${{ matrix.arch }}"
+          path: "${{ runner.temp }}/build"
+      - id: digest
+        env:
+          ARCH: ${{ matrix.arch }}
+          PLATFORM: ${{ matrix.platform }}
+          TAG: ${{ needs.preflight.outputs.tag }}
+          SOURCE: ${{ needs.preflight.outputs.source }}
+          VERSION: ${{ needs.preflight.outputs.version }}
+          BUILD_DATE: ${{ needs.preflight.outputs.date }}
+        run: |
+          set -euo pipefail
+          digest="$(node -p 'require(process.env.RUNNER_TEMP + "/build/" + process.env.ARCH + ".json").digest')"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          image="$GHCR_IMAGE@$digest"
+          mkdir -p "$RUNNER_TEMP/release"
+          docker buildx imagetools inspect --raw "$image" > "$RUNNER_TEMP/release/native-index.json"
+          manifest="$(jq -er --arg arch "$ARCH" '[.manifests[] | select(.platform.os == "linux" and .platform.architecture == $arch) | .digest] | if length == 1 then .[0] else error("expected one runtime manifest") end' "$RUNNER_TEMP/release/native-index.json")"
+          child="$GHCR_IMAGE@$manifest"
+          docker buildx imagetools inspect --raw "$child" > "$RUNNER_TEMP/release/native-manifest.json"
+          config="$(jq -er '.config.digest' "$RUNNER_TEMP/release/native-manifest.json")"
+          docker pull --platform "$PLATFORM" "$child"
+          test "$(docker image inspect --format '{{.Architecture}}' "$child")" = "$ARCH"
+          test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$child")" = "$SOURCE"
+          test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$child")" = "$VERSION"
+          test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.created"}}' "$child")" = "$BUILD_DATE"
+          echo "index_digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "manifest_digest=$manifest" >> "$GITHUB_OUTPUT"
+          echo "config_digest=$config" >> "$GITHUB_OUTPUT"
+          echo "image=$child" >> "$GITHUB_OUTPUT"
+      - env:
+          CANDIDATE_IMAGE: "${{ steps.digest.outputs.image }}"
+          CANDIDATE_DIGEST: "${{ steps.digest.outputs.index_digest }}"
+          CANDIDATE_MANIFEST_DIGEST: "${{ steps.digest.outputs.manifest_digest }}"
+          CONFIG_DIGEST: "${{ steps.digest.outputs.config_digest }}"
+          SOURCE_SHA: "${{ needs.preflight.outputs.source }}"
+          SOURCE_TREE: "${{ needs.preflight.outputs.tree }}"
+          VERSION: "${{ needs.preflight.outputs.version }}"
+          BUILD_DATE: "${{ needs.preflight.outputs.date }}"
+          ARCH: "${{ matrix.arch }}"
+          RUN_ID: "${{ github.run_id }}"
+        run: bash scripts/release-native-verify.sh
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        env:
+          TRIVY_IMAGE_SRC: docker
+        with:
+            image-ref: ${{ steps.digest.outputs.image }}
+            format: json
+            output: ${{ runner.temp }}/trivy.json
+            severity: HIGH,CRITICAL
+            exit-code: '1'
+            scanners: vuln
+            timeout: '20m'
+      - name: Require OS and Node scan coverage and finalize receipt
+        env:
+          REPORT: ${{ runner.temp }}/trivy.json
+          ARCH: ${{ matrix.arch }}
+          CANDIDATE_IMAGE: ${{ steps.digest.outputs.image }}
+          CANDIDATE_MANIFEST_DIGEST: ${{ steps.digest.outputs.manifest_digest }}
+          CONFIG_DIGEST: ${{ steps.digest.outputs.config_digest }}
+          NATIVE_RECEIPT: ${{ runner.temp }}/release-receipt.json
+          QUALIFIED_RECEIPT: ${{ runner.temp }}/qualified/${{ matrix.arch }}.json
+        run: |
+          set -euo pipefail
+          python3 scripts/release_scan.py \
+            --report "$REPORT" \
+            --architecture "$ARCH" \
+            --image-ref "$CANDIDATE_IMAGE" \
+            --manifest-digest "$CANDIDATE_MANIFEST_DIGEST" \
+            --config-digest "$CONFIG_DIGEST" \
+            --receipt "$NATIVE_RECEIPT" \
+            --output "$QUALIFIED_RECEIPT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+            name: "qualified-${{ matrix.arch }}"
+            path: "${{ runner.temp }}/qualified/${{ matrix.arch }}.json"
+            if-no-files-found: "error"
+            retention-days: "2"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: "release-candidate-evidence-${{ matrix.arch }}-${{ github.run_attempt }}"
+          path: |
+            ${{ runner.temp }}/trivy.json
+            ${{ runner.temp }}/release/playwright.json
+            ${{ runner.temp }}/release/sqlite-storage.json
+          if-no-files-found: error
+          retention-days: 90
+  assemble:
+    needs: [preflight, build, verify]
+    runs-on: ubuntu-latest
+    permissions: {contents: read, packages: write}
+    outputs:
+      index: ${{ steps.index.outputs.digest }}
+      source: ${{ needs.preflight.outputs.source }}
+      tree: ${{ needs.preflight.outputs.tree }}
+      version: ${{ needs.preflight.outputs.version }}
+      date: ${{ needs.preflight.outputs.date }}
+      run_id: ${{ github.run_id }}
+      run_attempt: ${{ github.run_attempt }}
+    steps:
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+            username: "${{ secrets.DOCKERHUB_USERNAME }}"
+            password: "${{ secrets.DOCKERHUB_TOKEN }}"
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+            registry: "ghcr.io"
+            username: "${{ github.actor }}"
+            password: "${{ secrets.GITHUB_TOKEN }}"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+            pattern: "build-*"
+            path: "${{ runner.temp }}/digests"
+      - env:
+          TAG: "${{ needs.preflight.outputs.tag }}"
+          ROOT: "${{ runner.temp }}/digests"
+        run: |
+          set -euo pipefail
+          amd="$(node -p 'require(process.env.ROOT + "/build-amd64/amd64.json").digest')"
+          arm="$(node -p 'require(process.env.ROOT + "/build-arm64/arm64.json").digest')"
+          docker buildx imagetools create --prefer-index=false --tag "$DOCKERHUB_IMAGE:$TAG" "$DOCKERHUB_IMAGE@$amd" "$DOCKERHUB_IMAGE@$arm"
+          docker buildx imagetools create --prefer-index=false --tag "$GHCR_IMAGE:$TAG" "$GHCR_IMAGE@$amd" "$GHCR_IMAGE@$arm"
+          mkdir -p "$RUNNER_TEMP"
+          docker buildx imagetools inspect "$GHCR_IMAGE:$TAG" --raw > "$RUNNER_TEMP/index.json"
+      - id: index
+        env:
+          TAG: "${{ needs.preflight.outputs.tag }}"
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect "$GHCR_IMAGE:$TAG" --format '{{json .Manifest}}' | jq -er '.digest' > "$RUNNER_TEMP/final-index-digest.txt"
+          echo "digest=$(cat "$RUNNER_TEMP/final-index-digest.txt")" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: "candidate-index"
+          path: "${{ runner.temp }}/index.json"
+          if-no-files-found: "error"
+  qualify:
+    needs: [assemble, verify]
+    if: ${{ needs.assemble.result == 'success' && needs.verify.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions: {contents: read}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+            ref: "${{ needs.assemble.outputs.source }}"
+            persist-credentials: "false"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+            pattern: "qualified-*"
+            path: "${{ runner.temp }}/inputs"
+      - env:
+          VERSION: "${{ needs.assemble.outputs.version }}"
+          SOURCE: "${{ needs.assemble.outputs.source }}"
+          TREE: "${{ needs.assemble.outputs.tree }}"
+          BUILD_DATE: "${{ needs.assemble.outputs.date }}"
+          RUN_ID: "${{ github.run_id }}"
+          RUN_ATTEMPT: "${{ github.run_attempt }}"
+          INDEX: "${{ needs.assemble.outputs.index }}"
+        run: |
+          set -euo pipefail
+          python3 scripts/release_registry.py qualify --version "$VERSION" --source "$SOURCE" --tree "$TREE" --build-date "$BUILD_DATE" --run-id "$RUN_ID" --run-attempt "$RUN_ATTEMPT" --index "$INDEX" --amd64 "$RUNNER_TEMP/inputs/qualified-amd64/amd64.json" --arm64 "$RUNNER_TEMP/inputs/qualified-arm64/arm64.json" --output release-qualification.json
+          sha256sum release-qualification.json | tee -a "$GITHUB_STEP_SUMMARY"
+          jq -r ".source, .tree, .indexDigest, .platforms.amd64.manifestDigest, .platforms.arm64.manifestDigest" release-qualification.json >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.registries | to_entries[] | .key + " " + .value.indexDigest + " " + .value.amd64 + " " + .value.arm64' release-qualification.json >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: "release-qualification-attempt-${{ github.run_attempt }}"
+          path: "release-qualification.json"
+          if-no-files-found: "error"
+          retention-days: "90"

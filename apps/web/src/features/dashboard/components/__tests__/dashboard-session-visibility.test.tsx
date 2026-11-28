@@ -75,11 +75,11 @@ describe("Dashboard session visibility", () => {
 			availability: { status: "complete", configuredSources: 2, availableSources: 2 },
 		});
 		mount();
-		await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/overlap/i));
+		await waitFor(() => expect(screen.getByText(/overlap/i)).toHaveAttribute("role", "status"));
 		const activity = screen.getByRole("tab", { name: "Activity" });
 		expect(within(activity).queryByText(/^\d+$/)).not.toBeInTheDocument();
 		fireEvent.click(activity);
-		expect(screen.getByRole("status")).toHaveTextContent(/overlap/i);
+		expect(screen.getByText(/overlap/i)).toHaveAttribute("role", "status");
 		expect(screen.queryByText(/No active streams right now/)).not.toBeInTheDocument();
 	});
 	it("keeps Activity reachable and shows the overview warning when the session count is unknown", async () => {
@@ -88,10 +88,14 @@ describe("Dashboard session visibility", () => {
 		await waitFor(() => expect(fetchNowPlaying).toHaveBeenCalled());
 		const activity = screen.getByRole("tab", { name: "Activity" });
 		expect(within(activity).queryByText(/^\d+$/)).not.toBeInTheDocument();
-		await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/unavailable/i));
+		await waitFor(() =>
+			expect(screen.getByText(/Session refresh is unavailable/i)).toHaveAttribute("role", "status"),
+		);
 		fireEvent.click(activity);
 		expect(activity).toHaveAttribute("aria-selected", "true");
-		await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/unavailable/i));
+		await waitFor(() =>
+			expect(screen.getByText(/Session refresh is unavailable/i)).toHaveAttribute("role", "status"),
+		);
 	});
 	it("keeps a selected Activity tab reachable across failed refetch and recovery", async () => {
 		vi.mocked(fetchNowPlaying).mockResolvedValue({
@@ -108,7 +112,11 @@ describe("Dashboard session visibility", () => {
 			await client.invalidateQueries({ queryKey: plexKeys.nowPlaying() });
 		});
 		expect(screen.getByRole("tab", { name: "Activity" })).toHaveAttribute("aria-selected", "true");
-		await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent(/stale/i));
+		await waitFor(() => {
+			const notice = screen.getByText(/Session refresh is unavailable/i);
+			expect(notice).toHaveAttribute("role", "status");
+			expect(notice).toHaveTextContent(/stale/i);
+		});
 		expect(screen.queryByText(/No active streams right now/)).not.toBeInTheDocument();
 		vi.mocked(fetchNowPlaying).mockResolvedValue({
 			sessions: [],

@@ -7,6 +7,7 @@
  */
 
 import { loggers } from "../logger.js";
+import { retainCleanupOperation } from "../library-cleanup/cleanup-maintenance-gate.js";
 import type { NotificationPayload } from "./types.js";
 
 export interface AggregationConfig {
@@ -15,17 +16,30 @@ export interface AggregationConfig {
 	maxBatchSize: number;
 }
 
+export interface AggregationScope {
+	userId: string;
+	recipientChannelIds: string[];
+}
+
 interface Bucket {
 	items: NotificationPayload[];
-	timer: ReturnType<typeof setTimeout>;
+	timer: ReturnType<typeof setTimeout> | null;
 	config: AggregationConfig;
+	scope: AggregationScope;
+	operation: ReturnType<typeof retainCleanupOperation>;
 }
 
 export class AggregationBuffer {
 	private buckets = new Map<string, Bucket>();
-	private flushCallback: (digest: NotificationPayload) => Promise<void>;
+	private admissionClosed = false;
+	private timersPaused = false;
+	private pendingFlushes = new Set<Promise<void>>();
+	private shutdownPromise: Promise<void> | null = null;
+	private flushCallback: (digest: NotificationPayload, scope: AggregationScope) => Promise<void>;
 
-	constructor(flushCallback: (digest: NotificationPayload) => Promise<void>) {
+	constructor(
+		flushCallback: (digest: NotificationPayload, scope: AggregationScope) => Promise<void>,
+	) {
 		this.flushCallback = flushCallback;
 	}
 
@@ -41,19 +55,30 @@ export class AggregationBuffer {
 	 * Returns true if the payload was aggregated (caller should NOT dispatch immediately).
 	 * Returns false if no aggregation config exists (caller should dispatch normally).
 	 */
-	push(payload: NotificationPayload, config: AggregationConfig): boolean {
-		const key = payload.eventType;
+	push(payload: NotificationPayload, config: AggregationConfig, scope: AggregationScope): boolean {
+		if (this.admissionClosed) throw new Error("Notification aggregation is shutting down");
+		const recipientChannelIds = [...new Set(scope.recipientChannelIds)].sort();
+		const normalizedScope = { userId: scope.userId, recipientChannelIds };
+		const key = JSON.stringify([payload.eventType, scope.userId, recipientChannelIds]);
 		let bucket = this.buckets.get(key);
 
 		if (!bucket) {
-			// Start a new bucket with a flush timer
-			const timer = setTimeout(() => {
-				this.flushBucket(key);
-			}, config.windowSeconds * 1000);
-			timer.unref();
+			const operation = retainCleanupOperation();
+			try {
+				// Start a new bucket with a flush timer
+				const timer = this.timersPaused
+					? null
+					: setTimeout(() => {
+							if (!this.admissionClosed && !this.timersPaused) this.flushBucket(key);
+						}, config.windowSeconds * 1000);
+				timer?.unref();
 
-			bucket = { items: [], timer, config };
-			this.buckets.set(key, bucket);
+				bucket = { items: [], timer, config, scope: normalizedScope, operation };
+				this.buckets.set(key, bucket);
+			} catch (error) {
+				void operation.release();
+				throw error;
+			}
 		}
 
 		bucket.items.push(payload);
@@ -73,16 +98,30 @@ export class AggregationBuffer {
 		const bucket = this.buckets.get(key);
 		if (!bucket || bucket.items.length === 0) return;
 
-		clearTimeout(bucket.timer);
+		if (bucket.timer) clearTimeout(bucket.timer);
 		this.buckets.delete(key);
 
-		const digest = this.buildDigest(bucket.items, key);
-		this.flushCallback(digest).catch((err) => {
-			loggers.notifications.warn(
-				{ err },
-				"Aggregation flush failed — batched notifications may be lost",
-			);
+		const digest = this.buildDigest(bucket.items, bucket.config.eventType);
+		// A removed bucket can still have an active delivery; register before invoking it.
+		let settle!: () => void;
+		const completion = new Promise<void>((resolve) => {
+			settle = resolve;
 		});
+		this.pendingFlushes.add(completion);
+		void (async () => {
+			try {
+				await bucket.operation.run(() => this.flushCallback(digest, bucket.scope));
+			} catch (err) {
+				loggers.notifications.warn(
+					{ err },
+					"Aggregation flush failed — batched notifications may be lost",
+				);
+			} finally {
+				await bucket.operation.release();
+				this.pendingFlushes.delete(completion);
+				settle();
+			}
+		})();
 	}
 
 	/**
@@ -116,6 +155,34 @@ export class AggregationBuffer {
 		for (const key of [...this.buckets.keys()]) {
 			this.flushBucket(key);
 		}
+	}
+
+	/** Stop automatic flushes while already-admitted producers finish enqueueing. */
+	pauseTimers(): void {
+		this.timersPaused = true;
+		for (const bucket of this.buckets.values()) {
+			if (bucket.timer) clearTimeout(bucket.timer);
+		}
+	}
+
+	/** Stop new aggregation and timer admission without discarding accepted buckets. */
+	closeAdmission(): void {
+		this.admissionClosed = true;
+		this.pauseTimers();
+	}
+
+	/** Flush accepted buckets and drain all callbacks before their dependencies close. */
+	shutdown(): Promise<void> {
+		this.closeAdmission();
+		if (!this.shutdownPromise) {
+			this.shutdownPromise = (async () => {
+				this.flushAll();
+				while (this.pendingFlushes.size > 0) {
+					await Promise.all(this.pendingFlushes);
+				}
+			})();
+		}
+		return this.shutdownPromise;
 	}
 
 	get pendingCount(): number {

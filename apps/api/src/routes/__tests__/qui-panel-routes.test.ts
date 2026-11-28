@@ -42,6 +42,11 @@ const mockQuiClient = vi.hoisted(() => ({
 vi.mock("../../lib/library-sync/infohash-backfill-by-inode.js", () => ({
 	buildFileIdIndex: (...args: unknown[]) => mockBuildFileIdIndex(...args),
 	getAllHashesForFileId: (...args: unknown[]) => mockGetAllHashesForFileId(...args),
+	getAllHashesForFileIdWithPathEvidence: async (...args: unknown[]) => ({
+		hashes: await mockGetAllHashesForFileId(...args),
+		pathVerified: true,
+		correlationComplete: true,
+	}),
 }));
 
 vi.mock("../../lib/qui/client-factory.js", () => ({
@@ -82,6 +87,7 @@ function createMockPrisma() {
 		serviceInstance: {
 			findMany: vi.fn().mockResolvedValue([]),
 			findFirst: vi.fn().mockResolvedValue(null),
+			count: vi.fn().mockResolvedValue(1),
 		},
 	};
 }
@@ -127,6 +133,77 @@ afterAll(async () => {
 // ----------------------------------------------------------------------
 
 describe("GET /qui/series/:arrInstanceId/:arrItemId/torrents — input + ownership", () => {
+	it("does not count or publish a legacy inode episode without a current match", async () => {
+		mockPrisma.libraryCache.findFirst.mockResolvedValue({
+			id: "series-1",
+			title: "Synthetic Series",
+		});
+		mockPrisma.episodeFileCache.findMany.mockResolvedValue([
+			{
+				id: "episode-file-1",
+				arrEpisodeFileId: 1,
+				seasonNumber: 1,
+				relativePath: "Season 01/file.mkv",
+				path: "/series/synthetic/file.mkv",
+				size: 1_000n,
+				qualityName: null,
+				releaseGroup: null,
+				infoHash: "legacy-hash",
+				infoHashSource: "inode",
+			},
+		]);
+		mockPrisma.serviceInstance.findFirst.mockResolvedValue({
+			id: "qui-1",
+			userId: "user-1",
+			service: "QUI",
+			enabled: true,
+			hasLocalFilesystemAccess: true,
+		});
+		mockEnrichTorrentHashes.mockResolvedValue(
+			new Map([
+				[
+					"legacy-hash",
+					{
+						hash: "legacy-hash",
+						role: "library",
+						tracker: null,
+						quiUnreachable: false,
+						numSeeds: 1,
+						numLeechs: 0,
+						ratio: 1,
+						state: "pausedUP",
+					},
+				],
+			]),
+		);
+		const res = await injectAuthenticated("GET", "/qui/series/sonarr-1/42/torrents");
+		expect(res.statusCode).toBe(200);
+		const body = JSON.parse(res.payload);
+		expect(body.clusters).toEqual([]);
+		expect(body.viaInodeEpisodes).toBe(0);
+		expect(body.coverageStatus).toBe("partial");
+		expect(body.stuckEpisodes).toBe(0);
+		expect(body.actionItems).not.toContainEqual(
+			expect.objectContaining({ kind: "stuck_episodes" }),
+		);
+		mockBuildFileIdIndex.mockResolvedValue({
+			byFileId: new Map(),
+			statted: 0,
+			skippedNoLinks: 0,
+			skippedUnstatable: 0,
+			inventoryComplete: true,
+			incompleteDirectoryWalks: 0,
+		});
+		const complete = await injectAuthenticated("GET", "/qui/series/sonarr-1/42/torrents");
+		expect(complete.statusCode).toBe(200);
+		const completeBody = JSON.parse(complete.payload);
+		expect(completeBody.coverageStatus).toBe("complete");
+		expect(completeBody.stuckEpisodes).toBe(1);
+		expect(completeBody.actionItems).toContainEqual(
+			expect.objectContaining({ kind: "stuck_episodes" }),
+		);
+	});
+
 	it("returns 400 when arrItemId is not a number", async () => {
 		const res = await injectAuthenticated("GET", "/qui/series/sonarr-1/not-a-number/torrents");
 		expect(res.statusCode).toBe(400);
@@ -213,6 +290,69 @@ describe("GET /qui/series/:arrInstanceId/:arrItemId/torrents — input + ownersh
 // ----------------------------------------------------------------------
 
 describe("GET /qui/movie/:arrInstanceId/:arrItemId/torrents — input + ownership", () => {
+	it("does not publish a legacy inode hash when the current index has no match", async () => {
+		mockPrisma.libraryCache.findFirst.mockResolvedValue({
+			id: "lib-1",
+			title: "Synthetic Movie",
+			year: 2024,
+			infoHash: "legacy-hash",
+			infoHashSource: "inode",
+			sizeOnDisk: 1_000n,
+			qualityProfileName: null,
+			data: JSON.stringify({ path: "/movies/synthetic", movieFile: { relativePath: "file.mkv" } }),
+		});
+		mockPrisma.serviceInstance.findFirst.mockResolvedValue({
+			id: "qui-1",
+			userId: "user-1",
+			service: "QUI",
+			enabled: true,
+			hasLocalFilesystemAccess: true,
+		});
+		mockEnrichTorrentHashes.mockResolvedValue(
+			new Map([
+				[
+					"legacy-hash",
+					{
+						hash: "legacy-hash",
+						role: "library",
+						tracker: null,
+						quiUnreachable: false,
+						numSeeds: 1,
+						numLeechs: 0,
+						ratio: 1,
+						state: "pausedUP",
+					},
+				],
+			]),
+		);
+		const res = await injectAuthenticated("GET", "/qui/movie/radarr-1/77/torrents");
+		expect(res.statusCode).toBe(200);
+		const body = JSON.parse(res.payload);
+		expect(body.clusters).toEqual([]);
+		expect(body.viaInodeEpisodes).toBe(0);
+		expect(body.coverageStatus).toBe("partial");
+		expect(body.stuckEpisodes).toBe(0);
+		expect(body.actionItems).not.toContainEqual(
+			expect.objectContaining({ kind: "stuck_episodes" }),
+		);
+		mockBuildFileIdIndex.mockResolvedValue({
+			byFileId: new Map(),
+			statted: 0,
+			skippedNoLinks: 0,
+			skippedUnstatable: 0,
+			inventoryComplete: true,
+			incompleteDirectoryWalks: 0,
+		});
+		const complete = await injectAuthenticated("GET", "/qui/movie/radarr-1/77/torrents");
+		expect(complete.statusCode).toBe(200);
+		const completeBody = JSON.parse(complete.payload);
+		expect(completeBody.coverageStatus).toBe("complete");
+		expect(completeBody.stuckEpisodes).toBe(1);
+		expect(completeBody.actionItems).toContainEqual(
+			expect.objectContaining({ kind: "stuck_episodes" }),
+		);
+	});
+
 	it("returns 400 when arrItemId is not a number", async () => {
 		const res = await injectAuthenticated("GET", "/qui/movie/radarr-1/not-a-number/torrents");
 		expect(res.statusCode).toBe(400);
@@ -319,7 +459,7 @@ describe("GET /qui/movie/:arrInstanceId/:arrItemId/torrents — input + ownershi
 			where: { id: "lib-1" },
 			data: {
 				infoHash: "new-hash",
-				infoHashSource: "inode",
+				infoHashSource: "inode-v2",
 				torrentState: null,
 				torrentRatio: null,
 				torrentSyncedAt: null,

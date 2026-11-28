@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { Prisma } from "../../prisma.js";
 import {
 	acquireCleanupRunLease,
 	CleanupPolicyMutationConflictError,
@@ -12,11 +13,18 @@ import {
 } from "../cleanup-executor.js";
 import type { CleanupExecutorDeps } from "../types.js";
 
+function missingLeaseError() {
+	return new Prisma.PrismaClientKnownRequestError("Synthetic missing lease", {
+		code: "P2025",
+		clientVersion: "test",
+	});
+}
+
 describe("library cleanup database run lease", () => {
 	it("allows only one owner and requires the same token to release it", async () => {
 		let storedToken: string | null = null;
 		let claimedAt: Date | null = null;
-		const updateMany = vi.fn(
+		const update = vi.fn(
 			async ({
 				where,
 				data,
@@ -32,18 +40,18 @@ describe("library cleanup database run lease", () => {
 						(entry) => entry.runClaimedAt && typeof entry.runClaimedAt === "object",
 					)?.runClaimedAt as { lt: Date } | undefined;
 					if (storedToken && claimedAt && (!staleBefore || claimedAt >= staleBefore.lt)) {
-						return { count: 0 };
+						throw missingLeaseError();
 					}
 				} else if (where.runClaimToken !== storedToken) {
-					return { count: 0 };
+					throw missingLeaseError();
 				}
 				storedToken = data.runClaimToken;
 				claimedAt = data.runClaimedAt;
-				return { count: 1 };
+				return { id: "config-1" };
 			},
 		);
 		const prisma = {
-			libraryCleanupConfig: { updateMany },
+			libraryCleanupConfig: { update },
 		} as unknown as CleanupExecutorDeps["prisma"];
 		const now = new Date("2026-07-27T12:00:00.000Z");
 
@@ -64,10 +72,37 @@ describe("library cleanup database run lease", () => {
 		).resolves.toBe("owner-2");
 	});
 
+	it.each([
+		[
+			"acquisition",
+			(prisma: CleanupExecutorDeps["prisma"]) =>
+				acquireCleanupRunLease(prisma, "user-1", "config-1", new Date(), "owner-1"),
+		],
+		[
+			"renewal",
+			(prisma: CleanupExecutorDeps["prisma"]) =>
+				renewCleanupRunLease(prisma, "user-1", "config-1", "owner-1"),
+		],
+		[
+			"release",
+			(prisma: CleanupExecutorDeps["prisma"]) =>
+				releaseCleanupRunLease(prisma, "user-1", "config-1", "owner-1"),
+		],
+	] as const)("propagates an uncertain %s without trying another write", async (_action, run) => {
+		const error = new Prisma.PrismaClientKnownRequestError("Synthetic lease timeout", {
+			code: "P1008",
+			clientVersion: "test",
+		});
+		const update = vi.fn().mockRejectedValue(error);
+		const prisma = { libraryCleanupConfig: { update } } as unknown as CleanupExecutorDeps["prisma"];
+		await expect(run(prisma)).rejects.toBe(error);
+		expect(update).toHaveBeenCalledOnce();
+	});
+
 	it("reclaims a lease only after its timeout", async () => {
 		let storedToken: string | null = "crashed-owner";
 		let claimedAt: Date | null = new Date("2026-07-27T09:00:00.000Z");
-		const updateMany = vi.fn(
+		const update = vi.fn(
 			async ({
 				where,
 				data,
@@ -78,14 +113,14 @@ describe("library cleanup database run lease", () => {
 				const staleBefore = where.OR.find(
 					(entry) => entry.runClaimedAt && typeof entry.runClaimedAt === "object",
 				)?.runClaimedAt as { lt: Date };
-				if (storedToken && claimedAt && claimedAt >= staleBefore.lt) return { count: 0 };
+				if (storedToken && claimedAt && claimedAt >= staleBefore.lt) throw missingLeaseError();
 				storedToken = data.runClaimToken;
 				claimedAt = data.runClaimedAt;
-				return { count: 1 };
+				return { id: "config-1" };
 			},
 		);
 		const prisma = {
-			libraryCleanupConfig: { updateMany },
+			libraryCleanupConfig: { update },
 		} as unknown as CleanupExecutorDeps["prisma"];
 
 		await expect(
@@ -102,7 +137,7 @@ describe("library cleanup database run lease", () => {
 	it("keeps a long-running owner exclusive when its heartbeat renews the lease", async () => {
 		let storedToken: string | null = null;
 		let claimedAt: Date | null = null;
-		const updateMany = vi.fn(
+		const update = vi.fn(
 			async ({
 				where,
 				data,
@@ -117,17 +152,17 @@ describe("library cleanup database run lease", () => {
 					const staleBefore = where.OR.find(
 						(entry) => entry.runClaimedAt && typeof entry.runClaimedAt === "object",
 					)?.runClaimedAt as { lt: Date };
-					if (storedToken && claimedAt && claimedAt >= staleBefore.lt) return { count: 0 };
+					if (storedToken && claimedAt && claimedAt >= staleBefore.lt) throw missingLeaseError();
 					storedToken = data.runClaimToken ?? storedToken;
 				} else {
-					if (where.runClaimToken !== storedToken) return { count: 0 };
+					if (where.runClaimToken !== storedToken) throw missingLeaseError();
 				}
 				claimedAt = data.runClaimedAt;
-				return { count: 1 };
+				return { id: "config-1" };
 			},
 		);
 		const prisma = {
-			libraryCleanupConfig: { updateMany },
+			libraryCleanupConfig: { update },
 		} as unknown as CleanupExecutorDeps["prisma"];
 
 		await expect(
@@ -161,17 +196,20 @@ describe("library cleanup database run lease", () => {
 
 	it("holds the cleanup lease across a service topology mutation", async () => {
 		const calls: string[] = [];
-		const updateMany = vi.fn(async ({ data }: { data: { runClaimToken: string | null } }) => {
-			calls.push(data.runClaimToken === null ? "release" : "acquire");
-			return { count: 1 };
-		});
 		const prisma = {
 			libraryCleanupConfig: {
-				upsert: vi.fn(async () => {
-					calls.push("upsert");
+				findUnique: vi.fn(async () => {
+					calls.push("find");
+					return null;
+				}),
+				create: vi.fn(async () => {
+					calls.push("create");
 					return { id: "config-1" };
 				}),
-				updateMany,
+				update: vi.fn(async ({ data }) => {
+					calls.push(data.runClaimToken === null ? "release" : "acquire");
+					return { id: "config-1" };
+				}),
 			},
 		} as unknown as CleanupExecutorDeps["prisma"];
 		const log = {
@@ -185,15 +223,84 @@ describe("library cleanup database run lease", () => {
 				return "created";
 			}),
 		).resolves.toBe("created");
-		expect(calls).toEqual(["upsert", "acquire", "mutate", "release"]);
+		expect(calls).toEqual(["find", "create", "acquire", "mutate", "release"]);
+	});
+
+	it.each([
+		{ code: "P2002", existing: { id: "concurrent-config" }, recovered: true, reads: 2 },
+		{ code: "P2002", existing: null, recovered: false, reads: 2 },
+		{ code: "P1008", existing: { id: "uncertain-config" }, recovered: false, reads: 1 },
+	])(
+		"admits only a confirmed concurrent config after $code (readback $reads)",
+		async ({ code, existing, recovered, reads }) => {
+			const error = new Prisma.PrismaClientKnownRequestError("Synthetic config creation failure", {
+				code,
+				clientVersion: "test",
+			});
+			const config = {
+				findUnique: vi.fn().mockResolvedValueOnce(null).mockResolvedValue(existing),
+				create: vi.fn().mockRejectedValue(error),
+				update: vi.fn().mockResolvedValue({ id: "concurrent-config" }),
+			};
+			const prisma = { libraryCleanupConfig: config } as unknown as CleanupExecutorDeps["prisma"];
+			const log = { warn: vi.fn(), error: vi.fn() } as unknown as CleanupExecutorDeps["log"];
+			const mutate = vi.fn(async () => "admitted");
+			const admission = withCleanupTopologyMutationLease({ prisma, log }, "user-1", mutate);
+			if (recovered) {
+				await expect(admission).resolves.toBe("admitted");
+				expect(config.update).toHaveBeenCalledWith(
+					expect.objectContaining({
+						where: expect.objectContaining({ id: existing?.id, userId: "user-1" }),
+					}),
+				);
+				expect(mutate).toHaveBeenCalledOnce();
+			} else {
+				await expect(admission).rejects.toBe(error);
+				expect(config.update).not.toHaveBeenCalled();
+				expect(mutate).not.toHaveBeenCalled();
+			}
+			expect(config.create).toHaveBeenCalledOnce();
+			expect(config.findUnique).toHaveBeenCalledTimes(reads);
+			expect(config.findUnique).toHaveBeenLastCalledWith({
+				where: { userId: "user-1" },
+				select: { id: true },
+			});
+		},
+	);
+
+	it("refuses mutation when the config found by lookup cannot be claimed", async () => {
+		const create = vi.fn();
+		const update = vi.fn().mockRejectedValue(missingLeaseError());
+		const prisma = {
+			libraryCleanupConfig: {
+				findUnique: vi.fn().mockResolvedValue({ id: "disappeared-config" }),
+				create,
+				update,
+			},
+		} as unknown as CleanupExecutorDeps["prisma"];
+		const log = { warn: vi.fn(), error: vi.fn() } as unknown as CleanupExecutorDeps["log"];
+		const mutate = vi.fn();
+
+		await expect(
+			withCleanupTopologyMutationLease({ prisma, log }, "user-1", mutate),
+		).rejects.toBeInstanceOf(CleanupTopologyMutationConflictError);
+		expect(update).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({ id: "disappeared-config", userId: "user-1" }),
+			}),
+		);
+		expect(create).not.toHaveBeenCalled();
+		expect(mutate).not.toHaveBeenCalled();
 	});
 
 	it("keeps bounded topology callbacks separate from renewable lease authority", async () => {
-		const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+		const create = vi.fn();
+		const update = vi.fn().mockResolvedValue({ id: "config-1" });
 		const prisma = {
 			libraryCleanupConfig: {
-				upsert: vi.fn(async () => ({ id: "config-1" })),
-				updateMany,
+				findUnique: vi.fn().mockResolvedValue({ id: "config-1" }),
+				create,
+				update,
 			},
 		} as unknown as CleanupExecutorDeps["prisma"];
 		const log = { warn: vi.fn(), error: vi.fn() } as unknown as CleanupExecutorDeps["log"];
@@ -203,24 +310,33 @@ describe("library cleanup database run lease", () => {
 			0,
 		);
 		expect(mutate).toHaveBeenCalledWith();
+		expect(create).not.toHaveBeenCalled();
+		const token = update.mock.calls[0]?.[0]?.data.runClaimToken;
+		expect(token).toEqual(expect.any(String));
+		expect(update).toHaveBeenCalledTimes(2);
+		expect(update).toHaveBeenLastCalledWith({
+			where: { id: "config-1", userId: "user-1", runClaimToken: token },
+			data: { runClaimToken: null, runClaimedAt: null },
+			select: { id: true },
+		});
 	});
 
 	it("renews an explicit recovery topology lease through the ownership assertion", async () => {
 		const calls: string[] = [];
-		const updateMany = vi.fn(async ({ data }: { data: { runClaimToken?: string | null } }) => {
-			calls.push(
-				data.runClaimToken === null
-					? "release"
-					: typeof data.runClaimToken === "string"
-						? "acquire"
-						: "renew",
-			);
-			return { count: 1 };
-		});
 		const prisma = {
 			libraryCleanupConfig: {
-				upsert: vi.fn(async () => ({ id: "config-1" })),
-				updateMany,
+				findUnique: vi.fn().mockResolvedValue({ id: "config-1" }),
+				create: vi.fn(async () => ({ id: "config-1" })),
+				update: vi.fn(async ({ data }: { data: { runClaimToken?: string | null } }) => {
+					calls.push(
+						data.runClaimToken === null
+							? "release"
+							: typeof data.runClaimToken === "string"
+								? "acquire"
+								: "renew",
+					);
+					return { id: "config-1" };
+				}),
 			},
 		} as unknown as CleanupExecutorDeps["prisma"];
 		const log = { warn: vi.fn(), error: vi.fn() } as unknown as CleanupExecutorDeps["log"];
@@ -233,15 +349,15 @@ describe("library cleanup database run lease", () => {
 	});
 
 	it("fails closed when an explicit recovery callback loses lease ownership", async () => {
-		const updateMany = vi
+		const update = vi
 			.fn()
-			.mockResolvedValueOnce({ count: 1 })
-			.mockResolvedValueOnce({ count: 0 })
-			.mockResolvedValueOnce({ count: 0 });
+			.mockResolvedValueOnce({ id: "config-1" })
+			.mockRejectedValue(missingLeaseError());
 		const prisma = {
 			libraryCleanupConfig: {
-				upsert: vi.fn(async () => ({ id: "config-1" })),
-				updateMany,
+				findUnique: vi.fn().mockResolvedValue({ id: "config-1" }),
+				create: vi.fn(async () => ({ id: "config-1" })),
+				update,
 			},
 		} as unknown as CleanupExecutorDeps["prisma"];
 		const log = { warn: vi.fn(), error: vi.fn() } as unknown as CleanupExecutorDeps["log"];
@@ -257,8 +373,9 @@ describe("library cleanup database run lease", () => {
 		const mutate = vi.fn();
 		const prisma = {
 			libraryCleanupConfig: {
-				upsert: vi.fn().mockResolvedValue({ id: "config-1" }),
-				updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+				findUnique: vi.fn().mockResolvedValue({ id: "config-1" }),
+				create: vi.fn().mockResolvedValue({ id: "config-1" }),
+				update: vi.fn().mockRejectedValue(missingLeaseError()),
 			},
 		} as unknown as CleanupExecutorDeps["prisma"];
 		const log = {
@@ -273,11 +390,12 @@ describe("library cleanup database run lease", () => {
 	});
 
 	it("releases the topology lease when the service mutation fails", async () => {
-		const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+		const update = vi.fn().mockResolvedValue({ id: "config-1" });
 		const prisma = {
 			libraryCleanupConfig: {
-				upsert: vi.fn().mockResolvedValue({ id: "config-1" }),
-				updateMany,
+				findUnique: vi.fn().mockResolvedValue({ id: "config-1" }),
+				create: vi.fn().mockResolvedValue({ id: "config-1" }),
+				update,
 			},
 		} as unknown as CleanupExecutorDeps["prisma"];
 		const log = {
@@ -290,10 +408,11 @@ describe("library cleanup database run lease", () => {
 				throw new Error("write failed");
 			}),
 		).rejects.toThrow("write failed");
-		expect(updateMany).toHaveBeenCalledTimes(2);
-		expect(updateMany.mock.calls[1]![0]).toMatchObject({
+		expect(update).toHaveBeenCalledTimes(2);
+		expect(update).toHaveBeenLastCalledWith({
 			where: { id: "config-1", userId: "user-1", runClaimToken: expect.any(String) },
 			data: { runClaimToken: null, runClaimedAt: null },
+			select: { id: true },
 		});
 	});
 
@@ -301,8 +420,9 @@ describe("library cleanup database run lease", () => {
 		const mutate = vi.fn();
 		const prisma = {
 			libraryCleanupConfig: {
-				upsert: vi.fn(),
-				updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+				findUnique: vi.fn().mockResolvedValue({ id: "config-1" }),
+				create: vi.fn(),
+				update: vi.fn().mockRejectedValue(missingLeaseError()),
 			},
 		} as unknown as CleanupExecutorDeps["prisma"];
 		const log = {
@@ -315,7 +435,7 @@ describe("library cleanup database run lease", () => {
 				configId: "config-1",
 			}),
 		).rejects.toBeInstanceOf(CleanupPolicyMutationConflictError);
-		expect(prisma.libraryCleanupConfig.upsert).not.toHaveBeenCalled();
+		expect(prisma.libraryCleanupConfig.create).not.toHaveBeenCalled();
 		expect(mutate).not.toHaveBeenCalled();
 	});
 });

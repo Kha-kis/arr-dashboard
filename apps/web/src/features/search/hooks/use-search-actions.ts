@@ -1,14 +1,29 @@
-import type { SearchResult } from "@arr/shared";
+import type { SearchCoverage, SearchResult } from "@arr/shared";
 import { useCallback, useState } from "react";
-import { useGrabSearchResultMutation, useManualSearchMutation } from "../../../hooks/api/useSearch";
+import { useManualSearchMutation } from "../../../hooks/api/useSearch";
 import { getErrorMessage } from "../../../lib/error-utils";
 import { copyToClipboard } from "../../../lib/utils/clipboard";
 import { safeOpenUrl } from "../../../lib/utils/url-validation";
-import { buildFilters, deriveGrabErrorMessage } from "../lib/search-utils";
+import { buildFilters } from "../lib/search-utils";
 import type { SearchStateActions } from "./use-search-state";
 
+const describeCoverage = (coverage: SearchCoverage | undefined, unverified: boolean) =>
+	[
+		unverified
+			? "Returned-batch coverage is unverified. Available results may be incomplete; check Prowlarr and search again."
+			: "",
+		coverage?.rejectedCount
+			? `${coverage.rejectedCount} returned result${coverage.rejectedCount === 1 ? "" : "s"} rejected during validation.`
+			: "",
+		coverage?.metadataIncompleteCount
+			? `${coverage.metadataIncompleteCount} result${coverage.metadataIncompleteCount === 1 ? "" : "s"} with incomplete metadata.`
+			: "",
+	]
+		.filter(Boolean)
+		.join(" ");
+
 /**
- * Hook for managing search actions: performing searches, grabbing results,
+ * Hook for managing search actions: performing searches,
  * copying links, and opening info URLs.
  *
  * @param query - Current search query
@@ -22,7 +37,6 @@ import type { SearchStateActions } from "./use-search-state";
  *   results,
  *   handleSearch,
  *   handleSubmit,
- *   handleGrab,
  *   handleCopyMagnet,
  *   handleOpenInfo,
  *   isSearching
@@ -35,9 +49,16 @@ export function useSearchActions(
 	stateActions: SearchStateActions,
 ) {
 	const [results, setResults] = useState<SearchResult[]>([]);
-
+	const [failedInstanceCount, setFailedInstanceCount] = useState(0);
+	const [coverage, setCoverage] = useState<SearchCoverage>();
+	const [coverageUnverified, setCoverageUnverified] = useState(false);
+	const coverageIncomplete =
+		failedInstanceCount > 0 ||
+		coverageUnverified ||
+		(coverage?.rejectedCount ?? 0) > 0 ||
+		(coverage?.metadataIncompleteCount ?? 0) > 0;
+	const coverageWarning = describeCoverage(coverage, coverageUnverified);
 	const searchMutation = useManualSearchMutation();
-	const grabMutation = useGrabSearchResultMutation();
 
 	/**
 	 * Performs manual search mutation with validation.
@@ -69,18 +90,49 @@ export function useSearchActions(
 				onSuccess: (data) => {
 					stateActions.setHasSearched(true);
 					setResults(data.aggregated);
+					setFailedInstanceCount(data.failedInstanceCount);
+					setCoverage(data.coverage);
+					const unverified =
+						!data.coverage &&
+						(data.instances.some((instance) => instance.success) || data.failedInstanceCount === 0);
+					setCoverageUnverified(unverified);
 					const total = data.totalCount;
+					const incomplete =
+						unverified ||
+						(data.coverage?.rejectedCount ?? 0) > 0 ||
+						(data.coverage?.metadataIncompleteCount ?? 0) > 0;
+					const normalizationMessage = describeCoverage(data.coverage, unverified);
 					stateActions.setFeedback({
-						type: "success",
+						type: data.failedInstanceCount > 0 || incomplete ? "error" : "success",
 						message:
-							total > 0
-								? `Found ${total} result${total === 1 ? "" : "s"}.`
-								: "No results found for that query.",
+							data.failedInstanceCount > 0
+								? `Search incomplete: ${data.failedInstanceCount} Prowlarr instance${data.failedInstanceCount === 1 ? "" : "s"} unavailable; results from ${data.failedInstanceCount === 1 ? "it are" : "them are"} unknown.`
+								: incomplete
+									? normalizationMessage
+									: total > 0
+										? `Found ${total} result${total === 1 ? "" : "s"}.`
+										: "No results found for that query.",
+						incognitoMessage:
+							data.failedInstanceCount > 0
+								? `Search incomplete: ${data.failedInstanceCount} Prowlarr instance${data.failedInstanceCount === 1 ? "" : "s"} unavailable; results from ${data.failedInstanceCount === 1 ? "it are" : "them are"} unknown.`
+								: incomplete
+									? normalizationMessage
+									: total > 0
+										? `Found ${total} result${total === 1 ? "" : "s"}.`
+										: "No results found for that query.",
 					});
 				},
 				onError: (error) => {
-					const message = getErrorMessage(error, "Search failed");
-					stateActions.setFeedback({ type: "error", message });
+					setResults([]);
+					setFailedInstanceCount(0);
+					setCoverage(undefined);
+					setCoverageUnverified(false);
+					stateActions.setHasSearched(false);
+					stateActions.setFeedback({
+						type: "error",
+						message: getErrorMessage(error, "Search failed"),
+						incognitoMessage: "Search failed. Check Prowlarr connections and retry.",
+					});
 				},
 			},
 		);
@@ -100,33 +152,6 @@ export function useSearchActions(
 	);
 
 	/**
-	 * Handles grabbing a search result and sending to download client.
-	 */
-	const handleGrab = useCallback(
-		async (result: SearchResult) => {
-			const rowKey = `${result.instanceId}:${result.indexerId}:${result.id}`;
-			stateActions.setGrabbingKey(rowKey);
-			stateActions.setFeedback(null);
-			try {
-				await grabMutation.mutateAsync({
-					instanceId: result.instanceId,
-					result,
-				});
-				stateActions.setFeedback({
-					type: "success",
-					message: `Sent "${result.title}" to the download client.`,
-				});
-			} catch (error) {
-				const message = deriveGrabErrorMessage(error);
-				stateActions.setFeedback({ type: "error", message });
-			} finally {
-				stateActions.setGrabbingKey(null);
-			}
-		},
-		[stateActions, grabMutation],
-	);
-
-	/**
 	 * Handles copying magnet/download link to clipboard.
 	 * Uses fallback method for non-HTTPS environments.
 	 */
@@ -137,18 +162,24 @@ export function useSearchActions(
 				stateActions.setFeedback({
 					type: "error",
 					message: "No copyable magnet or download link is available for this release.",
+					incognitoMessage: "No copyable magnet or download link is available for this release.",
 				});
 				return;
 			}
 
 			try {
 				await copyToClipboard(link);
-				stateActions.setFeedback({ type: "success", message: "Copied link to clipboard." });
+				stateActions.setFeedback({
+					type: "success",
+					message: "Copied link to clipboard.",
+					incognitoMessage: "Copied link to clipboard.",
+				});
 			} catch (error) {
 				const message = getErrorMessage(error, "Clipboard copy failed.");
 				stateActions.setFeedback({
 					type: "error",
 					message: `Unable to copy link: ${message}`,
+					incognitoMessage: "Unable to copy link. Check clipboard permissions and retry.",
 				});
 			}
 		},
@@ -165,11 +196,16 @@ export function useSearchActions(
 				stateActions.setFeedback({
 					type: "error",
 					message: "This release did not provide a public info link.",
+					incognitoMessage: "This release did not provide a public info link.",
 				});
 				return;
 			}
 			if (!safeOpenUrl(target)) {
-				stateActions.setFeedback({ type: "error", message: "Invalid or unsafe URL." });
+				stateActions.setFeedback({
+					type: "error",
+					message: "Invalid or unsafe URL.",
+					incognitoMessage: "Invalid or unsafe URL.",
+				});
 			}
 		},
 		[stateActions],
@@ -178,6 +214,10 @@ export function useSearchActions(
 	return {
 		// Search results
 		results,
+		failedInstanceCount,
+		coverage,
+		coverageIncomplete,
+		coverageWarning,
 
 		// Search mutation
 		handleSearch,
@@ -185,7 +225,6 @@ export function useSearchActions(
 		isSearching: searchMutation.isPending,
 
 		// Result actions
-		handleGrab,
 		handleCopyMagnet,
 		handleOpenInfo,
 	};

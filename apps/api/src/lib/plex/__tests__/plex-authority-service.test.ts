@@ -4,7 +4,7 @@ import { createPositivePlexEpisodeDigest } from "../plex-episode-live-collector.
 
 const repositoryMocks = vi.hoisted(() => ({
 	loadInstanceSelectedEvidence: vi.fn(),
-	loadUserSelectedEvidence: vi.fn(),
+	loadUserSelectedDisplayEvidence: vi.fn(),
 	loadInstanceMutationEvidence: vi.fn(),
 	loadPositiveEpisodeEvidence: vi.fn(),
 	loadPositiveEpisodeDisplayEvidence: vi.fn(),
@@ -21,7 +21,7 @@ vi.mock("../plex-evidence-repository.js", async (importOriginal) => {
 	return {
 		...actual,
 		loadInstanceSelectedEvidence: repositoryMocks.loadInstanceSelectedEvidence,
-		loadUserSelectedEvidence: repositoryMocks.loadUserSelectedEvidence,
+		loadUserSelectedDisplayEvidence: repositoryMocks.loadUserSelectedDisplayEvidence,
 		loadInstanceMutationEvidence: repositoryMocks.loadInstanceMutationEvidence,
 		loadPositiveEpisodeEvidence: repositoryMocks.loadPositiveEpisodeEvidence,
 		loadPositiveEpisodeDisplayEvidence: repositoryMocks.loadPositiveEpisodeDisplayEvidence,
@@ -248,6 +248,10 @@ async function mutateWithLedgerEvidence(input: {
 	}>;
 	ledgerRows?: unknown[];
 	withBinding?: boolean;
+	realRepositoryRace?: {
+		boundary: "settlement" | "final mutation";
+		lastAttemptResult: string;
+	};
 }) {
 	const targetRow = { ...rowA, thumb: "/library/metadata/101/thumb/1" };
 	const ledgerTarget = {
@@ -349,9 +353,35 @@ async function mutateWithLedgerEvidence(input: {
 	};
 	const plexCache = {
 		findMany: vi.fn(() => {
+			if (input.realRepositoryRace) {
+				return Promise.resolve([
+					{
+						...targetRow,
+						id: "row-1",
+						instanceId: "plex-1",
+						connectionGeneration: 4,
+						identityGeneration: 9,
+						labels: JSON.stringify(targetRow.labels),
+						collections: JSON.stringify(targetRow.collections),
+						watchedByUsers: JSON.stringify(targetRow.watchedByUsers),
+						lastWatchedAt: new Date(targetRow.lastWatchedAt!),
+					},
+				]);
+			}
 			throw new Error("synthetic cache backfill");
 		}),
+		count: vi.fn().mockResolvedValue(1),
 	};
+	let statusReads = 0;
+	if (input.realRepositoryRace) {
+		const actual = await vi.importActual<typeof import("../plex-evidence-repository.js")>(
+			"../plex-evidence-repository.js",
+		);
+		repositoryMocks.loadInstanceSelectedEvidence.mockReset();
+		repositoryMocks.loadInstanceSelectedEvidence.mockImplementation(
+			actual.loadInstanceSelectedEvidence,
+		);
+	}
 	refresherMocks.collectSettledPlexCacheLiveEvidence.mockReset();
 	refresherMocks.collectSettledPlexCacheLiveEvidence.mockResolvedValue({
 		complete: true,
@@ -368,6 +398,26 @@ async function mutateWithLedgerEvidence(input: {
 					expectedIdentity: "plex-machine-a",
 					connectionGeneration: 4,
 					identityGeneration: 9,
+					identityStatus: "VERIFIED",
+					identityKind: "plex-machine-identifier",
+					identityVerifiedAt: new Date("2026-08-20T10:00:00.000Z"),
+					updatedAt: new Date("2026-08-20T10:00:00.000Z"),
+				}),
+			},
+			cacheRefreshStatus: {
+				findMany: vi.fn(async () => {
+					statusReads += 1;
+					const race = input.realRepositoryRace;
+					const transitionAt = race?.boundary === "settlement" ? 4 : 6;
+					return [
+						{
+							...evidence.generationStatus,
+							cacheType: "plex",
+							...(race && statusReads >= transitionAt
+								? { lastAttemptResult: race.lastAttemptResult }
+								: {}),
+						},
+					];
 				}),
 			},
 			plexGenerationTarget,
@@ -481,7 +531,7 @@ describe("PlexAuthorityService settlement window", () => {
 				reasonCodes: ["latest_attempt_partial"],
 			},
 		} as never;
-		repositoryMocks.loadUserSelectedEvidence.mockResolvedValue([displayEvidence]);
+		repositoryMocks.loadUserSelectedDisplayEvidence.mockResolvedValue([displayEvidence]);
 		const service = new PlexAuthorityService({ prisma, log: {} as never });
 		const input = {
 			userId: "user-1",
@@ -490,7 +540,106 @@ describe("PlexAuthorityService settlement window", () => {
 		};
 
 		await expect(service.readUserSelectedDisplay(input)).resolves.toEqual([displayEvidence]);
-		expect(repositoryMocks.loadUserSelectedEvidence).toHaveBeenCalledWith(prisma, input);
+		expect(repositoryMocks.loadUserSelectedDisplayEvidence).toHaveBeenCalledWith(prisma, input);
+	});
+
+	it("reads final attempt provenance through the real user display repository without live authority", async () => {
+		const actual = await vi.importActual<typeof import("../plex-evidence-repository.js")>(
+			"../plex-evidence-repository.js",
+		);
+		repositoryMocks.loadUserSelectedDisplayEvidence.mockImplementation(
+			actual.loadUserSelectedDisplayEvidence,
+		);
+		const metadata = persisted().metadata;
+		let statusReads = 0;
+		const service = new PlexAuthorityService({
+			prisma: {
+				serviceInstance: {
+					findMany: vi.fn().mockResolvedValue([
+						{
+							id: "plex-1",
+							userId: "user-1",
+							service: "PLEX",
+							enabled: true,
+							label: "Plex",
+							expectedIdentity: "plex-machine-a",
+							connectionGeneration: 4,
+							identityGeneration: 9,
+							identityStatus: "VERIFIED",
+							identityKind: "plex-machine-identifier",
+							identityVerifiedAt: new Date("2026-08-20T10:00:00.000Z"),
+							updatedAt: new Date("2026-08-20T10:00:00.000Z"),
+						},
+					]),
+				},
+				cacheRefreshStatus: {
+					findMany: vi.fn(async () => [
+						{
+							instanceId: "plex-1",
+							cacheType: "plex",
+							generationId: "generation-1",
+							generationMetadata: JSON.stringify(metadata),
+							itemCount: 2,
+							connectionGeneration: 4,
+							identityGeneration: 9,
+							lastRefreshedAt: new Date("2026-08-20T12:00:00.000Z"),
+							lastResult: "success",
+							lastErrorMessage: null,
+							lastAttemptAt: new Date("2026-08-20T12:00:00.000Z"),
+							lastAttemptResult: ++statusReads === 1 ? "success" : "in_progress:next-attempt",
+							lastAttemptErrorMessage: null,
+						},
+					]),
+				},
+				plexCache: {
+					count: vi.fn().mockResolvedValue(2),
+					findMany: vi.fn().mockResolvedValue(
+						[rowA, rowB].map((row, index) => ({
+							...row,
+							id: `row-${index}`,
+							instanceId: "plex-1",
+							connectionGeneration: 4,
+							identityGeneration: 9,
+							labels: JSON.stringify(row.labels),
+							collections: JSON.stringify(row.collections),
+							watchedByUsers: JSON.stringify(row.watchedByUsers),
+							lastWatchedAt: row.lastWatchedAt == null ? null : new Date(row.lastWatchedAt),
+						})),
+					),
+				},
+			} as never,
+			log: {} as never,
+			createClient: () => {
+				throw new Error("display must not probe live authority");
+			},
+		});
+		await expect(
+			service.readUserSelectedDisplay({
+				userId: "user-1",
+				selection: {
+					kind: "targets",
+					targets: [
+						{ tmdbId: 1, mediaType: "movie" },
+						{ tmdbId: 2, mediaType: "movie" },
+					],
+				},
+				domains: ["membership", "display"],
+				now: new Date("2026-08-20T12:00:30.000Z"),
+			}),
+		).resolves.toMatchObject([
+			{
+				available: true,
+				rows: [{ tmdbId: 1 }, { tmdbId: 2 }],
+				evidence: {
+					availability: "last-known",
+					authority: "unavailable",
+					attemptState: "in_progress",
+					reasonCodes: ["latest_attempt_in_progress"],
+				},
+				providerStatus: { availability: "last-known", latestAttempt: "running" },
+				generationStatus: { lastAttemptResult: "in_progress:next-attempt" },
+			},
+		]);
 	});
 
 	it("keeps cleanup-facing exact scans from delivering a batch after the scanner observes a failed attempt", async () => {
@@ -826,6 +975,10 @@ describe("PlexAuthorityService settlement window", () => {
 					watched: true,
 					watchedByUsers: "[]",
 					lastWatchedAt: null,
+					soleParentTarget: {
+						sectionId: "shows-a",
+						ratingKey: "show-42",
+					},
 				},
 			],
 		});
@@ -905,6 +1058,41 @@ describe("PlexAuthorityService settlement window", () => {
 			available: false,
 			evidence: { authority: "unavailable", reasonCodes: ["latest_attempt_failed"] },
 		});
+
+		repositoryMocks.loadPositiveEpisodeEvidence.mockResolvedValueOnce({
+			...observed,
+			parentMetadata: {
+				...observed.parentMetadata,
+				version: 6,
+				ambiguousTmdbCandidates: [{ mediaType: "movie", tmdbId: 42 }],
+			},
+		});
+		const crossMediaTypeAmbiguity = await service.readPositiveEpisodeEvidence({
+			userId: "user-1",
+			instanceId: "plex-1",
+		});
+		expect(crossMediaTypeAmbiguity).toMatchObject({ available: true, rows: [{ showTmdbId: 42 }] });
+
+		repositoryMocks.loadPositiveEpisodeEvidence.mockResolvedValueOnce({
+			...observed,
+			metadata: {
+				...observed.metadata,
+				episodeDigest: createPositivePlexEpisodeDigest([], [positiveEpisodeRow]),
+			},
+			parentMetadata: {
+				...observed.parentMetadata,
+				version: 6,
+				ambiguousTmdbCandidates: [
+					{ mediaType: "series", tmdbId: 42 },
+					{ mediaType: "movie", tmdbId: 84 },
+				],
+			},
+		});
+		const ambiguousParent = await service.readPositiveEpisodeEvidence({
+			userId: "user-1",
+			instanceId: "plex-1",
+		});
+		expect(ambiguousParent).toMatchObject({ available: true, rows: [] });
 
 		repositoryMocks.loadPositiveEpisodeEvidence.mockResolvedValueOnce({
 			...observed,
@@ -2396,5 +2584,45 @@ describe("PlexAuthorityService settlement window", () => {
 		});
 		expect(updateMetadataTags).not.toHaveBeenCalled();
 		expect(plexGenerationTarget.findMany).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		["settlement", "in_progress:next-attempt"],
+		["settlement", "error"],
+		["final mutation", "in_progress:next-attempt"],
+		["final mutation", "error"],
+	] as const)(
+		"denies composed mutation when the real repository sees a %s reread attempt become %s",
+		async (boundary, lastAttemptResult) => {
+			vi.useFakeTimers();
+			vi.setSystemTime(new Date("2026-08-20T12:00:30.000Z"));
+			try {
+				const { result, updateMetadataTags } = await mutateWithLedgerEvidence({
+					withBinding: true,
+					realRepositoryRace: { boundary, lastAttemptResult },
+				});
+				expect
+					.soft(result)
+					.toMatchObject({ ok: false, evidence: { reasonCodes: ["generation_changed"] } });
+				expect(updateMetadataTags).not.toHaveBeenCalled();
+			} finally {
+				vi.useRealTimers();
+			}
+		},
+	);
+
+	it("allows composed mutation with the real repository when the attempt stays successful", async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-08-20T12:00:30.000Z"));
+		try {
+			const { result, updateMetadataTags } = await mutateWithLedgerEvidence({
+				withBinding: true,
+				realRepositoryRace: { boundary: "final mutation", lastAttemptResult: "success" },
+			});
+			expect(result).toEqual({ ok: true });
+			expect(updateMetadataTags).toHaveBeenCalledOnce();
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 });

@@ -191,6 +191,7 @@ describe("POST /api/plex/cache/:instanceId/refresh publication authority", () =>
 				encryptor: app.encryptor,
 				instance,
 				log: expect.anything(),
+				nativeInventoryMode: "force",
 			},
 			expect.objectContaining({ resultMarker: expect.stringMatching(/^in_progress:/) }),
 		);

@@ -458,7 +458,8 @@ export interface TrashCacheStatus {
 	version: number;
 	lastFetched: string;
 	lastChecked: string;
-	itemCount: number;
+	itemCount: number | null;
+	unavailable?: true;
 	isStale: boolean;
 	sourceBreakdown?: {
 		official: number;
@@ -676,6 +677,11 @@ export interface TemplateQualityGroup {
 /**
  * Union type for quality items - can be single quality or group
  */
+/** Imported TRaSH profile items use the opposite outer order from deployed profiles. */
+export function importedQualityItemsInProviderOrder<T>(items: readonly T[]): T[] {
+	return [...items].reverse();
+}
+
 export type TemplateQualityEntry =
 	| { type: "quality"; item: TemplateQualityItem }
 	| { type: "group"; group: TemplateQualityGroup };
@@ -1477,6 +1483,12 @@ export interface UnmatchedCustomFormat {
 	reason: string; // Why it couldn't be matched (e.g., "No trash_id found in specifications or name pattern")
 }
 
+export interface DeploymentQualityOrderEntry {
+	name: string;
+	allowed: boolean;
+	children: DeploymentQualityOrderEntry[];
+}
+
 /**
  * Deployment preview result
  */
@@ -1514,6 +1526,14 @@ export interface DeploymentPreview {
 		name: string;
 		score: number;
 	}>;
+
+	/** Highest-priority first. Omitted when the planned order and cutoff are unchanged. */
+	qualityOrder?: {
+		before: DeploymentQualityOrderEntry[];
+		after: DeploymentQualityOrderEntry[];
+		cutoffBefore?: string;
+		cutoffAfter?: string;
+	};
 
 	// Naming fields whose deployed values differ from the instance
 	namingChanges?: string[];

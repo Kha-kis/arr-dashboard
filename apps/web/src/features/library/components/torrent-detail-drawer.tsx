@@ -2,6 +2,7 @@
 
 import { AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
 import { useState } from "react";
+import { Button } from "../../../components/ui/button";
 import {
 	Sheet,
 	SheetContent,
@@ -32,6 +33,8 @@ interface TorrentDetailDrawerProps {
 	 * generic folder name like "distributions"). Cold Read v2 finding.
 	 */
 	arrContext?: { seriesTitle: string; coverageLabel: string } | null;
+	observationAvailable?: boolean;
+	refreshTorrent?: () => Promise<boolean>;
 	onClose: () => void;
 }
 
@@ -49,13 +52,22 @@ interface TorrentDetailDrawerProps {
 export const TorrentDetailDrawer: React.FC<TorrentDetailDrawerProps> = ({
 	copy,
 	arrContext,
+	observationAvailable = true,
+	refreshTorrent,
 	onClose,
 }) => {
 	const open = copy !== null;
 	return (
 		<Sheet open={open} onOpenChange={(o) => !o && onClose()}>
 			<SheetContent side="right" className="w-[480px] sm:max-w-[480px] overflow-y-auto">
-				{copy && <DrawerBody copy={copy} arrContext={arrContext ?? null} />}
+				{copy && (
+					<DrawerBody
+						copy={copy}
+						arrContext={arrContext ?? null}
+						observationAvailable={observationAvailable}
+						refreshTorrent={refreshTorrent}
+					/>
+				)}
 			</SheetContent>
 		</Sheet>
 	);
@@ -64,9 +76,12 @@ export const TorrentDetailDrawer: React.FC<TorrentDetailDrawerProps> = ({
 const DrawerBody: React.FC<{
 	copy: SeriesTorrentCopy;
 	arrContext: { seriesTitle: string; coverageLabel: string } | null;
-}> = ({ copy, arrContext }) => {
+	observationAvailable: boolean;
+	refreshTorrent?: () => Promise<boolean>;
+}> = ({ copy, arrContext, observationAvailable, refreshTorrent }) => {
 	const [incognito] = useIncognitoMode();
 	const canAct =
+		observationAvailable &&
 		!copy.quiUnreachable &&
 		typeof copy.qbitInstanceId === "number" &&
 		typeof copy.quiInstanceId === "string";
@@ -143,6 +158,39 @@ const DrawerBody: React.FC<{
 					{typeof copy.ratio === "number" && <span>ratio {copy.ratio.toFixed(2)}×</span>}
 				</div>
 			</SheetHeader>
+			{!observationAvailable ? (
+				<p role="status" className="text-xs text-muted-foreground">
+					Torrent data could not be verified; showing last-known details. Refresh torrent data
+					before making changes.
+				</p>
+			) : null}
+			{capabilitiesQuery.isLoading ? (
+				<p role="status" className="text-xs text-muted-foreground">
+					Checking qBittorrent capabilities…
+				</p>
+			) : null}
+			{capabilitiesQuery.isError ? (
+				<div
+					role="status"
+					className="space-y-2 rounded border border-border px-3 py-2 text-xs text-muted-foreground"
+				>
+					<p>
+						{caps
+							? "Capabilities refresh failed; showing last-known support flags."
+							: "Capabilities are unavailable; support could not be verified."}
+					</p>
+					<Button
+						size="sm"
+						variant="secondary"
+						disabled={capabilitiesQuery.isFetching}
+						onClick={() => {
+							void capabilitiesQuery.refetch();
+						}}
+					>
+						Retry capabilities
+					</Button>
+				</div>
+			) : null}
 
 			{unsupported.length > 0 && (
 				<div className="rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">
@@ -159,7 +207,7 @@ const DrawerBody: React.FC<{
 			</DrawerSection>
 
 			<DrawerSection title="Tags & Category" defaultOpen={true}>
-				<TagsCategorySection copy={copy} canAct={canAct} />
+				<TagsCategorySection copy={copy} canAct={canAct} refreshTorrent={refreshTorrent} />
 			</DrawerSection>
 
 			<DrawerSection title="Limits & seeding rules" defaultOpen={false}>

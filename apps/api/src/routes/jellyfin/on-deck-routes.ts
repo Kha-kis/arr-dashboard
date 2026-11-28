@@ -6,6 +6,7 @@
  */
 
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
+import { withIsolatedRuntimePrismaBulkReadClient } from "../../lib/backup/restore-runtime-client.js";
 import {
 	type JellyfinDisplayInstance,
 	readOwnedJellyfinLibraryDisplaySources,
@@ -24,20 +25,23 @@ export async function registerOnDeckRoutes(app: FastifyInstance, _opts: FastifyP
 	app.get("/", async (request, reply) => {
 		const userId = request.currentUser!.id;
 
-		const jellyfinInstances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
-			select: { id: true, label: true, service: true },
-		});
-
-		if (jellyfinInstances.length === 0) {
-			return reply.send({ items: [] });
-		}
-
-		const displayEvidence = await readOwnedJellyfinLibraryDisplaySources({
-			prisma: app.prisma,
-			userId,
-			instances: jellyfinInstances as JellyfinDisplayInstance[],
-		});
+		const displayEvidence = await withIsolatedRuntimePrismaBulkReadClient(
+			app.prisma,
+			async (prisma) => {
+				const jellyfinInstances = await prisma.serviceInstance.findMany({
+					where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
+					select: { id: true, label: true, service: true },
+				});
+				if (jellyfinInstances.length === 0) return null;
+				return readOwnedJellyfinLibraryDisplaySources({
+					prisma,
+					userId,
+					instances: jellyfinInstances as JellyfinDisplayInstance[],
+				});
+			},
+			{ lease: "phase" },
+		);
+		if (displayEvidence === null) return reply.send({ items: [] });
 
 		const items = displayEvidence.sources
 			.flatMap((source) =>

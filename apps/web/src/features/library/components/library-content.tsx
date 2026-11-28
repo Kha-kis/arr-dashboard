@@ -3,6 +3,7 @@
 import type {
 	LibraryEnrichmentItem,
 	LibraryItem,
+	QuiObservationStatus,
 	SeriesProgressItem,
 	ServiceInstanceSummary,
 	WatchEnrichmentItem,
@@ -12,6 +13,7 @@ import { useMemo } from "react";
 import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
 import { Pagination } from "../../../components/ui";
 import { useLibrarySeedingSummary, useTrackerIcons } from "../../../hooks/api/useQui";
+import type { LibrarySeedingSummary } from "../../../lib/api-client/qui";
 import { buildJellyfinUrl, buildPlexUrl } from "../lib/library-utils";
 
 /**
@@ -39,7 +41,7 @@ interface LibraryCardProps {
 	authorSearchPending?: boolean;
 	onExpandDetails?: (item: LibraryItem) => void;
 	tmdbRating?: number | null;
-	openIssueCount?: number;
+	openIssueCount?: number | null;
 	posterPath?: string | null;
 	watchCount?: number | null;
 	watchCountSemantics?: "exact" | "lower-bound" | "unknown";
@@ -53,9 +55,14 @@ interface LibraryCardProps {
 	/** Label for the media server link (e.g., "Plex", "Jellyfin", "Emby") */
 	mediaServerLabel?: string;
 	/** qui torrent state (seeding/ratio) for at-a-glance card pill */
-	quiState?: { state: string; ratio: number } | null;
+	quiState?: { state: string; ratio: number | null } | null;
 	/** Per-item tracker summary (count + top hostnames) from qui correlation */
-	seedingSummary?: { trackerCount: number; topHosts: string[] } | null;
+	seedingSummary?: {
+		trackerCount: number;
+		topHosts: string[];
+		complete: boolean;
+		episodeInventory?: LibrarySeedingSummary["episodeInventory"];
+	} | null;
 	/** qui's tracker-meta map (hostname → {iconUrl, name}) for brand icons */
 	trackerIcons?: Record<string, { iconUrl?: string; name?: string }>;
 }
@@ -64,6 +71,7 @@ interface LibraryCardProps {
  * Props for the LibraryContent component
  */
 interface LibraryContentProps {
+	quiObservationStatus?: QuiObservationStatus;
 	/** Loading state */
 	isLoading: boolean;
 	/** Error state */
@@ -89,10 +97,8 @@ interface LibraryContentProps {
 	onPageSizeChange: (size: number) => void;
 	/** Handler for toggling monitoring */
 	onToggleMonitor: (item: LibraryItem) => void;
-	/** Pending key for monitor mutation */
-	pendingKey: string | null;
-	/** Whether monitor mutation is pending */
-	isMonitorPending: boolean;
+	/** Whether this exact item's monitoring invocation is pending */
+	isMonitorPending: (item: LibraryItem) => boolean;
 	/** Service lookup for building external links */
 	serviceLookup: Record<string, ServiceInstanceSummary>;
 	/** Handler for searching a movie */
@@ -123,6 +129,8 @@ interface LibraryContentProps {
 	LibraryCard: React.ComponentType<LibraryCardProps>;
 	/** Whether the library cache is currently syncing */
 	isSyncing?: boolean;
+	/** Whether a cache exists, distinct from a valid empty filtered result */
+	isCached: boolean;
 	/** Seerr enrichment map keyed by "movie:{tmdbId}" or "tv:{tmdbId}" */
 	enrichmentMap?: Record<string, LibraryEnrichmentItem> | null;
 	/** Watch enrichment map keyed by "movie:{tmdbId}" or "series:{tmdbId}" (merged from Plex + Jellyfin/Emby) */
@@ -149,6 +157,7 @@ interface LibraryContentProps {
  * - Error state with premium empty state component
  */
 export const LibraryContent: React.FC<LibraryContentProps> = ({
+	quiObservationStatus,
 	isLoading,
 	isError,
 	error,
@@ -159,7 +168,6 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 	onPageChange,
 	onPageSizeChange,
 	onToggleMonitor,
-	pendingKey,
 	isMonitorPending,
 	serviceLookup,
 	onSearchMovie,
@@ -176,6 +184,7 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 	buildLibraryExternalLink,
 	LibraryCard,
 	isSyncing,
+	isCached,
 	enrichmentMap,
 	watchEnrichmentMap,
 	seriesProgressMap,
@@ -250,8 +259,8 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 	 * already-loaded item.
 	 */
 	const getQuiState = (item: LibraryItem) => {
-		if (!item.torrentState || item.torrentRatio == null) return null;
-		return { state: item.torrentState, ratio: item.torrentRatio };
+		if (quiObservationStatus?.status !== "available" || !item.torrentState) return null;
+		return { state: item.torrentState, ratio: item.torrentRatio ?? null };
 	};
 
 	const allItems = useMemo(
@@ -282,18 +291,24 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 	const seedingSummaryQuery = useLibrarySeedingSummary({ items: seedingSummaryItems });
 	const trackerIconsQuery = useTrackerIcons();
 	const summaries = seedingSummaryQuery.data?.summaries ?? {};
+	const trackerCoverageStatus = seedingSummaryQuery.isError
+		? "unavailable"
+		: (seedingSummaryQuery.data?.status ?? (seedingSummaryQuery.isPending ? "building" : null));
 	const trackerIcons = trackerIconsQuery.data?.trackers;
 	// Lookup helper that matches the backend's `arrInstanceId|type:id` key
 	// shape. Returns null when the item isn't correlated (qui doesn't
 	// know about its hashes, or it's an artist/author).
-	const getSeedingSummary = (
-		item: LibraryItem,
-	): { trackerCount: number; topHosts: string[] } | null => {
+	const getSeedingSummary = (item: LibraryItem): LibraryCardProps["seedingSummary"] => {
 		if (!item.instanceId || typeof item.id !== "number") return null;
 		const key = `${item.instanceId}|${item.type}:${item.id}`;
 		const s = summaries[key];
 		if (!s || s.trackerCount === 0) return null;
-		return { trackerCount: s.trackerCount, topHosts: s.topHosts };
+		return {
+			trackerCount: s.trackerCount,
+			topHosts: s.topHosts,
+			complete: trackerCoverageStatus === "available",
+			episodeInventory: s.episodeInventory,
+		};
 	};
 	const typesPresent = [grouped.movies, grouped.series, grouped.artists, grouped.authors].filter(
 		(g) => g.length > 0,
@@ -313,11 +328,19 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 			{!isLoading && totalItems === 0 ? (
 				<PremiumEmptyState
 					icon={LibraryIcon}
-					title={isSyncing ? "Building your library cache..." : "No items found"}
+					title={
+						isSyncing
+							? "Building your library cache..."
+							: !isCached
+								? "Library cache unavailable"
+								: "No items found"
+					}
 					description={
 						isSyncing
 							? "Your library is being synchronized from your *arr instances. This may take a moment for large libraries."
-							: "Adjust your filters or add content from the Discover tab to populate your library."
+							: !isCached
+								? "No cached library data is available yet. Check sync status before relying on an empty result."
+								: "Adjust your filters or add content from the Discover tab to populate your library."
 					}
 				/>
 			) : null}
@@ -333,6 +356,19 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 				/>
 			)}
 
+			{seedingSummaryItems.length > 0 &&
+				trackerCoverageStatus &&
+				trackerCoverageStatus !== "available" &&
+				trackerCoverageStatus !== "not-configured" && (
+					<p className="text-sm text-amber-500" role="status" aria-live="polite">
+						{trackerCoverageStatus === "building"
+							? "Tracker coverage is still loading. Missing badges are not confirmed absent."
+							: trackerCoverageStatus === "partial"
+								? "Tracker coverage is partial. Displayed counts are lower bounds; missing trackers are unknown."
+								: "Tracker coverage is unavailable. Missing trackers are not confirmed absent."}
+					</p>
+				)}
+
 			{hasMixedTypes ? (
 				<div className="grid gap-4 md:grid-cols-2">
 					{allItems.map((item) => {
@@ -343,7 +379,7 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 								key={`${item.instanceId}:${item.id}`}
 								item={item}
 								onToggleMonitor={onToggleMonitor}
-								pending={pendingKey === `${item.service}:${item.id}` && isMonitorPending}
+								pending={isMonitorPending(item)}
 								externalLink={buildLibraryExternalLink(item, serviceLookup[item.instanceId])}
 								onSearchMovie={item.type === "movie" ? onSearchMovie : undefined}
 								movieSearchPending={
@@ -408,7 +444,7 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 											key={`${item.instanceId}:${item.id}`}
 											item={item}
 											onToggleMonitor={onToggleMonitor}
-											pending={pendingKey === `${item.service}:${item.id}` && isMonitorPending}
+											pending={isMonitorPending(item)}
 											externalLink={buildLibraryExternalLink(item, serviceLookup[item.instanceId])}
 											onSearchMovie={onSearchMovie}
 											movieSearchPending={pendingMovieSearch === `${item.instanceId}:${item.id}`}
@@ -450,7 +486,7 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 											key={`${item.instanceId}:${item.id}`}
 											item={item}
 											onToggleMonitor={onToggleMonitor}
-											pending={pendingKey === `${item.service}:${item.id}` && isMonitorPending}
+											pending={isMonitorPending(item)}
 											externalLink={buildLibraryExternalLink(item, serviceLookup[item.instanceId])}
 											onSearchSeries={onSearchSeries}
 											seriesSearchPending={pendingSeriesSearch === `${item.instanceId}:${item.id}`}
@@ -492,7 +528,7 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 											key={`${item.instanceId}:${item.id}`}
 											item={item}
 											onToggleMonitor={onToggleMonitor}
-											pending={pendingKey === `${item.service}:${item.id}` && isMonitorPending}
+											pending={isMonitorPending(item)}
 											externalLink={buildLibraryExternalLink(item, serviceLookup[item.instanceId])}
 											onViewAlbums={onViewAlbums}
 											onSearchArtist={onSearchArtist}
@@ -535,7 +571,7 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 											key={`${item.instanceId}:${item.id}`}
 											item={item}
 											onToggleMonitor={onToggleMonitor}
-											pending={pendingKey === `${item.service}:${item.id}` && isMonitorPending}
+											pending={isMonitorPending(item)}
 											externalLink={buildLibraryExternalLink(item, serviceLookup[item.instanceId])}
 											onViewBooks={onViewBooks}
 											onSearchAuthor={onSearchAuthor}

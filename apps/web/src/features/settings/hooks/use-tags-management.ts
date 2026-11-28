@@ -10,19 +10,31 @@ export const useTagsManagement = () => {
 
 	const [newTagName, setNewTagName] = useState("");
 
-	const handleCreateTag = async (event: React.FormEvent<HTMLFormElement>) => {
+	const handleCreateTag = (event: React.FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
-		if (!newTagName.trim()) {
+		const submittedName = newTagName.trim();
+		if (!submittedName || createTagMutation.isPending || deleteTagMutation.isPending) {
 			return;
 		}
-		await createTagMutation.mutateAsync(newTagName.trim());
-		setNewTagName("");
+		deleteTagMutation.reset();
+		createTagMutation.mutate(submittedName, {
+			onSuccess: () => {
+				setNewTagName((current) => (current.trim() === submittedName ? "" : current));
+			},
+		});
+	};
+
+	const handleDeleteTag = (id: string) => {
+		if (createTagMutation.isPending || deleteTagMutation.isPending) return;
+		createTagMutation.reset();
+		deleteTagMutation.mutate(id);
 	};
 
 	return {
 		newTagName,
 		setNewTagName,
 		handleCreateTag,
+		handleDeleteTag,
 		createTagMutation,
 		deleteTagMutation,
 	};

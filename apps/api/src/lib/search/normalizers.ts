@@ -252,6 +252,40 @@ export const normalizeSearchResult = (
 	if (!raw) {
 		return null;
 	}
+	// Present malformed action metadata is not equivalent to an absent optional field.
+	for (const key of ["id", "guid"] as const) {
+		const value = raw[key];
+		if (
+			value !== undefined &&
+			value !== null &&
+			!(
+				(typeof value === "string" && value.trim().length > 0) ||
+				(typeof value === "number" &&
+					Number.isFinite(value) &&
+					Number.isInteger(value) &&
+					value >= 0)
+			)
+		)
+			return null;
+	}
+	for (const key of [
+		"link",
+		"magnetUrl",
+		"magnetURI",
+		"magneturi",
+		"MagnetUri",
+		"MagnetURI",
+		"infoUrl",
+		"infoLink",
+		"infoURI",
+		"info",
+		"downloadUrl",
+		"downloadLink",
+		"downloadURI",
+		"download",
+	] as const) {
+		if (raw[key] !== undefined && raw[key] !== null && typeof raw[key] !== "string") return null;
+	}
 
 	const id =
 		toStringValue(raw.id) ??
@@ -265,7 +299,9 @@ export const normalizeSearchResult = (
 		toStringValue(raw.releaseTitle) ??
 		(id ? `Result ${id}` : undefined);
 
-	const indexerId = toNumber(raw.indexerId ?? raw.indexerID);
+	const rawIndexerId = raw.indexerId ?? raw.indexerID;
+	const indexerId =
+		typeof rawIndexerId === "string" && !rawIndexerId.trim() ? undefined : toNumber(rawIndexerId);
 	const indexerName =
 		toStringValue(raw.indexer) ??
 		toStringValue(raw.indexerName) ??
@@ -273,7 +309,13 @@ export const normalizeSearchResult = (
 		toStringValue(raw.site) ??
 		instance.label;
 
-	if (!id || !title || typeof indexerId !== "number") {
+	if (
+		!id ||
+		!title ||
+		typeof indexerId !== "number" ||
+		!Number.isInteger(indexerId) ||
+		indexerId < 0
+	) {
 		return null;
 	}
 
@@ -296,13 +338,24 @@ export const normalizeSearchResult = (
 		toStringValue(raw.downloadURI) ??
 		toStringValue(raw.download);
 
-	const seeders = toNumber(raw.seeders);
-	const leechers = toNumber(raw.leechers);
+	let metadataIncomplete = false;
+	const optionalMetric = (value: unknown): number | undefined => {
+		if (value === undefined || value === null) return undefined;
+		const number = typeof value === "string" && !value.trim() ? undefined : toNumber(value);
+		if (number === undefined || number < 0) {
+			metadataIncomplete = true;
+			return undefined;
+		}
+		return number;
+	};
+	const seeders = optionalMetric(raw.seeders);
+	const leechers = optionalMetric(raw.leechers);
 	const peers =
-		toNumber(raw.peers) ??
-		(typeof seeders === "number" || typeof leechers === "number"
-			? (seeders ?? 0) + (leechers ?? 0)
-			: undefined);
+		raw.peers !== undefined && raw.peers !== null
+			? optionalMetric(raw.peers)
+			: typeof seeders === "number" && typeof leechers === "number"
+				? optionalMetric(seeders + leechers)
+				: undefined;
 
 	const rejectionReasons = parseStringArray(
 		raw.rejectionReasons ??
@@ -316,7 +369,7 @@ export const normalizeSearchResult = (
 		id,
 		guid: toStringValue(raw.guid) ?? undefined,
 		title,
-		size: toNumber(raw.size) ?? undefined,
+		size: optionalMetric(raw.size),
 		link: toStringValue(raw.link) ?? downloadUrl ?? infoUrl ?? undefined,
 		magnetUrl: magnetUrl ?? undefined,
 		infoUrl: infoUrl ?? undefined,
@@ -327,17 +380,17 @@ export const normalizeSearchResult = (
 		seeders: seeders ?? undefined,
 		leechers: leechers ?? undefined,
 		peers: peers ?? undefined,
-		grabs: toNumber(raw.grabs ?? raw.historyCount ?? raw.downloaded) ?? undefined,
+		grabs: optionalMetric(raw.grabs ?? raw.historyCount ?? raw.downloaded),
 		protocol: parseProtocol(toStringValue(raw.protocol)),
 		publishDate: parseDateValue(raw.publishDate ?? raw.firstSeen ?? raw.updated) ?? undefined,
-		age: toNumber(raw.age) ?? undefined,
-		ageHours: toNumber(raw.ageHours) ?? undefined,
-		ageDays: toNumber(raw.ageDays) ?? undefined,
+		age: optionalMetric(raw.age),
+		ageHours: optionalMetric(raw.ageHours),
+		ageDays: optionalMetric(raw.ageDays),
 		downloadClient: toStringValue(raw.downloadClient ?? raw.downloadClientName) ?? undefined,
-		downloadVolumeFactor: toNumber(raw.downloadVolumeFactor) ?? undefined,
-		uploadVolumeFactor: toNumber(raw.uploadVolumeFactor) ?? undefined,
-		minimumRatio: toNumber(raw.minimumRatio) ?? undefined,
-		minimumSeedTime: toNumber(raw.minimumSeedTime) ?? undefined,
+		downloadVolumeFactor: optionalMetric(raw.downloadVolumeFactor),
+		uploadVolumeFactor: optionalMetric(raw.uploadVolumeFactor),
+		minimumRatio: optionalMetric(raw.minimumRatio),
+		minimumSeedTime: optionalMetric(raw.minimumSeedTime),
 		rejectionReasons,
 		rejected:
 			typeof raw.rejected === "boolean"
@@ -352,7 +405,58 @@ export const normalizeSearchResult = (
 		instanceUrl: instance.baseUrl,
 	};
 
-	const parsed = searchResultSchema.safeParse(candidate);
+	// Optional display collections and dates cannot invalidate actionable identity.
+	const optionalRaw = {
+		categories: raw.categories ?? raw.category ?? raw.categoryIds,
+		languages: raw.languages,
+		rejectionReasons:
+			raw.rejectionReasons ??
+			raw.rejectionMessages ??
+			raw.rejections ??
+			raw.rejectReasons ??
+			raw.reasons,
+		publishDate: raw.publishDate ?? raw.firstSeen ?? raw.updated,
+	};
+	const rawCategories = optionalRaw.categories;
+	if (Array.isArray(rawCategories) || typeof rawCategories === "string") {
+		const entries: unknown[] =
+			typeof rawCategories === "string" ? rawCategories.split(/[|,]/) : rawCategories;
+		const categories: number[] = [];
+		for (const entry of entries) {
+			const value =
+				entry && typeof entry === "object" && !Array.isArray(entry)
+					? (entry as Record<string, unknown>).id
+					: entry;
+			const number = typeof value === "string" && !value.trim() ? undefined : toNumber(value);
+			if (number !== undefined && Number.isInteger(number)) categories.push(number);
+			else metadataIncomplete = true;
+		}
+		candidate.categories = categories.length > 0 ? categories : undefined;
+	}
+	for (const key of ["categories", "languages", "rejectionReasons", "publishDate"] as const) {
+		const value = optionalRaw[key];
+		if (
+			Array.isArray(value) &&
+			Array.isArray(candidate[key]) &&
+			value.length !== candidate[key]?.length
+		)
+			metadataIncomplete = true;
+		const parsed = searchResultSchema.shape[key].safeParse(candidate[key]);
+		if (
+			!parsed.success ||
+			(value !== undefined &&
+				value !== null &&
+				candidate[key] === undefined &&
+				(!Array.isArray(value) || value.length > 0))
+		) {
+			metadataIncomplete = true;
+			candidate[key] = undefined;
+		}
+	}
+	const parsed = searchResultSchema.safeParse({
+		...Object.fromEntries(Object.entries(candidate).filter(([, value]) => value !== undefined)),
+		...(metadataIncomplete ? { metadataIncomplete: true } : {}),
+	});
 	return parsed.success ? parsed.data : null;
 };
 

@@ -68,6 +68,7 @@ vi.mock("../../lib/services/tag-manager.js", () => ({
 	updateInstanceTags: vi.fn().mockResolvedValue(undefined),
 }));
 
+import { Prisma } from "../../lib/prisma.js";
 import Fastify, { type FastifyInstance } from "fastify";
 import { registerPulseRoutes } from "../pulse.js";
 import { registerServiceRoutes } from "../services.js";
@@ -75,12 +76,53 @@ import { createMockEncryptor, registerTestErrorHandler } from "./test-helpers.js
 
 const USER_HEADER = "x-test-user";
 
+function createCleanupLeaseMock() {
+	let row: {
+		id: string;
+		userId: string;
+		runClaimToken: string | null;
+		runClaimedAt: Date | null;
+	} | null = null;
+	return {
+		findUnique: vi.fn(async ({ where }: any) => (row?.userId === where.userId ? { ...row } : null)),
+		create: vi.fn(async ({ data }: any) => {
+			row = {
+				id: "cleanup-config-1",
+				userId: data.userId,
+				runClaimToken: null,
+				runClaimedAt: null,
+			};
+			return { ...row };
+		}),
+		update: vi.fn(async ({ where, data }: any) => {
+			const available = where.OR?.some((condition: any) => {
+				if ("runClaimToken" in condition) return row?.runClaimToken === null;
+				if ("runClaimedAt" in condition && condition.runClaimedAt === null)
+					return row?.runClaimedAt === null;
+				if (condition.runClaimedAt?.lt instanceof Date)
+					return row?.runClaimedAt instanceof Date && row.runClaimedAt < condition.runClaimedAt.lt;
+				return false;
+			});
+			const matches =
+				row?.id === where.id &&
+				row?.userId === where.userId &&
+				(where.OR ? available : row?.runClaimToken === where.runClaimToken);
+			if (!matches || !row) {
+				throw new Prisma.PrismaClientKnownRequestError("Synthetic cleanup lease not found", {
+					code: "P2025",
+					clientVersion: "test",
+				});
+			}
+			Object.assign(row, data);
+			return { id: row.id };
+		}),
+	};
+}
+
 function createMockPrisma() {
+	const cleanupLease = createCleanupLeaseMock();
 	const prisma = {
-		libraryCleanupConfig: {
-			upsert: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
-			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
-		},
+		libraryCleanupConfig: cleanupLease,
 		serviceInstance: {
 			create: vi.fn().mockImplementation(({ data }: any) => {
 				persistedServiceRevisions.set(

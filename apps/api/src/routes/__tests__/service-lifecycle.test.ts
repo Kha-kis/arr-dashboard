@@ -26,6 +26,7 @@
  */
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { Prisma } from "../../lib/prisma.js";
 
 const { mockTestConnection } = vi.hoisted(() => ({
 	mockTestConnection: vi.fn(),
@@ -131,6 +132,12 @@ function createPrismaStub() {
 	const historyObservations = new Map<string, any>();
 	const historySourceStatuses = new Map<string, any>();
 	const historyCollectionLeases = new Map<string, any>();
+	let cleanupConfig: {
+		id: string;
+		userId: string;
+		runClaimToken: string | null;
+		runClaimedAt: Date | null;
+	} | null = null;
 	let nextId = 1;
 
 	const serviceInstance = {
@@ -234,6 +241,21 @@ function createPrismaStub() {
 	};
 
 	const prisma = {
+		$executeRaw: vi.fn(async (query: { values: unknown[] }) => {
+			const [instanceId, userId] = query.values;
+			const row = instances.get(String(instanceId));
+			return row?.userId === userId ? 1 : 0;
+		}),
+		searchGrabClaim: { findFirst: vi.fn().mockResolvedValue(null) },
+		arrImportOperation: {
+			findFirst: vi.fn().mockResolvedValue(null),
+			count: vi.fn().mockResolvedValue(0),
+		},
+		queueCleanerImportReceipt: {
+			count: vi.fn().mockResolvedValue(0),
+			findFirst: vi.fn().mockResolvedValue(null),
+		},
+		quiActionLog: { count: vi.fn().mockResolvedValue(0) },
 		_instances: instances,
 		_mappings: mappings,
 		_overrides: overrides,
@@ -245,8 +267,13 @@ function createPrismaStub() {
 		plexEpisodeCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		tautulliCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		providerNativeInventorySnapshot: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		providerNativeInventoryRun: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		jellyfinCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		jellyfinEpisodeCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		jellyfinNativeWatchPublication: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		jellyfinNativeWatchScopeReceipt: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		jellyfinNativeWatchRow: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		jellyfinPositiveWatchRow: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		cacheRefreshStatus: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		labelSyncMutationAttempt: {
 			findMany: vi.fn().mockResolvedValue([]),
@@ -260,8 +287,44 @@ function createPrismaStub() {
 			deleteMany: vi.fn(),
 		},
 		libraryCleanupConfig: {
-			upsert: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
-			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+			findUnique: vi.fn(async ({ where }: any) =>
+				cleanupConfig?.userId === where.userId ? { ...cleanupConfig } : null,
+			),
+			create: vi.fn(async ({ data }: any) => {
+				cleanupConfig = {
+					id: "cleanup-config-1",
+					userId: data.userId,
+					runClaimToken: null,
+					runClaimedAt: null,
+				};
+				return { ...cleanupConfig };
+			}),
+			update: vi.fn(async ({ where, data }: any) => {
+				const matchesAvailability = where.OR?.some((condition: any) => {
+					if ("runClaimToken" in condition) return cleanupConfig?.runClaimToken === null;
+					if ("runClaimedAt" in condition && condition.runClaimedAt === null)
+						return cleanupConfig?.runClaimedAt === null;
+					if (condition.runClaimedAt?.lt instanceof Date)
+						return (
+							cleanupConfig?.runClaimedAt !== null &&
+							cleanupConfig?.runClaimedAt !== undefined &&
+							cleanupConfig.runClaimedAt < condition.runClaimedAt.lt
+						);
+					return false;
+				});
+				const matches =
+					cleanupConfig?.id === where.id &&
+					cleanupConfig?.userId === where.userId &&
+					(where.OR ? matchesAvailability : cleanupConfig?.runClaimToken === where.runClaimToken);
+				if (!matches || !cleanupConfig) {
+					throw new Prisma.PrismaClientKnownRequestError("Synthetic cleanup lease not found", {
+						code: "P2025",
+						clientVersion: "test",
+					});
+				}
+				Object.assign(cleanupConfig, data);
+				return { id: cleanupConfig.id };
+			}),
 		},
 		serviceInstance,
 		serviceTag: {

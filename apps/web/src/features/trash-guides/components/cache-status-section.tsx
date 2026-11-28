@@ -1,26 +1,13 @@
 "use client";
 
-import type { TrashConfigType } from "@arr/shared";
+import type { TrashCacheStatus, TrashConfigType } from "@arr/shared";
 import { AlertTriangle, Clock, Database, Package, RefreshCw } from "lucide-react";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
-interface CacheStatusEntry {
-	serviceType: string;
-	configType: string;
-	version: number;
-	itemCount: number;
-	lastFetched: string;
-	isStale: boolean;
-	sourceBreakdown?: {
-		official: number;
-		custom: number;
-	};
-}
-
 interface CacheStatusSectionProps {
 	serviceType: "RADARR" | "SONARR";
-	statuses: CacheStatusEntry[];
+	statuses: TrashCacheStatus[];
 	configTypeLabels: Record<string, string>;
 	refreshing: boolean;
 	onRefresh: () => void;
@@ -40,24 +27,27 @@ const CacheStatusCard = ({
 	itemCount,
 	lastFetched,
 	isStale,
+	unavailable,
 	sourceBreakdown,
 }: {
 	configTypeLabel: string;
 	version: number;
-	itemCount: number;
+	itemCount: number | null;
 	lastFetched: string;
 	isStale: boolean;
+	unavailable?: true;
 	sourceBreakdown?: { official: number; custom: number };
 }) => {
 	const { gradient: themeGradient } = useThemeGradient();
 
-	const cardColor = isStale ? SEMANTIC_COLORS.warning.from : themeGradient.from;
+	const warn = isStale || unavailable;
+	const cardColor = warn ? SEMANTIC_COLORS.warning.from : themeGradient.from;
 
 	return (
 		<article
 			className="group relative rounded-xl overflow-hidden transition-all duration-200 hover:-translate-y-[1px] hover:shadow-lg hover:shadow-black/10"
 			style={{
-				border: `1px solid ${cardColor}${isStale ? "20" : "10"}`,
+				border: `1px solid ${cardColor}${warn ? "20" : "10"}`,
 			}}
 		>
 			<div
@@ -73,36 +63,36 @@ const CacheStatusCard = ({
 			<div
 				className="absolute left-0 top-0 bottom-0 w-[3px]"
 				style={{
-					background: isStale
+					background: warn
 						? `linear-gradient(180deg, ${SEMANTIC_COLORS.warning.from}, ${SEMANTIC_COLORS.warning.from}70)`
 						: `linear-gradient(180deg, ${themeGradient.from}, ${themeGradient.fromLight})`,
 				}}
 			/>
 			<div className="relative p-5">
-				<div className="flex items-start justify-between mb-4">
-					<div className="flex items-center gap-3">
+				<div className="mb-4 flex flex-wrap items-start justify-between gap-2">
+					<div className="flex min-w-0 items-center gap-3">
 						<div
-							className="flex h-10 w-10 items-center justify-center rounded-xl"
+							className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl"
 							style={{
-								background: isStale
+								background: warn
 									? `${SEMANTIC_COLORS.warning.from}20`
 									: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
-								border: isStale
+								border: warn
 									? `1px solid ${SEMANTIC_COLORS.warning.border}`
 									: `1px solid ${themeGradient.from}30`,
 							}}
 						>
 							<Package
 								className="h-5 w-5"
-								style={{ color: isStale ? SEMANTIC_COLORS.warning.from : themeGradient.from }}
+								style={{ color: warn ? SEMANTIC_COLORS.warning.from : themeGradient.from }}
 							/>
 						</div>
-						<div>
-							<h3 className="font-semibold text-foreground">{configTypeLabel}</h3>
+						<div className="min-w-0">
+							<h3 className="wrap-anywhere font-semibold text-foreground">{configTypeLabel}</h3>
 							<p className="text-xs text-muted-foreground">Version {version}</p>
 						</div>
 					</div>
-					{isStale && (
+					{warn && (
 						<span
 							className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium"
 							style={{
@@ -112,7 +102,7 @@ const CacheStatusCard = ({
 							}}
 						>
 							<AlertTriangle className="h-3 w-3" />
-							Stale
+							{unavailable ? "Unavailable" : "Stale"}
 						</span>
 					)}
 				</div>
@@ -121,7 +111,13 @@ const CacheStatusCard = ({
 					<div className="flex items-center gap-2.5 text-sm">
 						<Database className="h-4 w-4 text-muted-foreground" />
 						<span className="text-muted-foreground">
-							<span className="font-medium text-foreground">{itemCount}</span> items cached
+							{unavailable ? (
+								"Refresh the cache to fetch a readable copy."
+							) : (
+								<>
+									<span className="font-medium text-foreground">{itemCount}</span> items cached
+								</>
+							)}
 							{sourceBreakdown && (
 								<span className="ml-1">
 									({sourceBreakdown.official} official,{" "}
@@ -159,11 +155,11 @@ export const CacheStatusSection = ({
 	configTypeLabels,
 	refreshing,
 	onRefresh,
-	onRefreshEntry: _onRefreshEntry,
+	onRefreshEntry,
 	onDelete: _onDelete,
 	isRefreshPending,
 	isDeletePending: _isDeletePending,
-	refreshingEntry: _refreshingEntry,
+	refreshingEntry,
 }: CacheStatusSectionProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
 
@@ -231,7 +227,7 @@ export const CacheStatusSection = ({
 					</button>
 				</div>
 			) : (
-				<div className="grid gap-4 md:grid-cols-2">
+				<div className="grid grid-cols-1 gap-4 md:grid-cols-2">
 					{statuses.map((status, index) => (
 						<div
 							key={`${status.serviceType}-${status.configType}`}
@@ -247,8 +243,19 @@ export const CacheStatusSection = ({
 								itemCount={status.itemCount}
 								lastFetched={status.lastFetched}
 								isStale={status.isStale}
+								unavailable={status.unavailable}
 								sourceBreakdown={status.sourceBreakdown}
 							/>
+							{status.unavailable && onRefreshEntry && (
+								<button
+									type="button"
+									className="mt-2 max-w-full wrap-anywhere rounded-md border border-border px-3 py-1.5 text-sm disabled:opacity-50"
+									disabled={isRefreshPending || Boolean(refreshingEntry)}
+									onClick={() => onRefreshEntry(serviceType, status.configType)}
+								>
+									Refresh {configTypeLabels[status.configType] ?? status.configType}
+								</button>
+							)}
 						</div>
 					))}
 				</div>

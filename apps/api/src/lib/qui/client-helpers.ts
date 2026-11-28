@@ -43,6 +43,8 @@ export async function quiRequest<T>(
 		 * echoed verbatim by qui.
 		 */
 		redactErrorMessage?: (message: string) => string;
+		/** Fixed, identifier-free diagnostics for the read-only Cross-seed lookup. */
+		diagnosticPolicy?: "cross-seed";
 		/**
 		 * Per-call timeout override. Resolves in this order:
 		 *   init.timeoutMs → ctx.timeoutMs → DEFAULT_QUI_TIMEOUT_MS.
@@ -51,8 +53,12 @@ export async function quiRequest<T>(
 		 * widening every other call's timeout.
 		 */
 		timeoutMs?: number;
+		/** Optional cancellation of a read-only inventory walk, in addition to the request timeout. */
+		signal?: AbortSignal;
 	},
 ): Promise<T> {
+	const privateDiagnostics = init?.diagnosticPolicy === "cross-seed";
+	init?.signal?.throwIfAborted();
 	const url = buildUrl(ctx.baseUrl, path, init?.query);
 	const timeoutMs = init?.timeoutMs ?? ctx.timeoutMs ?? DEFAULT_QUI_TIMEOUT_MS;
 
@@ -67,16 +73,36 @@ export async function quiRequest<T>(
 				...ctx.httpAuthHeaders,
 			},
 			body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
-			signal: AbortSignal.timeout(timeoutMs),
+			signal: init?.signal
+				? AbortSignal.any([init.signal, AbortSignal.timeout(timeoutMs)])
+				: AbortSignal.timeout(timeoutMs),
 		});
 	} catch (error) {
+		if (privateDiagnostics) {
+			ctx.log.warn({ category: "network", status: 503 }, "Cross-seed provider request failed");
+			// The error class owns an enumerable instanceId; do not retain its private value.
+			throw new QuiInstanceUnreachableError("", { reason: "Cross-seed provider is unreachable" });
+		}
 		throw new QuiInstanceUnreachableError(ctx.instanceId, {
 			reason: describeNetworkError(error),
 			cause: error,
 		});
 	}
 
+	init?.signal?.throwIfAborted();
 	if (!response.ok) {
+		if (privateDiagnostics) {
+			// Dispose without reading private content or waiting on disposal acknowledgement.
+			// Cancellation failures must not replace the original HTTP error or leak a cause.
+			void response.body?.cancel().catch(() => {});
+			ctx.log.warn(
+				{ category: "http", status: response.status },
+				"Cross-seed provider request failed",
+			);
+			throw new QuiApiError("Cross-seed provider request failed", {
+				upstreamStatus: response.status,
+			});
+		}
 		const rawMessage = await readErrorMessage(response);
 		const message = init?.redactErrorMessage?.(rawMessage) ?? rawMessage;
 		ctx.log.warn(
@@ -89,15 +115,37 @@ export async function quiRequest<T>(
 	}
 
 	const json = await response.json().catch((cause) => {
+		if (privateDiagnostics) {
+			ctx.log.warn(
+				{ category: "non_json", status: response.status },
+				"Cross-seed provider returned an invalid response",
+			);
+			throw new QuiApiError("Cross-seed provider returned an invalid response", {
+				upstreamStatus: response.status,
+				statusCodeOverride: 502,
+			});
+		}
 		throw new QuiApiError(`qui returned non-JSON response from ${path}`, {
 			upstreamStatus: response.status,
 			statusCodeOverride: 502,
 			cause,
 		});
 	});
+	// Even an abort-ignoring transport must not make a cancelled page publishable.
+	init?.signal?.throwIfAborted();
 
 	const parsed = schema.safeParse(json);
 	if (!parsed.success) {
+		if (privateDiagnostics) {
+			ctx.log.warn(
+				{ category: "schema", status: response.status },
+				"Cross-seed provider returned an invalid response",
+			);
+			throw new QuiApiError("Cross-seed provider returned an invalid response", {
+				upstreamStatus: response.status,
+				statusCodeOverride: 502,
+			});
+		}
 		ctx.log.warn(
 			{ instanceId: ctx.instanceId, path, issues: parsed.error.issues.slice(0, 5) },
 			"qui response shape drift",

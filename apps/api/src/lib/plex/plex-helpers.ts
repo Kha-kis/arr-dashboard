@@ -6,11 +6,11 @@
  */
 
 import type { FastifyInstance } from "fastify";
+import { withIsolatedRuntimePrismaReadClient } from "../backup/restore-runtime-client.js";
+import { AppValidationError, InstanceNotFoundError } from "../errors.js";
 import type { ServiceInstance } from "../prisma.js";
-import { InstanceNotFoundError } from "../errors.js";
-import { AppValidationError } from "../errors.js";
 import { getErrorMessage } from "../utils/error-message.js";
-import { type PlexClient, createPlexClient } from "./plex-client.js";
+import { createPlexClient, type PlexClient } from "./plex-client.js";
 
 // ============================================================================
 // Types
@@ -68,6 +68,34 @@ export async function requirePlexClient(
 	return { client, instance };
 }
 
+/**
+ * Resolve an owned Plex source for read-only requests without borrowing an
+ * ordinary transaction. Release the read lane before client or provider work.
+ * Mutation callers must keep using requirePlexClient.
+ */
+export async function requirePlexReadClient(
+	app: FastifyInstance,
+	userId: string,
+	instanceId: string,
+): Promise<{ client: PlexClient; instance: ServiceInstance }> {
+	const instance = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+		prisma.serviceInstance.findFirst({
+			where: { id: instanceId, userId, enabled: true },
+		}),
+	);
+
+	if (!instance) {
+		throw new InstanceNotFoundError(instanceId);
+	}
+
+	if (instance.service !== "PLEX") {
+		throw new AppValidationError("Instance is not a Plex service");
+	}
+
+	const client = createPlexClient(app.encryptor, instance, app.log);
+	return { client, instance };
+}
+
 // ============================================================================
 // Multi-Instance
 // ============================================================================
@@ -81,10 +109,12 @@ export async function executeOnPlexInstances<T>(
 	userId: string,
 	operation: (client: PlexClient, instance: ServiceInstance) => Promise<T>,
 ): Promise<PlexMultiInstanceResponse<T>> {
-	const instances = await app.prisma.serviceInstance.findMany({
-		where: { userId, service: "PLEX", enabled: true },
-		orderBy: { label: "asc" },
-	});
+	const instances = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+		prisma.serviceInstance.findMany({
+			where: { userId, service: "PLEX", enabled: true },
+			orderBy: { label: "asc" },
+		}),
+	);
 
 	const results = await Promise.all(
 		instances.map(async (instance): Promise<PlexInstanceOperationResult<T>> => {

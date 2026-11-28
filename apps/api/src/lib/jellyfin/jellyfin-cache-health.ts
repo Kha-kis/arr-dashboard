@@ -1,5 +1,6 @@
 import type {
 	CacheHealthItem,
+	ProviderNativeWatchCoverage,
 	ProviderObservationStatus,
 	ProviderObservationStatusEnvelope,
 } from "@arr/shared";
@@ -8,12 +9,14 @@ import {
 	providerObservationStatusEnvelopeSchema,
 	providerObservationStatusSchema,
 } from "@arr/shared";
-import type { ServiceInstance } from "../prisma.js";
+import type { PrismaClient, ServiceInstance } from "../prisma.js";
 import {
 	type JellyfinEvidencePrisma,
 	type JellyfinObservation,
 	readOwnedJellyfinObservation,
 } from "./jellyfin-evidence-repository.js";
+import { readOwnedGenerationScopedEpisodeDisplay } from "./jellyfin-generation-scoped-display.js";
+import { readOwnedNativeWatchCoverage } from "./jellyfin-native-watch-coverage.js";
 
 export const DEFAULT_JELLYFIN_CACHE_HEALTH_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 
@@ -24,6 +27,7 @@ export type JellyfinCacheHealthInstance = Pick<ServiceInstance, "id" | "label" |
 export type JellyfinCacheHealthSource = {
 	item: CacheHealthItem;
 	fallbackObservedAt: string | null;
+	watchCoverage?: ProviderNativeWatchCoverage;
 };
 
 export type ReadOwnedJellyfinCacheHealthSourcesInput = {
@@ -131,6 +135,7 @@ function publicStatusEnvelope(
 type AdmittedObservation = {
 	status: ProviderObservationStatus;
 	rows: unknown[];
+	publishedRowCount: number;
 };
 
 function admitObservation(
@@ -144,9 +149,16 @@ function admitObservation(
 	if (observation.cacheType !== cacheType) return null;
 	const status = cloneStatus(observation.providerStatus);
 	if (status === null || !Array.isArray(observation.rows)) return null;
-	if (status.availability === "unavailable") return { status, rows: [] };
+	if (status.availability === "unavailable") return { status, rows: [], publishedRowCount: 0 };
 	if (observation.available !== true) return null;
-	return { status, rows: observation.rows };
+	return {
+		status,
+		rows: observation.rows,
+		publishedRowCount:
+			observation.cacheType === "jellyfin_episode" && observation.metadata?.version === 4
+				? observation.metadata.itemCount
+				: observation.rows.length,
+	};
 }
 
 function publicItem(
@@ -169,7 +181,7 @@ function publicItem(
 		return { ...fallback, providerStatus: unavailableStatusEnvelope(instance, cacheType) };
 	}
 
-	const { status, rows } = observation;
+	const { status, publishedRowCount } = observation;
 	const providerStatus = publicStatusEnvelope(instance, cacheType, status);
 	const complete = status.evidence === "complete";
 	const available = status.availability !== "unavailable";
@@ -180,7 +192,7 @@ function publicItem(
 			lastRefreshedAt: observedAt,
 			lastResult: "success",
 			lastErrorMessage: null,
-			itemCount: rows.length,
+			itemCount: publishedRowCount,
 			isStale: false,
 			providerStatus,
 		};
@@ -200,7 +212,7 @@ function publicItem(
 				: isFailed
 					? FAILED_REFRESH_MESSAGE
 					: STALE_MESSAGE,
-			itemCount: rows.length,
+			itemCount: publishedRowCount,
 			isStale: stale,
 			providerStatus,
 		};
@@ -219,7 +231,7 @@ function publicItem(
 					? FAILED_REFRESH_MESSAGE
 					: INCOMPLETE_MESSAGE,
 			itemCount: null,
-			observedItemCount: rows.length,
+			observedItemCount: publishedRowCount,
 			isStale: status.reasonCodes.includes("publication-stale"),
 			providerStatus,
 		};
@@ -235,7 +247,7 @@ function publicItem(
 			lastResult: "partial",
 			lastErrorMessage: INCOMPLETE_MESSAGE,
 			itemCount: null,
-			observedItemCount: rows.length,
+			observedItemCount: publishedRowCount,
 			isStale: status.reasonCodes.includes("publication-stale"),
 			providerStatus,
 		};
@@ -275,7 +287,18 @@ export async function readOwnedJellyfinCacheHealthSources({
 		for (const cacheType of CACHE_TYPES) {
 			let observation: JellyfinObservation | null = null;
 			try {
-				observation = await readOwnedJellyfinObservation({
+				observation =
+					cacheType === "jellyfin_episode" &&
+					typeof (prisma as { $transaction?: unknown }).$transaction === "function"
+						? await readOwnedGenerationScopedEpisodeDisplay({
+								prisma: prisma as unknown as PrismaClient,
+								userId,
+								instanceId: instance.id,
+								now: effectiveNow,
+								maxAgeMs: effectiveMaxAgeMs,
+							})
+						: null;
+				observation ??= await readOwnedJellyfinObservation({
 					prisma,
 					userId,
 					instanceId: instance.id,
@@ -288,9 +311,18 @@ export async function readOwnedJellyfinCacheHealthSources({
 				observation = null;
 			}
 			const admitted = admitObservation(instance, cacheType, observation);
+			const watchCoverage =
+				cacheType === "jellyfin_episode" &&
+				typeof (prisma as { $transaction?: unknown }).$transaction === "function"
+					? await readOwnedNativeWatchCoverage(prisma as unknown as PrismaClient, {
+							userId,
+							instanceId: instance.id,
+						}).catch(() => ({ status: "unavailable", reason: "malformed-publication" }) as const)
+					: undefined;
 			results.push({
 				item: publicItem(instance, cacheType, admitted),
 				fallbackObservedAt: fallbackObservedAt(instance),
+				...(watchCoverage ? { watchCoverage } : {}),
 			});
 		}
 	}

@@ -1,86 +1,88 @@
-import type { NotificationChannelType, NotificationEventType } from "@arr/shared";
+import { AsyncLocalStorage } from "node:async_hooks";
+import {
+	type NotificationChannelType,
+	type NotificationEventType,
+	type NotificationTestResult,
+	notificationFailureCategorySchema,
+} from "@arr/shared";
 
-const REDACTED_PLACEHOLDER = "••••••••";
-const SECRET_FIELD_NAMES = new Set([
-	"password",
-	"botToken",
-	"apiToken",
-	"appToken",
-	"userKey",
-	"auth",
-	"secret",
-	"token",
-]);
-
-function redactSecretFields(config: Record<string, unknown>): Record<string, unknown> {
-	return Object.fromEntries(
-		Object.entries(config).map(([key, value]) => [
-			key,
-			SECRET_FIELD_NAMES.has(key) && typeof value === "string" ? REDACTED_PLACEHOLDER : value,
-		]),
-	);
-}
 import type { Encryptor } from "../auth/encryption.js";
 import {
-	CleanupMaintenanceConflictError,
+	assertRestoreRuntimeOperation,
+	type RestoreRuntime,
+	RestoreRuntimeAdmissionError,
+} from "../backup/restore-runtime-admission.js";
+import {
 	withCleanupOperationGuard,
 	withIndependentCleanupOperationGuard,
 } from "../library-cleanup/cleanup-maintenance-gate.js";
-import type { PrismaClient } from "../prisma.js";
-import type { AggregationBuffer, AggregationConfig } from "./aggregation-buffer.js";
+import type { PrismaClientInstance } from "../prisma.js";
+import type {
+	AggregationBuffer,
+	AggregationConfig,
+	AggregationScope,
+} from "./aggregation-buffer.js";
+import { channelConfigRevision } from "./channel-config-revision.js";
+import { redactNotificationConfig, validateStoredNotificationConfig } from "./config-privacy.js";
 import type { DedupGate } from "./dedup-gate.js";
+import { NotificationFailureError, safeNotificationFailureMessage } from "./failure-diagnostics.js";
 import type { NotificationDispatcher } from "./notification-dispatcher.js";
+import { createNotificationOutboxRepository } from "./outbox-repository.js";
+import { NotificationOutboxError, type NotificationOutboxPolicy } from "./outbox-types.js";
+import { createNotificationOutboxWorker } from "./outbox-worker.js";
 import type { RetryHandler } from "./retry-handler.js";
-import type { RuleEngine } from "./rule-engine.js";
-import type { NotificationRule } from "./rule-engine.js";
-import type { ChannelFormField, NotificationLogger, NotificationPayload } from "./types.js";
+import type { NotificationRule, RuleEngine } from "./rule-engine.js";
+import {
+	type ChannelFormField,
+	type DeliveryAttemptContext,
+	isDeliveryAttemptContext,
+	type NotificationLogger,
+	type NotificationPayload,
+} from "./types.js";
 
 /**
  * Orchestrator for the notification system.
- * Resolves subscribed channels for an event → dedup → rules → aggregation → decrypts configs → dispatches → retries/logs results.
+ * Resolves subscriptions and rules, then durably admits owner-scoped work before dispatch.
  */
 export class NotificationService {
-	private prisma: PrismaClient;
+	private prisma: PrismaClientInstance;
 	private encryptor: Encryptor;
 	private dispatcher: NotificationDispatcher;
 	private logger: NotificationLogger;
-	private dedupGate: DedupGate;
-	private retryHandler: RetryHandler;
 	private ruleEngine: RuleEngine | null;
-	private aggregationBuffer: AggregationBuffer | null;
+	private readonly outboxRuntime: RestoreRuntime | null;
+	private readonly clock: () => Date;
+	private readonly workers = new Map<string, ReturnType<typeof createNotificationOutboxWorker>>();
 	private baseUrl: string;
-	private deferredQueue: Array<{
-		payload: NotificationPayload;
-		deliverAt: number;
-		userId?: string;
-		fallbackEventTypes?: NotificationEventType[];
-	}> = [];
-	private deferFlushTimer: ReturnType<typeof setInterval> | null = null;
-	private static readonly MAX_DEFERRED_QUEUE_SIZE = 200;
+	private admissionClosed = false;
+	private pendingNotifications = new Set<Promise<void>>();
+	private readonly producerContext = new AsyncLocalStorage<{ active: boolean }>();
+	private shutdownPromise: Promise<void> | null = null;
+	private startupPromise: Promise<void> | null = null;
+	private recoveryTimer: ReturnType<typeof setTimeout> | null = null;
 
 	constructor(
-		prisma: PrismaClient,
+		prisma: PrismaClientInstance,
 		encryptor: Encryptor,
 		dispatcher: NotificationDispatcher,
 		logger: NotificationLogger,
-		dedupGate: DedupGate,
-		retryHandler: RetryHandler,
+		_dedupGate: DedupGate | undefined,
+		_retryHandler: RetryHandler | undefined,
 		baseUrl: string,
 		ruleEngine?: RuleEngine,
-		aggregationBuffer?: AggregationBuffer,
+		_createAggregationBuffer?: (
+			deliverDigest: (digest: NotificationPayload, scope: AggregationScope) => Promise<void>,
+		) => AggregationBuffer,
+		outbox?: { runtime: RestoreRuntime; clock?: () => Date },
 	) {
 		this.prisma = prisma;
 		this.encryptor = encryptor;
 		this.dispatcher = dispatcher;
 		this.logger = logger;
-		this.dedupGate = dedupGate;
-		this.retryHandler = retryHandler;
 		this.baseUrl = normalizeBaseUrl(baseUrl);
 		this.ruleEngine = ruleEngine ?? null;
-		this.aggregationBuffer = aggregationBuffer ?? null;
-
-		// Check deferred notifications every minute
-		this.deferFlushTimer = setInterval(() => this.flushDeferredNotifications(), 60_000);
+		this.outboxRuntime = outbox?.runtime ?? null;
+		this.clock = outbox?.clock ?? (() => new Date());
 	}
 
 	/** Update the public URL used to resolve relative notification links. */
@@ -88,90 +90,170 @@ export class NotificationService {
 		this.baseUrl = normalizeBaseUrl(baseUrl);
 	}
 
-	/** Clean up timers on shutdown */
+	/** Stop worker wakeups; committed future work remains in the database. */
 	dispose(): void {
-		if (this.deferFlushTimer) {
-			clearInterval(this.deferFlushTimer);
-			this.deferFlushTimer = null;
-		}
+		this.closeAdmission();
 	}
 
-	/** Queue a notification for delivery after quiet hours end. */
-	private deferNotification(
-		payload: NotificationPayload,
-		deferUntil: string,
-		ruleId: string,
-		userId?: string,
-		fallbackEventTypes?: NotificationEventType[],
-	): void {
-		// Cap queue to prevent unbounded growth
-		if (this.deferredQueue.length >= NotificationService.MAX_DEFERRED_QUEUE_SIZE) {
-			this.logger.warn(
-				{ queueSize: this.deferredQueue.length },
-				"Deferred notification queue full — dropping oldest entry",
-			);
-			this.deferredQueue.shift();
+	/** Stop incoming work without delaying sibling shutdown admission hooks. */
+	closeAdmission(): void {
+		this.admissionClosed = true;
+		if (this.recoveryTimer) {
+			clearTimeout(this.recoveryTimer);
+			this.recoveryTimer = null;
 		}
-		const deliverAt = new Date(deferUntil).getTime();
-		this.deferredQueue.push({ payload, deliverAt, userId, fallbackEventTypes });
-		this.logger.info(
-			{ eventType: payload.eventType, ruleId, deferUntil, queueSize: this.deferredQueue.length },
-			"Notification deferred until quiet hours end",
+		for (const worker of this.workers.values()) worker.closeAdmission();
+	}
+
+	/** Join accepted producers and actual sends, without forcing future work to run. */
+	shutdown(): Promise<void> {
+		this.closeAdmission();
+		if (!this.shutdownPromise) {
+			this.shutdownPromise = this.drain();
+		}
+		return this.shutdownPromise;
+	}
+
+	/** Join discovery, accepted producers and actual sends, not idle future deadlines. */
+	async drain(): Promise<void> {
+		while (this.pendingNotifications.size > 0) await Promise.all(this.pendingNotifications);
+		await Promise.all([...this.workers.values()].map((worker) => worker.drain()));
+	}
+
+	/** Called only after actual runtime activation; provider I/O does not block readiness. */
+	start(): Promise<void> {
+		if (this.admissionClosed || !this.outboxRuntime) {
+			return Promise.reject(new NotificationOutboxError("binding-unavailable"));
+		}
+		if (this.startupPromise) return this.startupPromise;
+		if (this.recoveryTimer) {
+			clearTimeout(this.recoveryTimer);
+			this.recoveryTimer = null;
+		}
+		const runtime = this.outboxRuntime;
+		this.startupPromise = this.trackNotification(async () => {
+			// Running native authority is mandatory, even when optional discovery fails.
+			await runtime.runOperation(() => assertRestoreRuntimeOperation(runtime));
+			try {
+				let lastOwner: string | undefined;
+				while (!this.admissionClosed) {
+					const owners = await runtime.runIndependentOperation(() =>
+						withCleanupOperationGuard(() =>
+							this.prisma.user.findMany({
+								where: {
+									...(lastOwner ? { id: { gt: lastOwner } } : {}),
+									notificationOutboxEvents: {
+										some: { stage: { in: ["ready", "deferred", "aggregating"] } },
+									},
+								},
+								select: { id: true },
+								orderBy: { id: "asc" },
+								take: 100,
+							}),
+						),
+					);
+					for (const owner of owners) {
+						if (this.admissionClosed) break;
+						void this.worker(owner.id)
+							.start()
+							.catch(() => {
+								this.logger.warn(
+									{ operation: "notification-recovery", status: "unavailable" },
+									"Accepted notification work remains pending or unconfirmed",
+								);
+							});
+					}
+					if (owners.length < 100) break;
+					lastOwner = owners[owners.length - 1]!.id;
+				}
+			} catch (error) {
+				if (error instanceof RestoreRuntimeAdmissionError) throw error;
+				this.startupPromise = null;
+				this.logger.warn(
+					{ operation: "notification-discovery", status: "unavailable" },
+					"Accepted notification work remains pending or unconfirmed",
+				);
+				if (!this.admissionClosed) {
+					// A wakeup holds no native/cleanup lease and never grants dispatch authority.
+					this.recoveryTimer = setTimeout(() => {
+						this.recoveryTimer = null;
+						void this.start().catch(() => {
+							this.logger.warn(
+								{ operation: "notification-recovery", status: "unavailable" },
+								"Accepted notification work remains pending or unconfirmed",
+							);
+						});
+					}, 30_000);
+					this.recoveryTimer.unref();
+				}
+			}
+		}).catch((error) => {
+			this.startupPromise = null;
+			throw error;
+		});
+		return this.startupPromise;
+	}
+
+	private repository(userId: string) {
+		if (!this.outboxRuntime) throw new NotificationOutboxError("binding-unavailable");
+		return createNotificationOutboxRepository(
+			this.prisma,
+			this.outboxRuntime,
+			this.encryptor,
+			userId,
+			{ clock: this.clock },
 		);
 	}
 
-	/** Deliver any deferred notifications whose delivery time has passed. */
-	private async flushDeferredNotifications(): Promise<void> {
-		if (this.deferredQueue.length === 0) return;
-
-		try {
-			await withCleanupOperationGuard(async () => {
-				const now = Date.now();
-				const ready = this.deferredQueue.filter((item) => item.deliverAt <= now);
-				if (ready.length === 0) return;
-
-				// Remove ready items only after notification mutation ownership is established.
-				this.deferredQueue = this.deferredQueue.filter((item) => item.deliverAt > now);
-
-				this.logger.info(
-					{ count: ready.length, remaining: this.deferredQueue.length },
-					"Delivering deferred notifications after quiet hours",
-				);
-
-				// Deliver each deferred notification individually (skipRules prevents re-deferral).
-				// Individual delivery ensures each notification routes to the correct channels
-				// based on its own eventType subscriptions.
-				const deliveryOptions = { skipRules: true };
-				for (const item of ready) {
-					try {
-						await this.notifyGuarded(item.payload, {
-							...deliveryOptions,
-							userId: item.userId,
-							fallbackEventTypes: item.fallbackEventTypes,
-						});
-					} catch (err: unknown) {
-						this.logger.warn(
-							{ err, eventType: item.payload.eventType },
-							"Failed to deliver deferred notification",
-						);
-					}
-				}
+	private worker(userId: string) {
+		if (!this.outboxRuntime) throw new NotificationOutboxError("binding-unavailable");
+		let worker = this.workers.get(userId);
+		if (!worker) {
+			worker = createNotificationOutboxWorker({
+				repository: this.repository(userId),
+				runtime: this.outboxRuntime,
+				dispatcher: this.dispatcher,
+				logger: this.logger,
+				clock: this.clock,
 			});
-		} catch (err: unknown) {
-			if (err instanceof CleanupMaintenanceConflictError) {
-				this.logger.debug(
-					{ queueSize: this.deferredQueue.length },
-					"Deferred notification flush paused during database maintenance",
-				);
-				return;
-			}
-			throw err;
+			this.workers.set(userId, worker);
+		}
+		return worker;
+	}
+
+	private async trackNotification<T>(operation: () => Promise<T>): Promise<T> {
+		let settle!: () => void;
+		const completion = new Promise<void>((resolve) => {
+			settle = resolve;
+		});
+		this.pendingNotifications.add(completion);
+		try {
+			return await operation();
+		} finally {
+			this.pendingNotifications.delete(completion);
+			settle();
 		}
 	}
 
+	/** Retain an accepted server-side producer and its notification handoffs during drain. */
+	async runProducer<T>(operation: () => Promise<T>): Promise<T> {
+		if (this.admissionClosed) throw new Error("Notification service is shutting down");
+		return this.trackNotification(async () => {
+			const scope = { active: true };
+			try {
+				return await withIndependentCleanupOperationGuard(() =>
+					this.producerContext.run(scope, operation),
+				);
+			} finally {
+				// Escaped async descendants cannot reuse a completed producer's admission.
+				scope.active = false;
+			}
+		});
+	}
+
 	/**
-	 * Send a notification to all channels subscribed to the given event type.
-	 * Failures on individual channels are logged but do not throw.
+	 * Persist selected work before returning or sending. Admission failures reject;
+	 * post-acceptance processing failures leave durable pending/unconfirmed work.
 	 */
 	async notify(
 		payload: NotificationPayload,
@@ -179,9 +261,18 @@ export class NotificationService {
 			skipRules?: boolean;
 			userId?: string;
 			fallbackEventTypes?: NotificationEventType[];
+			recipientChannelIds?: string[];
 		},
 	): Promise<void> {
-		return withIndependentCleanupOperationGuard(() => this.notifyGuarded(payload, options));
+		if (this.admissionClosed && this.producerContext.getStore()?.active !== true) {
+			throw new Error("Notification service is shutting down");
+		}
+		if (!this.outboxRuntime) throw new NotificationOutboxError("binding-unavailable");
+		return this.trackNotification(() =>
+			this.outboxRuntime!.runOperation(() =>
+				withIndependentCleanupOperationGuard(() => this.notifyGuarded(payload, options)),
+			),
+		);
 	}
 
 	private async notifyGuarded(
@@ -190,14 +281,9 @@ export class NotificationService {
 			skipRules?: boolean;
 			userId?: string;
 			fallbackEventTypes?: NotificationEventType[];
+			recipientChannelIds?: string[];
 		},
 	): Promise<void> {
-		// Dedup: skip if an identical payload was dispatched within the TTL window
-		if (this.dedupGate.isDuplicate(payload)) {
-			this.logger.debug({ eventType: payload.eventType }, "Duplicate notification suppressed");
-			return;
-		}
-
 		const subscriptionEventTypes = [
 			payload.eventType,
 			...new Set(options?.fallbackEventTypes ?? []),
@@ -206,17 +292,64 @@ export class NotificationService {
 			where: {
 				eventType:
 					subscriptionEventTypes.length === 1 ? payload.eventType : { in: subscriptionEventTypes },
-				...(options?.userId ? { channel: { userId: options.userId } } : {}),
+				...(options?.userId !== undefined ? { channel: { userId: options.userId } } : {}),
+				...(options?.recipientChannelIds ? { channelId: { in: options.recipientChannelIds } } : {}),
 			},
 			include: {
 				channel: true,
 			},
 		});
+		if (subscriptions.length === 0) {
+			this.logger.debug(
+				{ eventType: payload.eventType },
+				"No channels subscribed to event, skipping notification",
+			);
+			return;
+		}
 
-		// Filter to enabled channels only
+		const subscriptionsByOwner = new Map<string, typeof subscriptions>();
+		for (const subscription of subscriptions) {
+			const ownerId = subscription.channel.userId;
+			if (!ownerId || (options?.userId !== undefined && ownerId !== options.userId)) continue;
+			const ownerSubscriptions = subscriptionsByOwner.get(ownerId) ?? [];
+			ownerSubscriptions.push(subscription);
+			subscriptionsByOwner.set(ownerId, ownerSubscriptions);
+		}
+
+		for (const [userId, ownerSubscriptions] of subscriptionsByOwner) {
+			await this.notifyOwner(payload, options ?? {}, userId, ownerSubscriptions);
+		}
+	}
+
+	private async notifyOwner(
+		payload: NotificationPayload,
+		options: {
+			skipRules?: boolean;
+			fallbackEventTypes?: NotificationEventType[];
+			recipientChannelIds?: string[];
+		},
+		userId: string,
+		subscriptions: Array<{
+			channelId: string;
+			eventType: string;
+			channel: {
+				id: string;
+				userId: string;
+				name: string;
+				type: string;
+				enabled: boolean;
+				encryptedConfig: string;
+				configIv: string;
+			};
+		}>,
+	): Promise<void> {
 		const enabledByChannel = new Map<string, (typeof subscriptions)[number]>();
 		for (const subscription of subscriptions
-			.filter((sub) => sub.channel.enabled)
+			.filter(
+				(sub) =>
+					sub.channel.enabled &&
+					(!options.recipientChannelIds || options.recipientChannelIds.includes(sub.channelId)),
+			)
 			.sort(
 				(left, right) =>
 					Number(left.eventType !== payload.eventType) -
@@ -227,212 +360,157 @@ export class NotificationService {
 			}
 		}
 		let enabledSubs = [...enabledByChannel.values()];
-
 		if (enabledSubs.length === 0) {
 			this.logger.debug(
-				{ eventType: payload.eventType },
+				{ eventType: payload.eventType, userId },
 				"No channels subscribed to event, skipping notification",
 			);
 			return;
 		}
 
-		// Rule engine: evaluate user-defined rules for suppression, throttling, routing
-		// Deferred notifications skip rules to prevent infinite re-deferral loops
-		const userId = options?.userId ?? enabledSubs[0]?.channel?.userId;
-		if (userId && this.ruleEngine && !options?.skipRules) {
+		let policy: NotificationOutboxPolicy = { stage: "ready" };
+		if (this.ruleEngine && !options.skipRules) {
 			const rules = await this.loadRules(userId);
 			const ruleResult = this.ruleEngine.evaluate(payload, rules);
 			if (ruleResult) {
 				if (ruleResult.action === "suppress") {
 					this.logger.info(
-						{ eventType: payload.eventType, ruleId: ruleResult.ruleId },
+						{ eventType: payload.eventType, ruleId: ruleResult.ruleId, userId },
 						"Notification suppressed by rule",
 					);
 					return;
 				}
 				if (ruleResult.action === "defer" && ruleResult.deferUntil) {
-					this.deferNotification(
-						payload,
-						ruleResult.deferUntil,
-						ruleResult.ruleId,
-						userId,
-						options?.fallbackEventTypes,
-					);
-					return;
+					policy = { stage: "deferred", dueAt: new Date(ruleResult.deferUntil) };
 				}
 				if (ruleResult.action === "throttle" && ruleResult.throttleMinutes) {
 					const lastSent = await this.getLastSentTime(payload.eventType, userId);
-					if (lastSent && Date.now() - lastSent.getTime() < ruleResult.throttleMinutes * 60_000) {
+					if (
+						lastSent &&
+						this.clock().getTime() - lastSent.getTime() < ruleResult.throttleMinutes * 60_000
+					) {
 						this.logger.debug(
-							{ eventType: payload.eventType, ruleId: ruleResult.ruleId },
+							{ eventType: payload.eventType, ruleId: ruleResult.ruleId, userId },
 							"Notification throttled by rule",
 						);
 						return;
 					}
 				}
-				if (ruleResult.action === "route" && ruleResult.targetChannelIds) {
-					const targetSet = new Set(ruleResult.targetChannelIds);
-					const routed = enabledSubs.filter((sub) => targetSet.has(sub.channelId));
-					if (routed.length > 0) {
-						enabledSubs = routed;
-					}
+				if (ruleResult.action === "route") {
+					const targetSet = new Set(ruleResult.targetChannelIds ?? []);
+					enabledSubs = enabledSubs.filter((sub) => targetSet.has(sub.channelId));
+					if (enabledSubs.length === 0) return;
 				}
 			}
 		}
 
-		// Aggregation: batch high-frequency notifications into digests
-		if (userId && this.aggregationBuffer && !options?.fallbackEventTypes?.length) {
-			const aggConfigs = await this.loadAggregationConfigs(userId);
-			const aggConfig = this.aggregationBuffer.hasConfig(payload.eventType, aggConfigs);
-			if (aggConfig) {
-				this.aggregationBuffer.push(payload, aggConfig);
-				this.logger.debug({ eventType: payload.eventType }, "Notification queued for aggregation");
-				return;
-			}
+		if (
+			policy.stage === "ready" &&
+			!options.fallbackEventTypes?.length &&
+			payload.metadata?.aggregated !== true
+		) {
+			const config = (await this.loadAggregationConfigs(userId)).find(
+				(config) => config.eventType === payload.eventType,
+			);
+			if (config)
+				policy = {
+					stage: "aggregating",
+					windowSeconds: config.windowSeconds,
+					maxBatchSize: config.maxBatchSize,
+				};
 		}
-
-		// Resolve relative URLs to absolute so external notification clients
-		// (Telegram, Discord, Pushover, etc.) can generate clickable links
-		if (payload.url) {
-			payload = { ...payload, url: resolveUrl(payload.url, this.baseUrl) };
-		}
-
-		this.logger.info(
-			{ eventType: payload.eventType, channelCount: enabledSubs.length },
-			"Dispatching notification to subscribed channels",
-		);
-
-		for (const sub of enabledSubs) {
-			const channelType = sub.channel.type as NotificationChannelType;
-
-			if (!this.dispatcher.hasSender(channelType)) {
-				this.logger.error(
-					{ channelId: sub.channelId, channelType },
-					`No sender for channel type: ${channelType}`,
-				);
-				await this.logDelivery(
-					sub.channelId,
-					channelType,
-					payload,
-					"failed",
-					`No sender for channel type: ${channelType}`,
-				).catch((logErr) => {
-					this.logger.warn(
-						{ err: logErr, channelId: sub.channelId },
-						"Failed to log notification delivery",
-					);
-				});
-				continue;
-			}
-
-			// Decrypt channel config
-			let config: Record<string, unknown>;
-			try {
-				const decryptedJson = this.encryptor.decrypt({
-					value: sub.channel.encryptedConfig,
-					iv: sub.channel.configIv,
-				});
-				config = JSON.parse(decryptedJson) as Record<string, unknown>;
-			} catch (parseErr) {
-				const error = `Failed to parse config for channel "${sub.channel.name}" — config may be corrupted: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`;
-				this.logger.error({ channelId: sub.channelId, channelType }, error);
-				await this.logDelivery(sub.channelId, channelType, payload, "failed", error).catch(
-					(logErr) => {
-						this.logger.warn(
-							{ err: logErr, channelId: sub.channelId },
-							"Failed to log notification delivery",
-						);
-					},
-				);
-				continue;
-			}
-
-			const result = await this.dispatcher.send(channelType, config, payload);
-
-			if (result.success) {
-				await this.logDelivery(sub.channelId, channelType, payload, "sent").catch((logErr) => {
-					this.logger.warn(
-						{ err: logErr, channelId: sub.channelId },
-						"Failed to log notification delivery",
-					);
-				});
-			} else if (result.retryable) {
-				this.logger.warn(
-					{ channelId: sub.channelId, channelType, error: result.error },
-					`Notification delivery failed (retryable) for channel ${sub.channel.name}`,
-				);
-				await this.logDelivery(sub.channelId, channelType, payload, "failed", result.error).catch(
-					(logErr) => {
-						this.logger.warn(
-							{ err: logErr, channelId: sub.channelId },
-							"Failed to log notification delivery",
-						);
-					},
-				);
-				this.retryHandler.enqueue({
-					channelId: sub.channelId,
-					channelType,
-					config,
-					payload,
-					retryAfterMs: result.retryAfterMs,
-				});
-			} else {
-				this.logger.error(
-					{ channelId: sub.channelId, channelType, error: result.error },
-					`Notification delivery failed for channel ${sub.channel.name}`,
-				);
-				await this.logDelivery(sub.channelId, channelType, payload, "failed", result.error).catch(
-					(logErr) => {
-						this.logger.warn(
-							{ err: logErr, channelId: sub.channelId },
-							"Failed to log notification delivery",
-						);
-					},
-				);
-			}
+		if (payload.url) payload = { ...payload, url: resolveUrl(payload.url, this.baseUrl) };
+		await this.repository(userId).admit({
+			payload,
+			fallbackEventTypes: options.fallbackEventTypes,
+			policy,
+			recipients: enabledSubs.map((sub) => ({
+				channelId: sub.channelId,
+				channelType: sub.channel.type as NotificationChannelType,
+				subscriptionEventType: sub.eventType as NotificationEventType,
+			})),
+		});
+		// A producer already admitted before close may hand off work, but cannot
+		// create a new physical send during shutdown. The next startup resumes it.
+		if (this.admissionClosed) return;
+		try {
+			await this.worker(userId).start();
+		} catch {
+			this.logger.warn(
+				{ operation: "notification-processing", status: "unavailable" },
+				"Accepted notification work remains pending or unconfirmed",
+			);
 		}
 	}
 
 	/**
 	 * Test a specific channel's connectivity by decrypting its config and calling the test method.
 	 */
-	async testChannel(channelId: string, userId: string): Promise<void> {
+	async testChannel(channelId: string, userId: string): Promise<NotificationTestResult> {
 		return withCleanupOperationGuard(() => this.testChannelGuarded(channelId, userId));
 	}
 
-	private async testChannelGuarded(channelId: string, userId: string): Promise<void> {
+	private async testChannelGuarded(
+		channelId: string,
+		userId: string,
+	): Promise<NotificationTestResult> {
 		const channel = await this.prisma.notificationChannel.findFirst({
 			where: { id: channelId, userId },
 		});
 
 		if (!channel) {
-			throw new Error("Channel not found");
+			return { success: false, failureCategory: "unknown", statusRecorded: false };
 		}
 
 		const channelType = channel.type as NotificationChannelType;
-		const decryptedJson = this.encryptor.decrypt({
-			value: channel.encryptedConfig,
-			iv: channel.configIv,
-		});
-		let config: Record<string, unknown>;
+		let outcome: NotificationTestResult;
 		try {
-			config = JSON.parse(decryptedJson) as Record<string, unknown>;
-		} catch (parseErr) {
-			throw new Error(
-				`Failed to parse config for channel "${channel.name}" — config may be corrupted: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}. Try re-saving the channel settings.`,
+			let config: Record<string, unknown>;
+			try {
+				const decryptedJson = this.encryptor.decrypt({
+					value: channel.encryptedConfig,
+					iv: channel.configIv,
+				});
+				config = validateStoredNotificationConfig(channelType, JSON.parse(decryptedJson));
+			} catch {
+				throw new NotificationFailureError("configuration");
+			}
+			await this.dispatcher.test(channelType, config);
+			outcome = { success: true, statusRecorded: false };
+		} catch (error: unknown) {
+			const category = notificationFailureCategorySchema.safeParse(
+				error instanceof NotificationFailureError ? error.category : undefined,
 			);
+			outcome = {
+				success: false,
+				failureCategory: category.success ? category.data : "unknown",
+				statusRecorded: false,
+			};
 		}
 
-		await this.dispatcher.test(channelType, config);
-
-		// Update last tested timestamp
-		await this.prisma.notificationChannel.update({
-			where: { id: channelId },
-			data: {
-				lastTestedAt: new Date(),
-				lastTestResult: "success",
-			},
-		});
+		// Record only against the exact owned connection that was tested. A later
+		// settings edit may win while the provider Test is still in flight.
+		try {
+			const recorded = await this.prisma.notificationChannel.updateMany({
+				where: {
+					id: channel.id,
+					userId: channel.userId,
+					type: channel.type,
+					encryptedConfig: channel.encryptedConfig,
+					configIv: channel.configIv,
+				},
+				data: { lastTestedAt: new Date(), lastTestResult: outcome.success ? "success" : "failed" },
+			});
+			return { ...outcome, statusRecorded: recorded.count === 1 };
+		} catch {
+			// A database failure cannot undo a confirmed provider Test. Never log
+			// exception text, which may include connection settings or credentials.
+			this.logger.debug(
+				{ operation: "notification-test-status-write", status: "failed" },
+				"Failed to update notification test result in database",
+			);
+			return outcome;
+		}
 	}
 
 	/**
@@ -449,6 +527,7 @@ export class NotificationService {
 		type: string;
 		enabled: boolean;
 		config: Record<string, unknown>;
+		configRevision: string;
 		lastTestedAt: Date | null;
 		lastTestResult: string | null;
 		lastSentAt: Date | null;
@@ -469,14 +548,12 @@ export class NotificationService {
 		let config: Record<string, unknown>;
 		try {
 			config = JSON.parse(decryptedJson) as Record<string, unknown>;
-		} catch (parseErr) {
-			throw new Error(
-				`Failed to parse config for channel "${channel.name}" — config may be corrupted: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}. Try re-saving the channel settings.`,
-			);
+		} catch {
+			throw new NotificationFailureError("configuration");
 		}
 
-		// Redact secret fields — frontend should only send non-placeholder values on update
-		const redacted = redactSecretFields(config);
+		// Retained markers are resolved only against this owned channel on update.
+		const redacted = redactNotificationConfig(channel.type as NotificationChannelType, config);
 
 		return {
 			id: channel.id,
@@ -484,6 +561,7 @@ export class NotificationService {
 			type: channel.type,
 			enabled: channel.enabled,
 			config: redacted,
+			configRevision: channelConfigRevision(channel),
 			lastTestedAt: channel.lastTestedAt,
 			lastTestResult: channel.lastTestResult,
 			lastSentAt: channel.lastSentAt,
@@ -525,8 +603,11 @@ export class NotificationService {
 					quietHoursEnd: r.quietHoursEnd,
 					quietHoursTimezone: r.quietHoursTimezone,
 				});
-			} catch (err) {
-				this.logger.error({ err, ruleId: r.id }, "Skipping notification rule with corrupted JSON");
+			} catch {
+				this.logger.error(
+					{ ruleId: r.id, operation: "rule-configuration-read", status: "failed" },
+					"Skipping notification rule with corrupted JSON",
+				);
 			}
 		}
 		return rules;
@@ -577,9 +658,18 @@ export class NotificationService {
 		status: "sent" | "failed" | "dead_letter",
 		error?: string,
 		retryCount?: number,
+		attemptContext?: DeliveryAttemptContext,
 	): Promise<void> {
 		return withCleanupOperationGuard(() =>
-			this.logDeliveryGuarded(channelId, channelType, payload, status, error, retryCount),
+			this.logDeliveryGuarded(
+				channelId,
+				channelType,
+				payload,
+				status,
+				error,
+				retryCount,
+				attemptContext,
+			),
 		);
 	}
 
@@ -590,29 +680,50 @@ export class NotificationService {
 		status: "sent" | "failed" | "dead_letter",
 		error?: string,
 		retryCount?: number,
+		attemptContext?: DeliveryAttemptContext,
 	): Promise<void> {
-		await Promise.all([
-			this.prisma.notificationLog.create({
-				data: {
-					channelId,
-					channelType,
-					eventType: payload.eventType,
-					title: payload.title,
-					body: payload.body,
-					status,
-					error: error ?? null,
-					retryCount: retryCount ?? 0,
-				},
+		if (!isDeliveryAttemptContext(attemptContext, channelId, channelType)) return;
+		const results = await Promise.allSettled([
+			this.prisma.$transaction(async (tx) => {
+				// An UPDATE obtains the same row lock used by owner changes/deletion.
+				// Hold it through history insertion, even when settings have rotated.
+				const owned = await tx.notificationChannel.updateMany({
+					where: { id: channelId, userId: attemptContext.userId },
+					data: { id: channelId },
+				});
+				if (owned.count !== 1) return;
+				await tx.notificationLog.create({
+					data: {
+						channelId,
+						channelType,
+						eventType: payload.eventType,
+						title: payload.title,
+						body: payload.body,
+						status,
+						error: status === "sent" ? null : safeNotificationFailureMessage(error),
+						retryCount: retryCount ?? 0,
+					},
+				});
 			}),
 			// Update denormalized last-send status on the channel for quick lookups
-			this.prisma.notificationChannel.update({
-				where: { id: channelId },
+			this.prisma.notificationChannel.updateMany({
+				where: {
+					id: attemptContext.id,
+					userId: attemptContext.userId,
+					type: attemptContext.type,
+					encryptedConfig: attemptContext.encryptedConfig,
+					configIv: attemptContext.configIv,
+				},
 				data: {
 					lastSentAt: new Date(),
-					lastSendResult: status === "sent" ? "success" : (error ?? "unknown error"),
+					lastSendResult: status === "sent" ? "success" : "failed",
 				},
 			}),
 		]);
+		// A rejected log must not release its parent's lifetime while the status write is active.
+		for (const result of results) {
+			if (result.status === "rejected") throw result.reason;
+		}
 	}
 }
 

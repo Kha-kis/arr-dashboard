@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { Prisma } from "../../../lib/prisma.js";
 import {
 	createInjectAuthenticated,
 	registerTestErrorHandler,
@@ -70,8 +71,9 @@ const mapping = {
 async function createApp(prisma: unknown, deploymentExecutor: unknown) {
 	const database = prisma as Record<string, unknown>;
 	database.libraryCleanupConfig ??= {
-		upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
-		updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+		findUnique: vi.fn().mockResolvedValue(null),
+		create: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
+		update: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
 	};
 	const app = Fastify({ logger: false });
 	setupAuthInjection(app);
@@ -374,8 +376,14 @@ describe("deployment authority writer locking", () => {
 			const deleteMappings = vi.fn();
 			const prisma = {
 				libraryCleanupConfig: {
-					upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
-					updateMany: vi.fn().mockResolvedValue({ count: 0 }),
+					findUnique: vi.fn().mockResolvedValue(null),
+					create: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
+					update: vi.fn().mockRejectedValue(
+						new Prisma.PrismaClientKnownRequestError("held cleanup lease", {
+							code: "P2025",
+							clientVersion: "test",
+						}),
+					),
 				},
 				serviceInstance: { findMany: vi.fn().mockResolvedValue([instance]) },
 				templateQualityProfileMapping: {

@@ -3,22 +3,171 @@
 All notable changes to Arr Dashboard will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html) with any compatibility exceptions documented in the affected release.
 
 ## [Unreleased]
 
-- **Native media-server inventory**: Plex and Jellyfin library views include
+## [2.25.3] — SQLite availability and provider maintenance
+
+### Before you upgrade
+
+Docker SQLite installations require an explicitly configured persistent database directory. Verify an applicable encrypted backup, stop the old writer, and keep the same verified mount, ownership, configuration and secrets. If the database is still in the container writable layer, pause automatic updates and keep the original container and its data available. Use a verified backup and Restore into a separately enrolled persistent installation before replacing the original. Keep a matched pre-upgrade backup and configuration for rollback. Review the [Docker SQLite storage, migration and recovery guide](https://github.com/Kha-kis/arr-dashboard/blob/main/docs/SQLITE-STORAGE.md) and the [v2.25.0 startup advisory](https://github.com/Kha-kis/arr-dashboard/releases/tag/v2.25.0#sqlite-startup-advisory).
+
+### Functional fixes
+
+- Load Radarr movie artwork through the authenticated API when Forms authentication protects the cover route. The proxy retains its redirect, authorization and image checks. ([#953](https://github.com/Kha-kis/arr-dashboard/pull/953))
+- Exclude verified idle observations from new-device notification history and apply matching live and stored platform normalization. Incomplete observations continue to limit deduplication decisions. ([#954](https://github.com/Kha-kis/arr-dashboard/pull/954))
+- Suppress false stale alerts for fresh partial Plex publications. Positive-only observations can still be displayed. Cleanup and other provider writes still require complete, applicable evidence. ([#955](https://github.com/Kha-kis/arr-dashboard/pull/955))
+- Avoid requesting a SQLite writer transaction when a retention sweep finds only protected work. Potential cleanup still uses the existing guarded transaction and preserves active, resumable and published state. ([#956](https://github.com/Kha-kis/arr-dashboard/pull/956))
+
+### Diagnostics
+
+- Classify SQLite contention by the observed admission or transaction stage. ([#950](https://github.com/Kha-kis/arr-dashboard/pull/950))
+- Report safe categories for SQLite storage-binding mismatches while retaining the existing identity checks. ([#951](https://github.com/Kha-kis/arr-dashboard/pull/951))
+- Distinguish guarded Jellyfin finalizer refusals from other worker failures. ([#952](https://github.com/Kha-kis/arr-dashboard/pull/952))
+
+### Release tooling
+
+- Use one worker in each of the four hosted SQLite shards, with existing assertions and deadlines. ([#959](https://github.com/Kha-kis/arr-dashboard/pull/959))
+- Allow a short read-only observation window after a successful registry write. A conflicting digest stops promotion immediately. ([#958](https://github.com/Kha-kis/arr-dashboard/pull/958))
+
+### Known limitations
+
+- Reporter-specific SQLite contention, Restore admission, NAS startup and Jellyfin finalization causes remain under investigation. A storage mismatch diagnostic does not establish continuity or authorize rebinding. General offline recovery for ambiguous legacy state without an applicable backup remains unverified.
+- Unraid FUSE user-share paths remain outside supported Docker SQLite storage. A direct local pool path worked in one reporter’s installation. Preserve existing data and use the documented backup-based transition when changing a bound mount.
+- Unattributed Plex history and missing current metadata can still prevent complete provider coverage. Jellyfin worker preparation failures may require separate evidence.
+
+Thanks to [sugarfunk](https://github.com/sugarfunk), [Quigongentoo](https://github.com/Quigongentoo), [Kirkpajl](https://github.com/Kirkpajl), [dorin89](https://github.com/dorin89), [mk-djs](https://github.com/mk-djs), [swever826](https://github.com/swever826), and [wlogin12345](https://github.com/wlogin12345) for the detailed reports and follow-up evidence.
+
+## [2.25.2] — Inventory maintenance and Docker listener fixes
+
+### Before you upgrade
+
+Docker SQLite still requires an explicitly configured persistent database directory. For a routine upgrade, verify an applicable encrypted backup, stop the old writer, and keep the same verified mount, ownership, configuration, and installation secrets. If you still use the container writable layer, pause automatic updates and keep the original container available. Use the verified backup and Restore procedure before replacing it with a separately enrolled persistent installation. See the [Docker SQLite storage and migration guide](docs/SQLITE-STORAGE.md) and the [v2.25.0 startup advisory](https://github.com/Kha-kis/arr-dashboard/releases/tag/v2.25.0#sqlite-startup-advisory).
+
+### Fixes
+
+- Retire abandoned Plex and Jellyfin native inventory staging data in bounded batches. SQLite can reuse the freed pages within the existing database file. The cleanup preserves active and resumable work and the last published inventory. Repeated changes during inventory collection progressively delay retries to reduce contention.
+- Apply explicit Docker listener environment settings before saved listener settings. An unset or empty override keeps the saved setting in effect. The built-in default applies when no saved setting is available. The packaged Web proxy, health probe and supervisor use the selected listener across restarts. For valid IPv6 link-local binds, the socket keeps its required interface scope. Startup diagnostics report the source of the effective settings.
+
+### Known limitations
+
+- Reusing database pages does not guarantee a smaller database file. Reporter-specific background job failures and database contention still require separate verification.
+- On Linux a scoped IPv6 wildcard such as `::%lo` still binds all interfaces. Use `::1` for IPv6 loopback-only access. An automatically assigned Docker link-local address can change across a restart.
+- Docker SQLite rejects Unraid FUSE user shares at the storage check. A direct local pool path worked in one reported installation. Existing bound data needs a verified continuity or recovery procedure before a mount change. Other NAS startup reports remain open.
+
+Thanks to [Quigongentoo](https://github.com/Quigongentoo) for the inventory staging report and [stavros-k](https://github.com/stavros-k) for isolating persistent listener precedence. See [#944](https://github.com/Kha-kis/arr-dashboard/pull/944) and [#945](https://github.com/Kha-kis/arr-dashboard/pull/945).
+
+## [2.25.1] — Startup recovery and maintenance
+
+### Breaking deployment requirement
+
+Docker SQLite now requires an explicit persistent directory mount for the database. This maintenance release carries a maintainer-approved compatibility exception for installations that used the container’s writable layer. Reuse an existing suitable mount and its original database, sidecars, permissions, and secrets. See the [Docker SQLite storage and migration guide](docs/SQLITE-STORAGE.md).
+
+### Fixes
+
+- Preserve TRaSH quality order when editing or deploying a saved quality profile. Review previously affected priorities before redeploying. Saved templates and existing provider profiles require operator review.
+- Report why a Jellyfin library or episode refresh stopped. Episode-read logs now distinguish HTTP refusals, malformed responses and invalid page data. The Dashboard names the episode watch-cache warning and keeps it separate from the episode refresh retry. Jellyfin episode refresh now skips the Playlists view, which can return playlist folders to an episode query. Normal movie, TV and mixed libraries remain eligible. Unexpected rows in a supported library still stop an incomplete refresh.
+- Report the first failing SQLite startup or migration-preparation stage and allowlisted error codes while retaining ownership, migration and rollback safeguards.
+- Record and resume interrupted SQLite enrollment only when the application can verify the recorded storage objects and obtain exclusive ownership. Startup preserves the existing refusal for foreign, ambiguous, or partially attributed state. The startup log can identify the reason for a cold-enrollment refusal.
+
+### Upgrade guidance
+
+Pause automatic container updates and pin your current image if you use a floating Docker tag. Confirm database placement and keep verified backups of configuration and secrets before replacement. Keep the original writable-layer container if you have one. From a healthy source, create and verify an encrypted application backup, restore it into a separately enrolled persistent destination, and verify sign-in, credentials and configuration before moving traffic. If the source cannot start, preserve it and use an applicable verified backup if available. Keep coordination files intact.
+
+Use one Arr Dashboard instance per database and let startup apply its migrations. If startup refuses the upgrade, preserve the original data and capture the first named phase and safe error code. For rollback, use the previous image with a compatible pre-upgrade backup. [Startup advisory](https://github.com/Kha-kis/arr-dashboard/releases/tag/v2.25.0#sqlite-startup-advisory) · [Backup coverage](docs/BACKUPS.md)
+
+### Known limits
+
+The Playlists scope defect reported in #889 is covered. Recovery on the original server remains to be confirmed. The Jellyfin parent-admission failure in #790 and the Unraid, TrueNAS, and QNAP startup reports in #913, #934, and #914 remain separate investigations. An installation with ambiguous legacy SQLite coordination state and no applicable backup has no verified general offline recovery path. The original Plex-to-Radarr Label Sync report in #914 also remains open. Initial TRaSH override import and first-deploy partial-success behavior remain separate.
+
+Thanks to the issue reporters and contributors for the reproduction steps, provider observations and startup traces.
+
+## [2.25.0] — Durable grabs and restore recovery
+
+### Upgrade and API migration
+
+Back up the database and configuration before upgrading. Run one Arr Dashboard
+API/container per database.
+
+**Manual Search Grab.** For `POST /api/search/grab`, replace the old
+`{ instanceId, result }` body with `{ instanceId, selector, intentId }`. Use the
+accepted `/api/search/query` row's opaque `grabSelector` as `selector`. Generate
+and save one UUID `intentId` per operator action before the first POST. Only an
+empty HTTP `204` confirms a durably acknowledged submission. HTTP `202` is
+pending, `422` records a provider rejection, and `502` leaves delivery
+unconfirmed. A `409` conflict leaves any earlier submission's outcome open.
+
+After a lost reply or uncertain outcome, keep the same intent and read
+`GET /api/search/grab/intents/:intentId`. A missing or unavailable record leaves
+the outcome unknown. If the operator separately confirms a new submission
+after uncertainty, use a new intent UUID, a fresh selector for the identical
+target, and `retry: { predecessorId, duplicateRiskConfirmed: true }`. Use the
+recorded attempt ID as `predecessorId`.
+
+**Backup Restore.** For both `POST /api/backup/restore` and
+`POST /api/backup/restore-from-file`, replace generic success/metadata parsing
+with validation of the HTTP status and the structured response together.
+Terminal responses contain `restoreId`, `outcome`, `success`, `reason`,
+`restartRequired: true`, and `restart`.
+
+| HTTP | Outcome | `success` | `reason` |
+| --- | --- | --- | --- |
+| `200` | `committed` | `true` | `null` |
+| `409` | `not-committed` | `false` | `state-changed` |
+| `503` | `unavailable` | `false` | `ownership-unavailable`, `closure-unverified`, or `commit-unknown` |
+
+Pre-publication refusals have no `restoreId`. A bare HTTP `200`, HTTP `202`,
+malformed reply, or connection loss leaves the outcome unconfirmed. Disable
+automatic Restore retries after an unconfirmed reply.
+`restart` is `automatic-requested` or `manual-required`, with `unavailable` always
+requiring manual recovery. When the application returns after a committed
+restore, sign in with the restored account. With a fresh authenticated session,
+`GET /api/backup/restore/status` can confirm a commit if
+`latestCommitted.restoreId` matches the attempt's ID. Missing or different
+evidence leaves the outcome unconfirmed.
+
+**Provider cache refresh.** A Plex, Jellyfin/Emby, or Tautulli refresh POST now
+returns HTTP `202` with `{ status: "accepted", cacheType }`. The `cacheType` is
+`plex`, `jellyfin` (including Emby), or `tautulli`. Replace synchronous
+completion and counter handling with reads of the corresponding cache
+health/status endpoint to observe the refresh and its published data.
+
+**Container administrator recovery.** Replace recovery commands that depend on
+`pnpm` or `tsx` inside the container with the installed `reset-admin-password`
+command. Stop every API/container using the database first, then use the same
+image and service configuration in an interactive one-off container. Recovery
+requires an exact existing local-password account and hidden terminal input;
+password arguments, environment/file input and noninteractive stdin are not
+supported. See [offline password recovery](README.md#offline-password-recovery).
+
+See the [API route reference](docs/API-ROUTES.md) for the full contracts.
+
+### Added
+
+- **Native media-server inventory** — Plex and Jellyfin library views include
   movies, series, and episodes that have no ARR or TMDB match. The additive
   `ProviderNativeInventorySnapshot` and `ProviderNativeInventoryItem` models
   retain each owned provider's published inventory across refresh attempts.
   ARR matching and watch evidence are evaluated separately; unknown matches or
   watch status do not authorize cleanup.
 
-- **Plex refresh startup recovery** — Episode work waits automatically while a
-  valid library refresh is running. Cache status retains validated partial
-  observations instead of misreporting their metadata as malformed. Interrupted
-  refresh claims are released at startup while completed scan units are retained
-  for automatic recovery.
+- **Positive watch-count cleanup** — Jellyfin and Tautulli rules can use verified
+  positive counts for greater-than conditions, with the exact media item, server
+  identity, and count checked again before execution. Tautulli checks historical
+  plays even when its recent cache is empty. Provider reads are bounded; reaching
+  the limit produces a partial result and leaves unchecked items unknown.
+
+### Changed
+
+- Backup Restore uses one authenticated preparation and exclusive publication
+  path for uploaded and stored backups. It replaces backed-up accounts and
+  settings, revokes sessions, and preserves destination secrets and safety
+  holds.
+- **Restore preparation memory** — Preparation releases transient encrypted
+  input references and avoids copying immutable string values between isolated
+  record containers, retaining authenticated validation and the existing
+  50 MiB encoded-upload / 200 MiB stored ciphertext/plaintext ceilings.
 
 - **Library watch insights and progress** — Incomplete media-server evidence now
   returns useful read-only results with explicit unknown watch status instead of
@@ -29,19 +178,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `configured` fields; requested insights also distinguish request coverage from
   watch coverage. Insight results alone do not authorize cleanup or provider writes.
 
-- **Positive watch-count cleanup** — Jellyfin and Tautulli rules can use verified
-  positive counts for greater-than conditions, with the exact media item, server
-  identity, and count checked again before execution. Tautulli checks historical
-  plays even when its recent cache is empty. Provider reads are bounded; reaching
-  the limit produces a partial result and leaves unchecked items unknown.
+### Fixed
+
+- **Seerr upcoming TV** — Details and seasons remain available when
+  `lastAirDate` is null. Malformed details still fail validation. Includes the
+  compatibility correction contributed by `Matosh-fr`.
+- **Calendar Today** — Initial selection, the initial month and Go to Today use
+  the viewer's local date without changing provider date-only values.
+- **Notification controls** — Switches display their purposes, and Plex and
+  Jellyfin/Emby new-device subscriptions have distinct labels. Jellyfin-only
+  installations retain known client platforms between capture ticks; incomplete
+  history cannot establish that a platform is new.
+- **Radarr Auto-Tagger metadata** — File-dependent criteria can use metadata
+  fetched for the exact current movie file when embedded fields are missing.
+  Missing or conflicting HDR evidence remains unknown. Scheduled and webhook
+  execution revalidate identity and retain the complete current resource when
+  updating tags.
+- **Runtime maintenance** — Update Next.js to 16.4.5, Nodemailer to 10.6.0 and
+  DOMPurify resolutions to 3.4.18.
+
+- **Navigation and keyboard usability** — Desktop navigation stays within the
+  viewport and scrolls independently. The mobile menu opens from the header,
+  contains keyboard focus, and closes on navigation or desktop resize. The
+  command palette supports modal focus, Escape, and outside dismissal, and its
+  documentation action opens the canonical repository.
+
+- **Radarr language custom formats** — Deployment readback and new recovery
+  tokens accept one omitted `exceptLanguage` field materialized as Boolean
+  `false`. Explicit intent and other writable drift remain strict; existing
+  Radarr recovery tokens retain their original checks.
+
+- **Plex refresh startup recovery** — Episode work waits automatically while a
+  valid library refresh is running. Cache status retains validated partial
+  observations instead of misreporting their metadata as malformed. Interrupted
+  refresh claims are released at startup while completed scan units are retained
+  for automatic recovery.
 
 - **Truthful Jellyfin cache display** — Safe positive observations can be
   displayed as partial evidence while semantic omissions remain visible and
   mutation authority stays fail-closed.
-- **Durable cache refresh acceptance** — Plex, Jellyfin/Emby, and Tautulli
-  refresh requests now use a prompt `202 Accepted` receipt; observe eventual
-  completion through cache health/status instead of treating request acceptance
-  as refresh completion.
+
+- Plex and Jellyfin library reads retain the last published inventory during
+  refresh. Jellyfin series progress can show its last verified ratio and
+  observation time if current evidence is incomplete. Plex collection counts
+  exclude collections from library item totals.
+- History exposes a bounded unavailable state when reads fail. Statistics
+  reports gaps in source coverage and keeps native Plex reports available
+  during failures of optional Tautulli enrichment.
+- Queue Cleaner and Library Cleanup revalidate target evidence before acting
+  and retain recovery state after partial or unconfirmed outcomes. qUI remains
+  responsive during torrent-state sync.
+- TRaSH cache refresh keeps readable catalogues available when another
+  catalogue fails. Interrupted deployments retain guarded recovery.
+- Concurrent dashboard session validation shares a request, primary mobile
+  controls fit the viewport, and Enter on Seerr widget actions no longer opens
+  the surrounding Requests link.
+- Search Grab clears the sending indicator when its owning intent settles,
+  even if the search results have changed. Duplicate-risk checking belongs
+  to the active retry dialog. A check from a dismissed dialog can no longer
+  disable its replacement or clear the replacement's busy indicator.
+- Container supervision and shutdown diagnostics improve recovery visibility.
+  Populated SQLite installations scan dates with lower startup allocation,
+  and Jellyfin refresh staging batches episode writes.
+
+### Database changes
+
+New records persist provider inventory and observations (including
+`ProviderNativeInventorySnapshot` and `ProviderNativeInventoryItem`), History
+and Statistics snapshots, restore coordination, import and Grab attempts
+(including `SearchGrabAttempt` and `SearchGrabClaim`), qUI and Label Sync
+action evidence, and notification outbox delivery.
 
 ## [2.24.1] - 2026-08-16 — Recovery and timezone correctness
 
@@ -1758,6 +1964,11 @@ Major dependency updates:
 
 ---
 
+[Unreleased]: https://github.com/Kha-kis/arr-dashboard/compare/v2.25.1...HEAD
+[2.25.3]: https://github.com/Kha-kis/arr-dashboard/compare/v2.25.2...v2.25.3
+[2.25.2]: https://github.com/Kha-kis/arr-dashboard/compare/v2.25.1...v2.25.2
+[2.25.1]: https://github.com/Kha-kis/arr-dashboard/compare/v2.25.0...v2.25.1
+[2.25.0]: https://github.com/Kha-kis/arr-dashboard/compare/v2.24.1...v2.25.0
 [2.9.0]: https://github.com/Kha-kis/arr-dashboard/compare/v2.8.5...v2.9.0
 [2.8.5]: https://github.com/Kha-kis/arr-dashboard/compare/v2.8.4...v2.8.5
 [2.8.4]: https://github.com/Kha-kis/arr-dashboard/compare/v2.8.3...v2.8.4

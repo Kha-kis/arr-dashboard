@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { Prisma } from "../../lib/prisma.js";
 
 // ---------------------------------------------------------------------------
 // Module-level mocks
@@ -152,9 +153,22 @@ function makeAppliedDeploymentBackup() {
 
 function createMockPrisma() {
 	const prisma = {
+		$executeRaw: vi.fn().mockResolvedValue(1),
+		searchGrabClaim: { findFirst: vi.fn().mockResolvedValue(null) },
+		arrImportOperation: {
+			findFirst: vi.fn().mockResolvedValue(null),
+			count: vi.fn().mockResolvedValue(0),
+		},
+		queueCleanerImportReceipt: {
+			count: vi.fn().mockResolvedValue(0),
+			findFirst: vi.fn().mockResolvedValue(null),
+		},
+		quiActionLog: { count: vi.fn().mockResolvedValue(0) },
 		libraryCleanupConfig: {
-			upsert: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
+			findUnique: vi.fn().mockResolvedValue(null),
+			create: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
 			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+			update: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
 		},
 		serviceInstance: {
 			findMany: vi.fn().mockResolvedValue([]),
@@ -192,8 +206,13 @@ function createMockPrisma() {
 		trashSyncHistory: { findMany: vi.fn().mockResolvedValue([]) },
 		templateDeploymentHistory: { findMany: vi.fn().mockResolvedValue([]) },
 		providerNativeInventorySnapshot: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		providerNativeInventoryRun: { updateMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		jellyfinCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		jellyfinEpisodeCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		jellyfinNativeWatchPublication: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		jellyfinNativeWatchScopeReceipt: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		jellyfinNativeWatchRow: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+		jellyfinPositiveWatchRow: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		plexCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		plexEpisodeCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
 		tautulliCache: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
@@ -384,7 +403,12 @@ describe("POST /services", () => {
 	});
 
 	it("returns 409 without changing topology while cleanup owns the lease", async () => {
-		mockPrisma.libraryCleanupConfig.updateMany.mockResolvedValueOnce({ count: 0 });
+		mockPrisma.libraryCleanupConfig.update.mockRejectedValueOnce(
+			new Prisma.PrismaClientKnownRequestError("Cleanup config lease is already held", {
+				code: "P2025",
+				clientVersion: "test",
+			}),
+		);
 
 		const res = await injectAuthenticated("POST", "/services", {
 			body: {
@@ -492,7 +516,27 @@ describe("PUT /services/:id", () => {
 			expect.objectContaining({ label: "Updated Label" }),
 			expect.objectContaining({ encrypt: expect.any(Function) }),
 		);
-		expect(mockPrisma.libraryCleanupConfig.updateMany).toHaveBeenCalledTimes(2);
+		expect(mockPrisma.libraryCleanupConfig.update).toHaveBeenCalledTimes(2);
+		const token = mockPrisma.libraryCleanupConfig.update.mock.calls[0]?.[0]?.data.runClaimToken;
+		expect(token).toEqual(expect.any(String));
+		expect(mockPrisma.libraryCleanupConfig.update.mock.calls[0]?.[0]).toMatchObject({
+			where: {
+				id: "cleanup-config-1",
+				userId: "user-1",
+				OR: expect.arrayContaining([
+					{ runClaimToken: null },
+					{ runClaimedAt: null },
+					{ runClaimedAt: { lt: expect.any(Date) } },
+				]),
+			},
+			data: { runClaimToken: token, runClaimedAt: expect.any(Date) },
+			select: { id: true },
+		});
+		expect(mockPrisma.libraryCleanupConfig.update.mock.calls[1]?.[0]).toEqual({
+			where: { id: "cleanup-config-1", userId: "user-1", runClaimToken: token },
+			data: { runClaimToken: null, runClaimedAt: null },
+			select: { id: true },
+		});
 	});
 
 	it("returns 404 for non-owned instance via requireInstance", async () => {
@@ -622,13 +666,17 @@ describe("PUT /services/:id", () => {
 	it.each(["SONARR", "RADARR", "PROWLARR", "LIDARR", "READARR"] as const)(
 		"rotates %s once and clears only its History state for a normalized-distinct URL",
 		async (service) => {
-			mockRequireInstance.mockResolvedValue(
-				makeInstance({ service, baseUrl: `http://${service.toLowerCase()}.test:8989` }),
-			);
+			const existing = makeInstance({
+				service,
+				baseUrl: `http://${service.toLowerCase()}.test:8989`,
+			});
+			mockRequireInstance.mockResolvedValue(existing);
 			mockBuildUpdateData.mockReturnValue({ baseUrl: `http://${service.toLowerCase()}.test:9999` });
-			mockPrisma.serviceInstance.findFirst.mockResolvedValue(
-				makeInstance({ service, baseUrl: `http://${service.toLowerCase()}.test:9999` }),
-			);
+			mockPrisma.serviceInstance.findFirst
+				.mockResolvedValueOnce(existing)
+				.mockResolvedValue(
+					makeInstance({ service, baseUrl: `http://${service.toLowerCase()}.test:9999` }),
+				);
 
 			const res = await injectAuthenticated("PUT", "/services/inst-1", {
 				body: { baseUrl: `http://${service.toLowerCase()}.test:9999` },
@@ -656,9 +704,12 @@ describe("PUT /services/:id", () => {
 		"rotates and clears History when %s enabled state changes",
 		async (service) => {
 			const enabled = false;
-			mockRequireInstance.mockResolvedValue(makeInstance({ service, enabled: true }));
+			const existing = makeInstance({ service, enabled: true });
+			mockRequireInstance.mockResolvedValue(existing);
 			mockBuildUpdateData.mockReturnValue({ enabled });
-			mockPrisma.serviceInstance.findFirst.mockResolvedValue(makeInstance({ service, enabled }));
+			mockPrisma.serviceInstance.findFirst
+				.mockResolvedValueOnce(existing)
+				.mockResolvedValue(makeInstance({ service, enabled }));
 
 			const res = await injectAuthenticated("PUT", "/services/inst-1", { body: { enabled } });
 
@@ -851,13 +902,12 @@ describe("PUT /services/:id", () => {
 	] as const)(
 		"rotates %s once when the submitted %s identity changes",
 		async (service, credential) => {
-			mockRequireInstance.mockResolvedValue(
-				makeInstance({
-					service,
-					encryptedApiKey: "old-api-key-ciphertext",
-					encryptedHttpAuthCredentials: "old-http-auth-ciphertext",
-				}),
-			);
+			const existing = makeInstance({
+				service,
+				encryptedApiKey: "old-api-key-ciphertext",
+				encryptedHttpAuthCredentials: "old-http-auth-ciphertext",
+			});
+			mockRequireInstance.mockResolvedValue(existing);
 			mockBuildUpdateData.mockReturnValue(
 				credential === "apiKey"
 					? { encryptedApiKey: "new-api-key-ciphertext", encryptionIv: "new-api-key-iv" }
@@ -866,7 +916,9 @@ describe("PUT /services/:id", () => {
 							httpAuthEncryptionIv: "new-http-auth-iv",
 						},
 			);
-			mockPrisma.serviceInstance.findFirst.mockResolvedValue(makeInstance({ service }));
+			mockPrisma.serviceInstance.findFirst
+				.mockResolvedValueOnce(existing)
+				.mockResolvedValue(makeInstance({ service }));
 			vi.mocked(
 				(app as any).arrClientFactory.createConnectionCredentialIdentity,
 			).mockImplementation(
@@ -1178,7 +1230,27 @@ describe("DELETE /services/:id", () => {
 		expect(mockPrisma.serviceInstance.delete).toHaveBeenCalledWith({
 			where: { id: "inst-1", userId: "user-1" },
 		});
-		expect(mockPrisma.libraryCleanupConfig.updateMany).toHaveBeenCalledTimes(2);
+		expect(mockPrisma.libraryCleanupConfig.update).toHaveBeenCalledTimes(2);
+		const token = mockPrisma.libraryCleanupConfig.update.mock.calls[0]?.[0]?.data.runClaimToken;
+		expect(token).toEqual(expect.any(String));
+		expect(mockPrisma.libraryCleanupConfig.update.mock.calls[0]?.[0]).toMatchObject({
+			where: {
+				id: "cleanup-config-1",
+				userId: "user-1",
+				OR: expect.arrayContaining([
+					{ runClaimToken: null },
+					{ runClaimedAt: null },
+					{ runClaimedAt: { lt: expect.any(Date) } },
+				]),
+			},
+			data: { runClaimToken: token, runClaimedAt: expect.any(Date) },
+			select: { id: true },
+		});
+		expect(mockPrisma.libraryCleanupConfig.update.mock.calls[1]?.[0]).toEqual({
+			where: { id: "cleanup-config-1", userId: "user-1", runClaimToken: token },
+			data: { runClaimToken: null, runClaimedAt: null },
+			select: { id: true },
+		});
 	});
 
 	it("returns 404 for non-owned instance", async () => {
@@ -1495,6 +1567,7 @@ describe("DELETE /services/:id", () => {
 		mockPrisma.serviceInstance.findMany.mockResolvedValue([source, survivor]);
 		mockPrisma.serviceInstance.findFirst
 			.mockResolvedValueOnce(source)
+			.mockResolvedValueOnce(source)
 			.mockResolvedValueOnce(source);
 		mockPrisma.templateDeploymentHistory.findMany.mockResolvedValue([
 			{
@@ -1543,6 +1616,21 @@ describe("DELETE /services/:id", () => {
 // ===========================================================================
 
 describe("POST /services/test-connection", () => {
+	it("scopes a failed connection-test notification to the authenticated request owner", async () => {
+		mockTestConnection.mockResolvedValueOnce({
+			success: false,
+			error: "Fixture connection unavailable",
+		});
+		const res = await injectAuthenticated("POST", "/services/test-connection", {
+			body: { baseUrl: "http://fixture.invalid:8989", apiKey: "fixture-key", service: "sonarr" },
+		});
+		expect(res.statusCode).toBe(200);
+		expect(app.notificationService.notify).toHaveBeenCalledWith(
+			expect.objectContaining({ eventType: "SERVICE_CONNECTION_FAILED" }),
+			{ userId: "user-1" },
+		);
+	});
+
 	it("calls connection tester with valid http URL", async () => {
 		const res = await injectAuthenticated("POST", "/services/test-connection", {
 			body: {

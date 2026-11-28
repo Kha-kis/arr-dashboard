@@ -1,3 +1,4 @@
+import { setImmediate } from "node:timers/promises";
 import { describe, expect, it, vi } from "vitest";
 import { verifiedIdentityData } from "../../services/service-identity-lifecycle.js";
 import { createPositivePlexEpisodeDigest } from "../plex-episode-live-collector.js";
@@ -8,6 +9,7 @@ import {
 	loadInstanceEpisodeEvidence,
 	loadInstanceEvidence,
 	loadInstanceMutationEvidence,
+	loadInstanceSelectedEpisodeEvidence,
 	loadInstanceSelectedEvidence,
 	loadInstanceSelectedMutationEvidence,
 	loadPositiveEpisodeDisplayEvidence,
@@ -16,6 +18,8 @@ import {
 	loadTargetScopedPlexWatchCountMutationEvidence,
 	loadTargetScopedPlexWatchCountMutationEvidenceBatch,
 	loadUserEvidence,
+	loadUserSelectedDisplayEvidence,
+	loadUserSelectedEvidence,
 	scanInstanceEpisodeParentPolicyEvidence,
 	scanInstancePolicyEvidence,
 	scanMutationPolicyEvidenceForOwnedInstances,
@@ -218,6 +222,7 @@ function v6Metadata(publicationLevel: "authoritative" | "positive-only", itemCou
 					observedRoots: [
 						{ sectionKey: "shows", domain: "episode-parents", digest: "a".repeat(64) },
 					],
+					ambiguousTmdbCandidates: [],
 					capabilities: [
 						{
 							domain: "episode-parents",
@@ -598,6 +603,17 @@ async function loadSelectedMutation(testFixture: ReturnType<typeof fixture>) {
 	});
 }
 
+async function loadSelectedDisplay(testFixture: ReturnType<typeof fixture>) {
+	testFixture.prisma.serviceInstance.findMany.mockResolvedValue([instance()]);
+	const results = await loadUserSelectedDisplayEvidence(testFixture.prisma as never, {
+		userId: "user-1",
+		selection: { kind: "targets", targets: [{ tmdbId: 42, mediaType: "movie" }] },
+		now,
+		maxAgeMs: 3 * 60 * 60 * 1000,
+	});
+	return results[0]!;
+}
+
 async function loadTargetScopedWatchCount(testFixture: ReturnType<typeof fixture>) {
 	return loadTargetScopedPlexWatchCountMutationEvidence(testFixture.prisma as never, {
 		userId: "user-1",
@@ -744,6 +760,230 @@ describe("Plex evidence repository", () => {
 			coordinate: "shows:show-42",
 			observedValue: 3,
 			evidence: { reasonCodes: [] },
+		});
+	});
+
+	it("withholds ambiguous TMDB candidates from V6 target-scoped watch-count proof", async () => {
+		const targets = [42, 99].map((tmdbId) => ({
+			id: `target-${tmdbId}`,
+			instanceId: "plex-1",
+			generationId: "generation-1",
+			sectionId: "shows",
+			sectionUuid: "shows-uuid",
+			mediaType: "series" as const,
+			tmdbId,
+			tvdbId: null,
+			ratingKey: `show-${tmdbId}`,
+		}));
+		const targetLedger = createPlexTargetLedgerBinding({
+			instanceId: "plex-1",
+			generationId: "generation-1",
+			connectionGeneration: 4,
+			identityGeneration: 9,
+			targets,
+		});
+		const metadata = JSON.parse(v6Metadata("positive-only", 2)) as Record<string, unknown>;
+		Object.assign(metadata, targetLedger, {
+			ambiguousTmdbCandidates: [{ mediaType: "series", tmdbId: 42 }],
+		});
+		const current = status({ itemCount: 2, generationMetadata: JSON.stringify(metadata) });
+		const testFixture = fixture({
+			statuses: [current, current],
+			targets,
+			rows: targets.map((target) =>
+				row({
+					mediaType: "series",
+					tmdbId: target.tmdbId,
+					sectionId: "shows",
+					ratingKey: target.ratingKey,
+					watchCount: 3,
+				}),
+			),
+		});
+
+		const result = await loadTargetScopedPlexWatchCountMutationEvidenceBatch(
+			testFixture.prisma as never,
+			{
+				userId: "user-1",
+				instanceId: "plex-1",
+				targets: targets.map(({ mediaType, tmdbId }) => ({ mediaType, tmdbId })),
+				now,
+				maxAgeMs: 3 * 60 * 60 * 1000,
+			},
+		);
+		expect(result).toMatchObject({
+			available: true,
+			targets: [expect.objectContaining({ mediaType: "series", tmdbId: 99 })],
+		});
+	});
+
+	it("withholds target-scoped proof for legacy V6 metadata without ambiguity coverage", async () => {
+		const target = {
+			id: "target-series-42",
+			instanceId: "plex-1",
+			generationId: "generation-1",
+			sectionId: "shows",
+			sectionUuid: "shows-uuid",
+			mediaType: "series" as const,
+			tmdbId: 42,
+			tvdbId: null,
+			ratingKey: "show-42",
+		};
+		const targetLedger = createPlexTargetLedgerBinding({
+			instanceId: target.instanceId,
+			generationId: target.generationId,
+			connectionGeneration: 4,
+			identityGeneration: 9,
+			targets: [target],
+		});
+		const metadata = JSON.parse(v6Metadata("positive-only", 1)) as Record<string, unknown>;
+		delete metadata.ambiguousTmdbCandidates;
+		Object.assign(metadata, targetLedger);
+		const current = status({ itemCount: 1, generationMetadata: JSON.stringify(metadata) });
+		const testFixture = fixture({
+			statuses: [current, current],
+			targets: [target],
+			rows: [
+				row({
+					mediaType: "series",
+					tmdbId: 42,
+					sectionId: "shows",
+					ratingKey: "show-42",
+					watchCount: 3,
+				}),
+			],
+		});
+
+		await expect(
+			loadTargetScopedPlexWatchCountMutationEvidenceBatch(testFixture.prisma as never, {
+				userId: "user-1",
+				instanceId: "plex-1",
+				targets: [{ mediaType: "series", tmdbId: 42 }],
+				now,
+				maxAgeMs: 3 * 60 * 60 * 1000,
+			}),
+		).resolves.toMatchObject({ available: false });
+	});
+
+	it("does not let a movie candidate suppress the same-ID series watch-count proof", async () => {
+		const target = {
+			id: "target-series-42",
+			instanceId: "plex-1",
+			generationId: "generation-1",
+			sectionId: "shows",
+			sectionUuid: "shows-uuid",
+			mediaType: "series" as const,
+			tmdbId: 42,
+			tvdbId: null,
+			ratingKey: "show-42",
+		};
+		const targetLedger = createPlexTargetLedgerBinding({
+			instanceId: target.instanceId,
+			generationId: target.generationId,
+			connectionGeneration: 4,
+			identityGeneration: 9,
+			targets: [target],
+		});
+		const metadata = JSON.parse(v6Metadata("positive-only", 1)) as Record<string, unknown>;
+		Object.assign(metadata, targetLedger, {
+			ambiguousTmdbCandidates: [{ mediaType: "movie", tmdbId: 42 }],
+		});
+		const current = status({ itemCount: 1, generationMetadata: JSON.stringify(metadata) });
+		const testFixture = fixture({
+			statuses: [current, current],
+			targets: [target],
+			rows: [
+				row({
+					mediaType: "series",
+					tmdbId: 42,
+					sectionId: "shows",
+					ratingKey: "show-42",
+					watchCount: 3,
+				}),
+			],
+		});
+
+		const result = await loadTargetScopedPlexWatchCountMutationEvidenceBatch(
+			testFixture.prisma as never,
+			{
+				userId: "user-1",
+				instanceId: "plex-1",
+				targets: [{ mediaType: "series", tmdbId: 42 }],
+				now,
+				maxAgeMs: 3 * 60 * 60 * 1000,
+			},
+		);
+
+		expect(result).toMatchObject({
+			available: true,
+			targets: [expect.objectContaining({ mediaType: "series", tmdbId: 42 })],
+		});
+	});
+
+	it("does not let a series candidate suppress the same-ID movie watch-count proof", async () => {
+		const target = {
+			id: "target-movie-42",
+			instanceId: "plex-1",
+			generationId: "generation-1",
+			sectionId: "movies",
+			sectionUuid: "movies-uuid",
+			mediaType: "movie" as const,
+			tmdbId: 42,
+			tvdbId: null,
+			ratingKey: "movie-42",
+		};
+		const targetLedger = createPlexTargetLedgerBinding({
+			instanceId: target.instanceId,
+			generationId: target.generationId,
+			connectionGeneration: 4,
+			identityGeneration: 9,
+			targets: [target],
+		});
+		const metadata = JSON.parse(v6Metadata("positive-only", 1)) as Record<string, unknown>;
+		metadata.sections = [
+			...(metadata.sections as Array<Record<string, unknown>>),
+			{
+				key: "movies",
+				uuid: "movies-uuid",
+				title: "Movies",
+				type: "movie",
+				refreshing: false,
+				scannedAt: 1_777_000_000,
+				updatedAt: 1_777_000_100,
+			},
+		];
+		Object.assign(metadata, targetLedger, {
+			ambiguousTmdbCandidates: [{ mediaType: "series", tmdbId: 42 }],
+		});
+		const current = status({ itemCount: 1, generationMetadata: JSON.stringify(metadata) });
+		const testFixture = fixture({
+			statuses: [current, current],
+			targets: [target],
+			rows: [
+				row({
+					mediaType: "movie",
+					tmdbId: 42,
+					sectionId: "movies",
+					ratingKey: "movie-42",
+					watchCount: 3,
+				}),
+			],
+		});
+
+		const result = await loadTargetScopedPlexWatchCountMutationEvidenceBatch(
+			testFixture.prisma as never,
+			{
+				userId: "user-1",
+				instanceId: "plex-1",
+				targets: [{ mediaType: "movie", tmdbId: 42 }],
+				now,
+				maxAgeMs: 3 * 60 * 60 * 1000,
+			},
+		);
+
+		expect(result).toMatchObject({
+			available: true,
+			targets: [expect.objectContaining({ mediaType: "movie", tmdbId: 42 })],
 		});
 	});
 
@@ -1724,6 +1964,207 @@ describe("Plex evidence repository", () => {
 			}),
 		);
 	});
+
+	it.each([
+		[
+			"success",
+			"in_progress:next-attempt",
+			"last-known",
+			"unavailable",
+			"in_progress",
+			"running",
+			["latest_attempt_in_progress"],
+		],
+		[
+			"in_progress:next-attempt",
+			"success",
+			"current",
+			"authoritative",
+			"success",
+			"successful",
+			[],
+		],
+		[
+			"in_progress:next-attempt",
+			"error",
+			"last-known",
+			"unavailable",
+			"error",
+			"failed",
+			["latest_attempt_failed"],
+		],
+		["success", "success", "current", "authoritative", "success", "successful", []],
+	] as const)(
+		"keeps selected display rows across an attempt-only %s to %s change with final provenance",
+		async (beforeResult, afterResult, availability, authority, attemptState, latestAttempt, reasonCodes) => {
+			const before = status({ lastAttemptResult: beforeResult });
+			const after = status({
+				lastAttemptAt: new Date("2026-08-20T13:00:00.000Z"),
+				lastAttemptResult: afterResult,
+				lastAttemptErrorMessage: afterResult === "error" ? "offline" : null,
+			});
+
+			const result = await loadSelectedDisplay(fixture({ statuses: [before, after] }));
+
+			expect(result).toMatchObject({
+				available: true,
+				generationId: "generation-1",
+				itemCount: 1,
+				rows: [{ id: "row-1", tmdbId: 42 }],
+				generationStatus: {
+					lastAttemptAt: new Date("2026-08-20T13:00:00.000Z"),
+					lastAttemptResult: afterResult,
+					lastAttemptErrorMessage: afterResult === "error" ? "offline" : null,
+				},
+				evidence: {
+					availability,
+					authority,
+					attemptState,
+					reasonCodes,
+					publishedGeneration: { generationId: "generation-1", publicationLevel: "authoritative" },
+				},
+				providerStatus: { availability, latestAttempt },
+			});
+		},
+	);
+
+	it.each([
+		["generation", status({ generationId: "generation-2" }), "generation_changed"],
+		[
+			"publication timestamp",
+			status({ lastRefreshedAt: new Date("2026-08-20T12:01:00.000Z") }),
+			"published_timestamp_changed",
+		],
+		[
+			"publication metadata",
+			status({ generationMetadata: v5Metadata().replace("movies-uuid", "other-uuid") }),
+			"generation_changed",
+		],
+		["publication count", status({ itemCount: 2 }), "generation_changed"],
+		["connection", status({ connectionGeneration: 5 }), "connection_generation_mismatch"],
+		[
+			"missing connection",
+			status({ connectionGeneration: null }),
+			"connection_generation_mismatch",
+		],
+		["identity", status({ identityGeneration: 10 }), "identity_generation_mismatch"],
+		["missing identity", status({ identityGeneration: null }), "identity_generation_mismatch"],
+		["unavailable publication", null, "missing_status"],
+	] as const)(
+		"withholds selected display rows for a final %s change",
+		async (_name, after, reasonCode) => {
+			const result = await loadSelectedDisplay(fixture({ statuses: [status(), after] }));
+			expect(result).toMatchObject({ available: false, evidence: { reasonCodes: [reasonCode] } });
+			expect(result).not.toHaveProperty("rows");
+		},
+	);
+
+	it.each([
+		["connection", status({ connectionGeneration: null }), "connection_generation_mismatch"],
+		["identity", status({ identityGeneration: null }), "identity_generation_mismatch"],
+	] as const)(
+		"withholds selected display rows for a missing initial %s binding",
+		async (_name, before, reasonCode) => {
+			const result = await loadSelectedDisplay(fixture({ statuses: [before, status()] }));
+			expect(result).toMatchObject({ available: false, evidence: { reasonCodes: [reasonCode] } });
+		},
+	);
+
+	it.each([
+		["total", 2, 2],
+		["bound", 1, 0],
+	] as const)(
+		"withholds selected display rows when the %s count disagrees",
+		async (_name, totalCount, boundCount) => {
+			const repository = fixture();
+			repository.prisma.plexCache.count
+				.mockResolvedValueOnce(totalCount)
+				.mockResolvedValueOnce(boundCount);
+			const result = await loadSelectedDisplay(repository);
+			expect(result).toMatchObject({
+				available: false,
+				evidence: { reasonCodes: ["row_count_mismatch"] },
+			});
+		},
+	);
+
+	it.each([
+		["owner", row({ instanceId: "plex-2" }), "connection_generation_mismatch"],
+		["connection", row({ connectionGeneration: 5 }), "connection_generation_mismatch"],
+		["identity", row({ identityGeneration: 10 }), "identity_generation_mismatch"],
+	] as const)(
+		"withholds selected display rows with the wrong %s binding",
+		async (_name, changedRow, reasonCode) => {
+			const result = await loadSelectedDisplay(fixture({ rows: [changedRow] }));
+			expect(result).toMatchObject({ available: false, evidence: { reasonCodes: [reasonCode] } });
+		},
+	);
+
+	it("withholds selected display rows when their dependency fails", async () => {
+		const result = await loadSelectedDisplay(fixture({ rowError: new Error("offline") }));
+		expect(result).toMatchObject({
+			available: false,
+			evidence: { reasonCodes: ["query_failed"] },
+			providerStatus: { availability: "unavailable", reasonCodes: ["unknown-failure"] },
+		});
+	});
+
+	it.each(["in_progress:next-attempt", "error"])(
+		"withholds selected mutation authority after the latest attempt becomes %s",
+		async (lastAttemptResult) => {
+			const result = await loadSelectedMutation(
+				fixture({ statuses: [status(), status({ lastAttemptResult })] }),
+			);
+			expect(result).toMatchObject({ available: false, evidence: { authority: "unavailable" } });
+		},
+	);
+
+	it("retains strict full-reader refusal of an attempt-only change", async () => {
+		const result = await load(
+			fixture({ statuses: [status(), status({ lastAttemptResult: "in_progress:next-attempt" })] }),
+		);
+		expect(result).toMatchObject({
+			available: false,
+			evidence: { reasonCodes: ["generation_changed"] },
+		});
+	});
+
+	it.each([
+		["success", "in_progress:next-attempt"],
+		["in_progress:next-attempt", "success"],
+		["in_progress:next-attempt", "error"],
+	] as const)(
+		"keeps existing selected APIs strict across %s to %s attempts",
+		async (beforeResult, afterResult) => {
+			const input = {
+				userId: "user-1",
+				instanceId: "plex-1",
+				selection: {
+					kind: "targets" as const,
+					targets: [{ tmdbId: 42, mediaType: "movie" as const }],
+				},
+				now,
+			};
+			const statuses = [
+				status({ lastAttemptResult: beforeResult }),
+				status({ lastAttemptResult: afterResult }),
+			];
+			const instanceResult = await loadInstanceSelectedEvidence(
+				fixture({ statuses }).prisma as never,
+				input,
+			);
+			const userRepository = fixture({ statuses });
+			userRepository.prisma.serviceInstance.findMany.mockResolvedValue([instance()]);
+			const userResult = await loadUserSelectedEvidence(userRepository.prisma as never, input);
+			expect(instanceResult).toMatchObject({
+				available: false,
+				evidence: { reasonCodes: ["generation_changed"] },
+			});
+			expect(userResult).toMatchObject([
+				{ available: false, evidence: { reasonCodes: ["generation_changed"] } },
+			]);
+		},
+	);
 
 	it("fails closed for a disabled instance", async () => {
 		const result = await load(fixture({ instance: instance({ enabled: false }) }));
@@ -2772,6 +3213,84 @@ describe("Plex episode evidence repository", () => {
 			available: false,
 			evidence: { reasonCodes: ["latest_attempt_failed"] },
 		});
+	});
+
+	it("keeps the parent read lease until both counts settle after a count failure", async () => {
+		const reader = episodeFixture();
+		const leased = episodeFixture();
+		let finishBoundCount!: (count: number) => void;
+		const boundCount = new Promise<number>((resolve) => {
+			finishBoundCount = resolve;
+		});
+		leased.plexCache.count
+			.mockRejectedValueOnce(new Error("private parent count failure"))
+			.mockReturnValueOnce(boundCount);
+		const admitted = vi.fn();
+		const released = vi.fn();
+		async function readParentObservation<T>(observe: (client: never) => Promise<T>) {
+			admitted();
+			try {
+				return await observe(leased as never);
+			} finally {
+				released();
+			}
+		}
+		const result = loadInstanceSelectedEpisodeEvidence(
+			reader as never,
+			{ userId: "user-1", instanceId: "plex-1", instance: instance(), showTmdbIds: [42], now },
+			readParentObservation,
+		);
+		try {
+			await setImmediate();
+			expect(admitted).toHaveBeenCalledOnce();
+			expect(leased.plexCache.count).toHaveBeenCalledTimes(2);
+			expect(released).not.toHaveBeenCalled();
+		} finally {
+			finishBoundCount(1);
+			await result;
+		}
+		expect(released).toHaveBeenCalledOnce();
+		expect(leased.cacheRefreshStatus.findMany).toHaveBeenCalledOnce();
+		expect(reader.cacheRefreshStatus.findMany).not.toHaveBeenCalled();
+		expect(reader.plexCache.count).not.toHaveBeenCalled();
+		expect(await result).toMatchObject({
+			available: false,
+			evidence: { reasonCodes: ["query_failed"] },
+			providerStatus: { availability: "unavailable", reasonCodes: ["unknown-failure"] },
+		});
+	});
+
+	it("reports a direct parent count failure while the sibling count is pending", async () => {
+		const reader = episodeFixture();
+		let finishBoundCount!: (count: number) => void;
+		const boundCount = new Promise<number>((resolve) => {
+			finishBoundCount = resolve;
+		});
+		reader.plexCache.count
+			.mockRejectedValueOnce(new Error("private parent count failure"))
+			.mockReturnValueOnce(boundCount);
+		const completed = vi.fn();
+		const result = loadInstanceSelectedEpisodeEvidence(reader as never, {
+			userId: "user-1",
+			instanceId: "plex-1",
+			instance: instance(),
+			showTmdbIds: [42],
+			now,
+		}).then(completed);
+		try {
+			await setImmediate();
+			expect(reader.plexCache.count).toHaveBeenCalledTimes(2);
+			expect(completed).toHaveBeenCalledExactlyOnceWith(
+				expect.objectContaining({
+					available: false,
+					evidence: expect.objectContaining({ reasonCodes: ["query_failed"] }),
+					providerStatus: expect.objectContaining({ reasonCodes: ["unknown-failure"] }),
+				}),
+			);
+		} finally {
+			finishBoundCount(1);
+			await result;
+		}
 	});
 
 	it("preserves admitted parent provider status for episode row and query failures", async () => {

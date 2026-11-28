@@ -42,27 +42,89 @@ try {
 	process.exit(1);
 }
 
-// Patch rewrites to use runtime API_HOST
-if (nextConfig._originalRewrites) {
-	const patchRewrites = (rewrites) => {
-		if (!rewrites) return rewrites;
-		return rewrites.map((rewrite) => {
-			if (rewrite.destination?.includes("localhost:3001")) {
-				return {
-					...rewrite,
-					destination: rewrite.destination.replace("http://localhost:3001", apiHost),
-				};
+const { dockerIPv6ApiSocket, localSocketTarget } = require("./docker-socket-target.cjs");
+const apiSocket = dockerIPv6ApiSocket(process.env.ARR_INTERNAL_API_SOCKET, apiHost);
+let apiRewriteOrigin = apiHost;
+if (apiSocket) {
+	// Next treats IPv6 colons as rewrite parameters. Use a non-routable
+	// placeholder for the two owned rewrites and restore the socket at dial time.
+	const placeholder = new URL(`http://arr-dashboard-api.invalid:${apiSocket.port}`);
+	apiRewriteOrigin = placeholder.origin;
+	const httpxyModule = require.resolve("next/dist/compiled/httpxy");
+	const httpxy = require(httpxyModule);
+	class DockerApiProxy extends httpxy.ProxyServer {
+		constructor(options) {
+			const target = options?.target;
+			if (target instanceof URL && target.origin === placeholder.origin) {
+				if (!/^\/(?:api|auth)(?:\/|$)/.test(target.pathname))
+					throw new Error("Unexpected internal API rewrite");
+				super({
+					...options,
+					target: {
+						hostname: localSocketTarget(apiSocket.hostname),
+						host: apiSocket.origin.host,
+						protocol: "http:",
+						port: apiSocket.port,
+						pathname: target.pathname + target.search,
+					},
+				});
+			} else {
+				super(options);
 			}
-			return rewrite;
-		});
-	};
-
-	nextConfig._originalRewrites.beforeFiles = patchRewrites(
-		nextConfig._originalRewrites.beforeFiles,
-	);
-	nextConfig._originalRewrites.afterFiles = patchRewrites(nextConfig._originalRewrites.afterFiles);
-	nextConfig._originalRewrites.fallback = patchRewrites(nextConfig._originalRewrites.fallback);
+		}
+	}
+	require.cache[httpxyModule].exports = { ...httpxy, ProxyServer: DockerApiProxy };
 }
+
+if (hostname.includes("%") && require("node:net").isIPv6(hostname)) {
+	// A zone belongs to the listened socket, not to a WHATWG URL authority.
+	// Next still passes the original hostname to listen().
+	const originModule = require.resolve("next/dist/server/lib/format-hostname");
+	const formatter = require(originModule);
+	require.cache[originModule].exports = {
+		formatHostname(value) {
+			return formatter.formatHostname(value === hostname ? value.split("%")[0] : value);
+		},
+	};
+}
+
+// Keep Next's compiled route matchers and proxy implementation. Only replace
+// the two application-owned destinations, leaving other rewrites untouched.
+function patchBackendRewrites(groups) {
+	const expected = new Map([
+		["/api/:path*", "http://localhost:3001/api/:path*"],
+		["/auth/:path*", "http://localhost:3001/auth/:path*"],
+	]);
+	const patched = {};
+	for (const key of ["beforeFiles", "afterFiles", "fallback"]) {
+		patched[key] = groups[key].map((route) => {
+			if (expected.get(route.source) !== route.destination) return route;
+			expected.delete(route.source);
+			return {
+				...route,
+				destination: apiRewriteOrigin + route.destination.slice("http://localhost:3001".length),
+			};
+		});
+	}
+	if (expected.size !== 0) throw new Error("Packaged API or authentication rewrite is unavailable");
+	return patched;
+}
+
+if (nextConfig._originalRewrites) {
+	nextConfig._originalRewrites = patchBackendRewrites(nextConfig._originalRewrites);
+}
+
+// In the pinned Next.js production server, the request router uses the
+// packaged routes manifest, independently of the standalone configuration.
+const routerModule = require.resolve("next/dist/server/lib/router-utils/filesystem");
+const router = require(routerModule);
+require.cache[routerModule].exports = {
+	...router,
+	async setupFsCheck(options) {
+		const filesystem = await router.setupFsCheck(options);
+		return { ...filesystem, rewrites: patchBackendRewrites(filesystem.rewrites) };
+	},
+};
 
 // Remove any basePath from config - app always runs at "/"
 nextConfig.basePath = undefined;

@@ -37,6 +37,47 @@ afterEach(() => {
 });
 
 describe("LibraryInsightsSection request bounds", () => {
+	it("defers cold requests without changing cache identity or dropping fresh data when enabled changes", async () => {
+		const counts = new Map<string, number>();
+		vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+			const path = requestPath(input);
+			if (!insightPaths.includes(path as (typeof insightPaths)[number]))
+				throw new Error("Unexpected request");
+			counts.set(path, (counts.get(path) ?? 0) + 1);
+			return Response.json({ data: { items: [], watchStatus: "partial" } });
+		});
+		const queryClient = new QueryClient({
+			defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+		});
+		const section = (enabled: boolean) => (
+			<QueryClientProvider client={queryClient}>
+				<IncognitoProvider>
+					<LibraryInsightsSection enabled={enabled} />
+				</IncognitoProvider>
+			</QueryClientProvider>
+		);
+		const view = render(section(false));
+		expect(counts.size).toBe(0);
+		view.rerender(section(true));
+		expect(
+			await screen.findByText("Disk watch evidence is partial; the list may be incomplete."),
+		).toBeVisible();
+		await waitFor(() => insightPaths.forEach((path) => expect(counts.get(path)).toBe(1)));
+		view.rerender(section(false));
+		expect(
+			screen.getByText("Disk watch evidence is partial; the list may be incomplete."),
+		).toBeVisible();
+		view.rerender(section(true));
+		expect(
+			screen.getByText("Disk watch evidence is partial; the list may be incomplete."),
+		).toBeVisible();
+		for (const path of insightPaths) expect(counts.get(path)).toBe(1);
+		expect(queryClient.getQueryCache().findAll({ queryKey: ["library", "insights"] })).toHaveLength(
+			3,
+		);
+		queryClient.clear();
+	});
+
 	it("does not remount failed insight queries after the configured retry settles", async () => {
 		const counts = new Map<string, number>();
 		const fetchMock = vi.fn(async (input: RequestInfo | URL) => {

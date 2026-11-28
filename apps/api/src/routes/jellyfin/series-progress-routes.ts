@@ -8,18 +8,196 @@
 import type { SeriesProgressResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
+import { withIsolatedRuntimePrismaBulkReadClient } from "../../lib/backup/restore-runtime-client.js";
 import {
 	type JellyfinDisplayInstance,
+	type JellyfinEpisodeDisplayEvidence,
 	readOwnedJellyfinEpisodeDisplaySources,
 } from "../../lib/jellyfin/jellyfin-display-evidence.js";
+import { withJellyfinDisplayReadTiming } from "../../lib/jellyfin/jellyfin-display-read-timing.js";
+import {
+	jellyfinLastKnownSeriesProgress,
+	jellyfinMappedSeriesProgressProof,
+	jellyfinSeriesProgressProof,
+	jellyfinSeriesWithoutCatalogMatch,
+} from "../../lib/jellyfin/jellyfin-generation-scoped-display.js";
 import { validateRequest } from "../../lib/utils/validate.js";
-import { aggregateSeriesProgress } from "../plex/lib/series-progress-helpers.js";
+import { aggregateSeriesProgress, type EpisodeInput } from "../plex/lib/series-progress-helpers.js";
 
 const progressQuery = z.object({
 	tmdbIds: z.string().min(1),
 });
 
-const MAX_BATCH_SIZE = 200;
+export const MAX_SERIES_PROGRESS_BATCH_SIZE = 200;
+
+export function parseSeriesProgressIds(raw: string): number[] {
+	return [
+		...new Set(
+			raw
+				.split(",")
+				.map(Number)
+				.filter((id) => Number.isSafeInteger(id) && id > 0),
+		),
+	];
+}
+
+export function projectJellyfinSeriesProgress(
+	instances: readonly JellyfinDisplayInstance[],
+	displayEvidence: JellyfinEpisodeDisplayEvidence,
+	tmdbIds: readonly number[],
+): SeriesProgressResponse {
+	if (instances.length === 0) return { configured: false, progress: {} };
+	const statuses = displayEvidence.providerStatus?.sources ?? [];
+	const sources = instances.map((instance) => {
+		const statusEntries = statuses.filter(
+			(source) => source.instanceId === instance.id && source.cacheType === "jellyfin_episode",
+		);
+		const rowsEntries = displayEvidence.sources.filter(
+			(source) => source.instanceId === instance.id,
+		);
+		const expectedService = instance.service === "EMBY" ? "emby" : "jellyfin";
+		const status =
+			statusEntries.length === 1 && statusEntries[0]!.service === expectedService
+				? statusEntries[0]!.status
+				: undefined;
+		const source = rowsEntries.length === 1 ? rowsEntries[0] : undefined;
+		if (
+			!status ||
+			!source ||
+			!["current", "last-known", "partial"].includes(status.availability) ||
+			!["complete", "positive-only"].includes(status.evidence) ||
+			source.rows.some((row) => row.instanceId !== instance.id)
+		)
+			return {
+				complete: false,
+				rows: [],
+				proof: undefined,
+				mapped: undefined,
+				lastKnown: undefined,
+				withoutMatch: undefined,
+				observedAt: NaN,
+			};
+
+		const complete = status.availability === "current" && status.evidence === "complete";
+		const scopeDegraded =
+			status.availability === "partial" &&
+			status.evidence === "positive-only" &&
+			status.reasonCodes.includes("coverage-incomplete");
+		const observedAt = status.observedAt ? Date.parse(status.observedAt) : NaN;
+		const mapped = source[jellyfinMappedSeriesProgressProof];
+		return {
+			complete,
+			rows: source.rows,
+			proof: complete || scopeDegraded ? source[jellyfinSeriesProgressProof] : undefined,
+			mapped:
+				status.evidence === "positive-only" &&
+				!status.reasonCodes.includes("publication-stale") &&
+				mapped &&
+				mapped.observedAt === status.observedAt
+					? mapped.coordinatesByShow
+					: undefined,
+			lastKnown:
+				status.evidence === "positive-only" &&
+				status.reasonCodes.includes("coverage-incomplete") &&
+				!status.reasonCodes.includes("publication-stale")
+					? source[jellyfinLastKnownSeriesProgress]
+					: undefined,
+			withoutMatch:
+				instance.service === "JELLYFIN" &&
+				Number.isFinite(observedAt) &&
+				!status.reasonCodes.includes("publication-stale")
+					? source[jellyfinSeriesWithoutCatalogMatch]
+					: undefined,
+			observedAt,
+		};
+	});
+	const rows: EpisodeInput[] = sources.flatMap((source) => source.rows);
+	const uniqueInstances = new Set(instances.map(({ id }) => id)).size === instances.length;
+	const allComplete = uniqueInstances && sources.every((source) => source.complete);
+	const completeShows = new Set<number>();
+	const mappedObservedAt = new Map<number, string>();
+	if (
+		!allComplete &&
+		uniqueInstances &&
+		(sources.some((source) => source.mapped) || sources.every((source) => source.proof))
+	) {
+		for (const showTmdbId of tmdbIds) {
+			const exact = sources.every((source) => source.proof?.has(showTmdbId));
+			if (!exact) {
+				// A matched denominator needs positive or negative evidence from
+				// every source and must carry the oldest observation it uses.
+				if (
+					!sources.some((source) => source.mapped?.has(showTmdbId)) ||
+					!sources.every(
+						(source) =>
+							Number.isFinite(source.observedAt) &&
+							(source.complete || source.proof?.has(showTmdbId) || source.mapped?.has(showTmdbId)),
+					)
+				)
+					continue;
+				const oldest = Math.min(...sources.map((source) => source.observedAt));
+				mappedObservedAt.set(showTmdbId, new Date(oldest).toISOString());
+			}
+			completeShows.add(showTmdbId);
+			for (const source of sources) {
+				const coordinates = source.proof?.get(showTmdbId) ?? source.mapped?.get(showTmdbId) ?? [];
+				for (const coordinate of coordinates) {
+					rows.push({ showTmdbId, ...coordinate });
+				}
+			}
+		}
+	}
+	const progressMap = aggregateSeriesProgress(rows, tmdbIds, allComplete || completeShows);
+	for (const [showTmdbId, observedAt] of mappedObservedAt) {
+		const progress = progressMap[showTmdbId];
+		if (progress?.status === "exact") {
+			progressMap[showTmdbId] = {
+				...progress,
+				status: "mapped",
+				watchedSemantics: "matched",
+				observedAt,
+			};
+		}
+	}
+
+	// A retained observation is a separate ratio. Never combine generations
+	// or use one instance's historical denominator for a multi-source result.
+	const lastKnown = sources.length === 1 ? sources[0]?.lastKnown : undefined;
+	if (lastKnown) {
+		for (const [id, coordinates] of lastKnown.coordinatesByShow) {
+			const progress = progressMap[id];
+			if (!progress || (progress.status !== "partial" && progress.status !== "unknown")) continue;
+			const watched = coordinates.filter((coordinate) => coordinate.watched).length;
+			progressMap[id] = {
+				status: "mapped-last-known",
+				total: coordinates.length,
+				watched,
+				percent: Math.round((watched / coordinates.length) * 100),
+				watchedSemantics: "matched",
+				observedAt: lastKnown.observedAt,
+				currentWatchedLowerBound: progress.watched,
+			};
+		}
+	}
+
+	if (uniqueInstances && sources.every((source) => source.withoutMatch)) {
+		for (const showTmdbId of tmdbIds) {
+			const progress = progressMap[showTmdbId];
+			if (
+				progress?.status === "unknown" &&
+				sources.every((source) => source.withoutMatch?.has(showTmdbId))
+			) {
+				progressMap[showTmdbId] = { ...progress, reason: "no-verified-match" };
+			}
+		}
+	}
+
+	return {
+		configured: true,
+		progress: progressMap,
+		providerStatus: displayEvidence.providerStatus,
+	};
+}
 
 export async function registerSeriesProgressRoutes(
 	app: FastifyInstance,
@@ -27,72 +205,59 @@ export async function registerSeriesProgressRoutes(
 ) {
 	app.get("/", async (request, reply) => {
 		const { tmdbIds: tmdbIdsRaw } = validateRequest(progressQuery, request.query);
-		const tmdbIds = [
-			...new Set(
-				tmdbIdsRaw
-					.split(",")
-					.map(Number)
-					.filter((id) => Number.isSafeInteger(id) && id > 0),
-			),
-		];
+		const tmdbIds = parseSeriesProgressIds(tmdbIdsRaw);
 		const userId = request.currentUser!.id;
 
-		if (tmdbIds.length > MAX_BATCH_SIZE) {
-			return reply.status(400).send({ error: `Max ${MAX_BATCH_SIZE} items per request` });
+		if (tmdbIds.length > MAX_SERIES_PROGRESS_BATCH_SIZE) {
+			return reply
+				.status(400)
+				.send({ error: `Max ${MAX_SERIES_PROGRESS_BATCH_SIZE} items per request` });
 		}
 
-		const jellyfinInstances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
-			select: { id: true, label: true, service: true },
-		});
+		return withJellyfinDisplayReadTiming(
+			() =>
+				withIsolatedRuntimePrismaBulkReadClient(
+					app.prisma,
+					async (prisma) => {
+						const jellyfinInstances = await prisma.serviceInstance.findMany({
+							where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
+							select: { id: true, label: true, service: true },
+						});
 
-		if (jellyfinInstances.length === 0) {
-			const response: SeriesProgressResponse = { configured: false, progress: {} };
-			return reply.send(response);
-		}
+						if (jellyfinInstances.length === 0) {
+							const response: SeriesProgressResponse = { configured: false, progress: {} };
+							return reply.send(response);
+						}
 
-		const displayInstances: JellyfinDisplayInstance[] = jellyfinInstances.flatMap((instance) =>
-			instance.service === "JELLYFIN" || instance.service === "EMBY"
-				? [{ id: instance.id, label: instance.label, service: instance.service }]
-				: [],
-		);
-		const displayEvidence = await readOwnedJellyfinEpisodeDisplaySources({
-			prisma: app.prisma,
-			userId,
-			instances: displayInstances,
-		});
-		const statuses = displayEvidence.providerStatus?.sources ?? [];
-		const sources = displayInstances.map((instance) => {
-			const statusEntries = statuses.filter(
-				(source) => source.instanceId === instance.id && source.cacheType === "jellyfin_episode",
-			);
-			const rowsEntries = displayEvidence.sources.filter(
-				(source) => source.instanceId === instance.id,
-			);
-			const status = statusEntries.length === 1 ? statusEntries[0]!.status : undefined;
-			const admitted =
-				status &&
-				["current", "last-known", "partial"].includes(status.availability) &&
-				["complete", "positive-only"].includes(status.evidence) &&
-				rowsEntries.length === 1;
-			return {
-				complete: Boolean(
-					admitted && status.availability === "current" && status.evidence === "complete",
+						const displayInstances: JellyfinDisplayInstance[] = jellyfinInstances.flatMap(
+							(instance) =>
+								instance.service === "JELLYFIN" || instance.service === "EMBY"
+									? [{ id: instance.id, label: instance.label, service: instance.service }]
+									: [],
+						);
+						const displayEvidence = await readOwnedJellyfinEpisodeDisplaySources({
+							prisma,
+							userId,
+							instances: displayInstances,
+							showTmdbIds: tmdbIds,
+							includeSeriesProgressProof: true,
+						});
+						return reply.send(
+							projectJellyfinSeriesProgress(displayInstances, displayEvidence, tmdbIds),
+						);
+					},
+					{ lease: "phase" },
 				),
-				rows: admitted ? rowsEntries[0]!.rows : [],
-			};
-		});
-		const progressMap = aggregateSeriesProgress(
-			sources.flatMap((source) => source.rows),
-			tmdbIds,
-			sources.every((source) => source.complete),
+			(timing) =>
+				app.log.info(
+					{
+						category: "jellyfin-display-read-timing",
+						kind: "progress",
+						spansOverlap: true,
+						...timing,
+					},
+					"Jellyfin display read timing",
+				),
 		);
-
-		const response: SeriesProgressResponse = {
-			configured: true,
-			progress: progressMap,
-			providerStatus: displayEvidence.providerStatus,
-		};
-		return reply.send(response);
 	});
 }

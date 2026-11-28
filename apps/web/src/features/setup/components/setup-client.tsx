@@ -10,8 +10,8 @@ import {
 	CardHeader,
 	CardTitle,
 } from "../../../components/ui/card";
-import { useSetupRequired } from "../../../hooks/api/useAuth";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import type { PasswordPolicy } from "../../../lib/api-client/auth";
 import { cn } from "../../../lib/utils";
 import { OIDCSetup } from "./oidc-setup";
 import { PasskeySetup } from "./passkey-setup";
@@ -19,11 +19,10 @@ import { PasswordSetup } from "./password-setup";
 
 type SetupMethod = "password" | "oidc" | "passkey";
 
-export const SetupClient = () => {
+export const SetupClient = ({ passwordPolicy }: { passwordPolicy: PasswordPolicy }) => {
 	const { gradient: themeGradient } = useThemeGradient();
-	const { data: setupData } = useSetupRequired();
 	const [activeMethod, setActiveMethod] = useState<SetupMethod>("passkey");
-	const passwordPolicy = setupData?.passwordPolicy ?? "strict";
+	const [isMethodSwitchLocked, setIsMethodSwitchLocked] = useState(false);
 
 	const methods = [
 		{ id: "passkey" as const, label: "Passkey", icon: KeyRound },
@@ -73,6 +72,7 @@ export const SetupClient = () => {
 									type="button"
 									variant="ghost"
 									size="sm"
+									disabled={isMethodSwitchLocked && !isActive}
 									onClick={() => setActiveMethod(method.id)}
 									className={cn(
 										"flex-1 gap-2 rounded-xl transition-all duration-200",
@@ -98,7 +98,9 @@ export const SetupClient = () => {
 					</div>
 
 					{/* Method-specific forms */}
-					{activeMethod === "passkey" && <PasskeySetup />}
+					{activeMethod === "passkey" && (
+						<PasskeySetup onMethodLockChange={setIsMethodSwitchLocked} />
+					)}
 					{activeMethod === "password" && <PasswordSetup passwordPolicy={passwordPolicy} />}
 					{activeMethod === "oidc" && <OIDCSetup />}
 				</CardContent>

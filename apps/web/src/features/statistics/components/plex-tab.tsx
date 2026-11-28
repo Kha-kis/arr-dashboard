@@ -1,22 +1,8 @@
 "use client";
 
-import { Activity, CheckCircle2, TrendingUp } from "lucide-react";
+import { Activity, Info, TrendingUp } from "lucide-react";
 import { useMemo, useState } from "react";
-import {
-	useLastWatched as _useLastWatched,
-	useMostConcurrent as _useMostConcurrent,
-	usePlaysByDate as _usePlaysByDate,
-	useBandwidthAnalytics,
-	useBandwidthForecast,
-	useCodecAnalytics,
-	useDeviceAnalytics,
-	usePopularMedia,
-	useQualityScore,
-	useTopMedia,
-	useTranscodeAnalytics,
-	useUserAnalytics,
-	useWatchHistory,
-} from "../../../hooks/api/usePlex";
+import { useMediaAnalyticsReport } from "../../../hooks/api/useMediaAnalyticsReport";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { BandwidthChart } from "./bandwidth-chart";
@@ -31,14 +17,6 @@ import { WatchHistoryWidget } from "./watch-history-widget";
 
 const TIME_RANGES = [7, 14, 30] as const;
 
-// Phase A3/A4/A5 hooks aren't yet consumed visibly here — the WatchHistoryWidget
-// covers last-watched, BandwidthChart covers most-concurrent's peak, and
-// plays-by-date isn't surfaced in this tab today. They're imported so the
-// hooks stay registered as call sites for future enrichment without churn.
-void _useLastWatched;
-void _useMostConcurrent;
-void _usePlaysByDate;
-
 export const PlexTab = () => {
 	const [timeRange, setTimeRange] = useState<number>(30);
 	const { gradient } = useThemeGradient();
@@ -52,23 +30,12 @@ export const PlexTab = () => {
 		[services],
 	);
 
-	// Session-snapshot analytics — Plex instances write to SessionSnapshot
-	// regardless of Tautulli configuration. These hooks share aggregation
-	// logic with the Jellyfin tab via routes/plex/lib/*-helpers.ts.
-	const transcodeQuery = useTranscodeAnalytics(timeRange);
-	const bandwidthQuery = useBandwidthAnalytics(timeRange);
-	const userAnalyticsQuery = useUserAnalytics(timeRange);
-	const watchHistoryQuery = useWatchHistory(timeRange, 20);
-	const codecQuery = useCodecAnalytics(timeRange);
-	const deviceQuery = useDeviceAnalytics(timeRange);
-	const qualityQuery = useQualityScore(timeRange);
-	const forecastQuery = useBandwidthForecast(timeRange);
-	const topMoviesQuery = useTopMedia("movie", timeRange);
-	const topShowsQuery = useTopMedia("series", timeRange);
-	const topMusicQuery = useTopMedia("music", timeRange);
-	const popularMoviesQuery = usePopularMedia("movie", timeRange);
-	const popularShowsQuery = usePopularMedia("series", timeRange);
-	const popularMusicQuery = usePopularMedia("music", timeRange);
+	const reportQuery = useMediaAnalyticsReport("plex", timeRange);
+	const report = reportQuery.data;
+	const isUnavailable = reportQuery.isError && !report;
+	const canRetry =
+		reportQuery.isError ||
+		(reportQuery.isFetching && reportQuery.errorUpdatedAt > reportQuery.dataUpdatedAt);
 
 	return (
 		<div className="space-y-6 animate-in fade-in duration-300">
@@ -106,60 +73,90 @@ export const PlexTab = () => {
 					</p>
 					{hasTautulli && (
 						<p className="text-xs text-muted-foreground flex items-center gap-1.5">
-							<CheckCircle2 className="h-3 w-3 shrink-0" style={{ color: gradient.from }} />
+							<Info className="h-3 w-3 shrink-0" style={{ color: gradient.from }} />
 							<span>
-								Tautulli enrichment active — codec, LAN/WAN bandwidth, and platform metadata are
-								enriched on captured sessions.
+								Tautulli is configured as optional enrichment. When verified observations are
+								available, they can add codec, LAN/WAN bandwidth, and platform metadata to captured
+								sessions.
 							</span>
 						</p>
 					)}
 				</div>
 			</div>
 
+			{report && (reportQuery.isFetching || reportQuery.isError) && (
+				<p
+					role="status"
+					className="rounded-xl border border-border/30 bg-card/30 p-4 text-xs text-muted-foreground"
+				>
+					{reportQuery.isFetching
+						? "Showing last-known Statistics report while updating."
+						: "Showing last-known Statistics report; refresh failed."}
+				</p>
+			)}
+			{!report && canRetry && (
+				<p
+					role="alert"
+					className="rounded-xl border border-border/30 bg-card/30 p-4 text-xs text-muted-foreground"
+				>
+					Statistics report unavailable.
+				</p>
+			)}
+			{canRetry && (
+				<button
+					type="button"
+					onClick={() => void reportQuery.refetch()}
+					disabled={reportQuery.isFetching}
+					className="rounded-lg border border-border/50 px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted/30 disabled:cursor-wait disabled:opacity-50"
+				>
+					Retry report
+				</button>
+			)}
+
 			{/* Top Media Leaderboards (replaces Tautulli home-stats top_*) */}
 			<TopMediaChart
-				data={topMoviesQuery.data}
-				isLoading={topMoviesQuery.isLoading}
-				isError={topMoviesQuery.isError}
+				data={report?.topMedia.movie}
+				isLoading={reportQuery.isLoading}
+				isError={isUnavailable}
 				mediaType="movie"
 				service="plex"
 			/>
 			<TopMediaChart
-				data={topShowsQuery.data}
-				isLoading={topShowsQuery.isLoading}
-				isError={topShowsQuery.isError}
+				data={report?.topMedia.series}
+				isLoading={reportQuery.isLoading}
+				isError={isUnavailable}
 				mediaType="series"
 				service="plex"
 			/>
 			<TopMediaChart
-				data={topMusicQuery.data}
-				isLoading={topMusicQuery.isLoading}
-				isError={topMusicQuery.isError}
+				data={report?.topMedia.music}
+				isLoading={reportQuery.isLoading}
+				isError={isUnavailable}
 				mediaType="music"
 				service="plex"
 			/>
 
 			{/* Popular Media (sorted by distinct watcher count) */}
 			<TopMediaChart
-				data={popularMoviesQuery.data}
-				isLoading={popularMoviesQuery.isLoading}
-				isError={popularMoviesQuery.isError}
+				data={report?.popularMedia.movie}
+				isLoading={reportQuery.isLoading}
+				isError={isUnavailable}
 				mediaType="movie"
 				metric="popularity"
 				service="plex"
 			/>
 			<TopMediaChart
-				data={popularShowsQuery.data}
-				isLoading={popularShowsQuery.isLoading}
-				isError={popularShowsQuery.isError}
+				data={report?.popularMedia.series}
+				isLoading={reportQuery.isLoading}
+				isError={isUnavailable}
 				mediaType="series"
 				metric="popularity"
 				service="plex"
 			/>
 			<TopMediaChart
-				data={popularMusicQuery.data}
-				isLoading={popularMusicQuery.isLoading}
-				isError={popularMusicQuery.isError}
+				data={report?.popularMedia.music}
+				isLoading={reportQuery.isLoading}
+				isError={isUnavailable}
 				mediaType="music"
 				metric="popularity"
 				service="plex"
@@ -167,59 +164,59 @@ export const PlexTab = () => {
 
 			{/* Session Snapshot Analytics */}
 			<TranscodeChart
-				data={transcodeQuery.data}
-				isLoading={transcodeQuery.isLoading}
-				isError={transcodeQuery.isError}
+				data={report?.transcode}
+				isLoading={reportQuery.isLoading}
+				isError={isUnavailable}
 				service="plex"
 			/>
 			<BandwidthChart
-				data={bandwidthQuery.data}
-				isLoading={bandwidthQuery.isLoading}
-				isError={bandwidthQuery.isError}
+				data={report?.bandwidth}
+				isLoading={reportQuery.isLoading}
+				isError={isUnavailable}
 				service="plex"
 			/>
 
 			{/* Tier 1: User Analytics + Watch History */}
 			<UserAnalyticsChart
-				data={userAnalyticsQuery.data}
-				isLoading={userAnalyticsQuery.isLoading}
-				isError={userAnalyticsQuery.isError}
+				data={report?.userAnalytics}
+				isLoading={reportQuery.isLoading}
+				isError={isUnavailable}
 				service="plex"
 			/>
 			<WatchHistoryWidget
-				data={watchHistoryQuery.data}
-				isLoading={watchHistoryQuery.isLoading}
-				isError={watchHistoryQuery.isError}
+				data={report?.watchHistory}
+				isLoading={reportQuery.isLoading}
+				isError={isUnavailable}
 				service="plex"
 			/>
 
 			{/* Tier 1/2: Codec + Device Analytics */}
 			<div className="grid gap-6 md:grid-cols-2">
 				<CodecChart
-					data={codecQuery.data}
-					isLoading={codecQuery.isLoading}
-					isError={codecQuery.isError}
+					data={report?.codec}
+					isLoading={reportQuery.isLoading}
+					isError={isUnavailable}
 					service="plex"
 				/>
 				<DeviceChart
-					data={deviceQuery.data}
-					isLoading={deviceQuery.isLoading}
-					isError={deviceQuery.isError}
+					data={report?.devices}
+					isLoading={reportQuery.isLoading}
+					isError={isUnavailable}
 					service="plex"
 				/>
 			</div>
 
 			{/* Tier 3: Quality Score + Forecast */}
 			<QualityScoreChart
-				data={qualityQuery.data}
-				isLoading={qualityQuery.isLoading}
-				isError={qualityQuery.isError}
+				data={report?.qualityScore}
+				isLoading={reportQuery.isLoading}
+				isError={isUnavailable}
 				service="plex"
 			/>
 			<ForecastChart
-				data={forecastQuery.data}
-				isLoading={forecastQuery.isLoading}
-				isError={forecastQuery.isError}
+				data={report?.forecast}
+				isLoading={reportQuery.isLoading}
+				isError={isUnavailable}
 				service="plex"
 			/>
 		</div>

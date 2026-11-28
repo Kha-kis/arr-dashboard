@@ -33,6 +33,7 @@ import {
 } from "../../../hooks/api/useSeerr";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useSeerrInstances } from "../hooks/use-seerr-instances";
+import { notifySeerrActionError } from "../lib/seerr-action-error";
 import { isSeerrCircuitBreakerError } from "../lib/seerr-utils";
 import { ApprovalQueueTab } from "./approval-queue-tab";
 import { InstanceSelector } from "./instance-selector";
@@ -55,13 +56,27 @@ const AuditLogTab = lazy(() => import("./audit-log-tab").then((m) => ({ default:
 
 export type RequestsTab = "approval" | "all" | "users" | "issues" | "notifications" | "history";
 
+interface RequestSelection {
+	instanceId: string;
+	request: SeerrRequest;
+}
+
 export const RequestsClient = () => {
 	const { gradient: _themeGradient } = useThemeGradient();
-	const { seerrInstances, defaultInstance, isLoading } = useSeerrInstances();
+	const {
+		seerrInstances,
+		defaultInstance,
+		isLoading,
+		error: instancesError,
+		hasFailedInitialRead,
+		isFetching: isFetchingInstances,
+		refetch: refetchInstances,
+	} = useSeerrInstances();
+	const hasConnectionError = !!instancesError || hasFailedInitialRead;
 	const [activeTab, setActiveTab] = useState<RequestsTab>("approval");
 	const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
-	const [selectedRequest, setSelectedRequest] = useState<SeerrRequest | null>(null);
-	const [approveOptionsRequest, setApproveOptionsRequest] = useState<SeerrRequest | null>(null);
+	const [selectedRequest, setSelectedRequest] = useState<RequestSelection | null>(null);
+	const [approveOptionsRequest, setApproveOptionsRequest] = useState<RequestSelection | null>(null);
 
 	// Deep-link: ?tab=<id> pre-selects a tab, ?user=<id> pre-selects requester filter on "All Requests" tab
 	const searchParams = useSearchParams();
@@ -90,6 +105,34 @@ export const RequestsClient = () => {
 	// Resolve current instance
 	const currentInstanceId = selectedInstanceId ?? defaultInstance?.id ?? "";
 	const currentInstance = seerrInstances.find((s) => s.id === currentInstanceId) ?? null;
+	const enabledInstanceId = currentInstance?.id;
+	const activeRequest = selectedRequest?.instanceId === enabledInstanceId ? selectedRequest : null;
+	const activeOptions =
+		approveOptionsRequest?.instanceId === enabledInstanceId ? approveOptionsRequest : null;
+
+	useEffect(() => {
+		setSelectedRequest((selection) =>
+			selection?.instanceId === enabledInstanceId ? selection : null,
+		);
+		setApproveOptionsRequest((selection) =>
+			selection?.instanceId === enabledInstanceId ? selection : null,
+		);
+	}, [enabledInstanceId]);
+
+	const openRequest = (request: SeerrRequest) =>
+		setSelectedRequest({ instanceId: currentInstanceId, request });
+	const openApprovalOptions = (request: SeerrRequest) =>
+		setApproveOptionsRequest({ instanceId: currentInstanceId, request });
+	const closeRequest = () =>
+		setSelectedRequest((selection) => (selection === activeRequest ? null : selection));
+	const closeApprovalOptions = () =>
+		setApproveOptionsRequest((selection) => (selection === activeOptions ? null : selection));
+	const closeCompletedRequest = (instanceId: string, requestId: number) => {
+		const keepOtherSelection = (selection: RequestSelection | null) =>
+			selection?.instanceId === instanceId && selection.request.id === requestId ? null : selection;
+		setSelectedRequest(keepOtherSelection);
+		setApproveOptionsRequest(keepOtherSelection);
+	};
 
 	// Fetch request counts for badge
 	const {
@@ -107,11 +150,34 @@ export const RequestsClient = () => {
 	const retryMutation = useRetrySeerrRequest();
 	const clearCacheMutation = useClearSeerrCache();
 
-	if (isLoading) {
+	if (isLoading && !hasConnectionError) {
 		return <PremiumPageLoading showHeader cardCount={4} />;
 	}
 
-	// No Seerr instances configured
+	const connectionNotice = hasConnectionError && (
+		<div
+			role="alert"
+			aria-busy={isFetchingInstances}
+			className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-warning/50 bg-warning/10 p-4 text-sm text-warning"
+		>
+			<p>
+				{seerrInstances.length > 0
+					? "Seerr connections could not be verified. Showing last-known connections; availability may have changed."
+					: "Unable to verify Seerr connections. Retry to check again."}
+			</p>
+			<Button
+				variant="secondary"
+				onClick={() => void refetchInstances()}
+				disabled={isFetchingInstances}
+				className="gap-2"
+			>
+				<RefreshCw className={`h-4 w-4${isFetchingInstances ? " animate-spin" : ""}`} />
+				Retry
+			</Button>
+		</div>
+	);
+
+	// Only a successful connection read can confirm an empty configuration.
 	if (seerrInstances.length === 0) {
 		return (
 			<>
@@ -126,18 +192,22 @@ export const RequestsClient = () => {
 					className="animate-in fade-in slide-in-from-bottom-4 duration-500"
 					style={{ animationDelay: "100ms", animationFillMode: "backwards" }}
 				>
-					<PremiumEmptyState
-						icon={Inbox}
-						title="No Seerr Instances"
-						description="Add a Seerr instance in Settings to manage media requests, user quotas, and notifications."
-						action={
-							<a href="/settings">
-								<Button variant="secondary" className="gap-2 border-border/50 bg-card/50">
-									Go to Settings
-								</Button>
-							</a>
-						}
-					/>
+					{hasConnectionError ? (
+						connectionNotice
+					) : (
+						<PremiumEmptyState
+							icon={Inbox}
+							title="No Seerr Instances"
+							description="Add a Seerr instance in Settings to manage media requests, user quotas, and notifications."
+							action={
+								<a href="/settings">
+									<Button variant="secondary" className="gap-2 border-border/50 bg-card/50">
+										Go to Settings
+									</Button>
+								</a>
+							}
+						/>
+					)}
 				</div>
 			</>
 		);
@@ -221,6 +291,8 @@ export const RequestsClient = () => {
 				}
 			/>
 
+			{connectionNotice}
+
 			<div
 				className="animate-in fade-in slide-in-from-bottom-4 duration-500"
 				style={{ animationDelay: "100ms", animationFillMode: "backwards" }}
@@ -247,18 +319,20 @@ export const RequestsClient = () => {
 						{activeTab === "approval" && (
 							<ApprovalQueueTab
 								instanceId={currentInstanceId}
-								onSelectRequest={setSelectedRequest}
-								onOpenApproveOptions={setApproveOptionsRequest}
+								onSelectRequest={openRequest}
+								onOpenApproveOptions={openApprovalOptions}
 							/>
 						)}
 						{activeTab === "all" && (
 							<RequestsHistoryTab
 								instanceId={currentInstanceId}
-								onSelectRequest={setSelectedRequest}
+								onSelectRequest={openRequest}
 								initialUserFilter={initialUserFilter}
 							/>
 						)}
-						{activeTab === "users" && <UsersTab instanceId={currentInstanceId} />}
+						{activeTab === "users" && (
+							<UsersTab key={currentInstanceId} instanceId={currentInstanceId} />
+						)}
 						{activeTab === "issues" && <IssuesTab instanceId={currentInstanceId} />}
 						{activeTab === "notifications" && <NotificationsTab instanceId={currentInstanceId} />}
 						{activeTab === "history" && (
@@ -271,61 +345,61 @@ export const RequestsClient = () => {
 			</div>
 
 			{/* Detail modal — lazy loaded on first click */}
-			{selectedRequest && (
+			{activeRequest && (
 				<Suspense>
 					<RequestDetailModal
-						request={selectedRequest}
-						instanceId={currentInstanceId}
-						onClose={() => setSelectedRequest(null)}
+						request={activeRequest.request}
+						instanceId={activeRequest.instanceId}
+						onClose={closeRequest}
 						onApprove={(requestId) =>
 							approveMutation.mutate(
-								{ instanceId: currentInstanceId, requestId },
+								{ instanceId: activeRequest.instanceId, requestId },
 								{
 									onSuccess: () => {
 										toast.success("Request approved");
-										setSelectedRequest(null);
+										closeCompletedRequest(activeRequest.instanceId, requestId);
 									},
-									onError: () => toast.error("Failed to approve request"),
+									onError: (error) => notifySeerrActionError(error, "Failed to approve request"),
 								},
 							)
 						}
 						onApproveWithOptions={(req) => {
-							setApproveOptionsRequest(req);
-							setSelectedRequest(null);
+							setApproveOptionsRequest({ instanceId: activeRequest.instanceId, request: req });
+							closeRequest();
 						}}
 						onDecline={(requestId) =>
 							declineMutation.mutate(
-								{ instanceId: currentInstanceId, requestId },
+								{ instanceId: activeRequest.instanceId, requestId },
 								{
 									onSuccess: () => {
 										toast.success("Request declined");
-										setSelectedRequest(null);
+										closeCompletedRequest(activeRequest.instanceId, requestId);
 									},
-									onError: () => toast.error("Failed to decline request"),
+									onError: (error) => notifySeerrActionError(error, "Failed to decline request"),
 								},
 							)
 						}
 						onRetry={(requestId) =>
 							retryMutation.mutate(
-								{ instanceId: currentInstanceId, requestId },
+								{ instanceId: activeRequest.instanceId, requestId },
 								{
 									onSuccess: () => {
 										toast.success("Request retried");
-										setSelectedRequest(null);
+										closeCompletedRequest(activeRequest.instanceId, requestId);
 									},
-									onError: () => toast.error("Failed to retry request"),
+									onError: (error) => notifySeerrActionError(error, "Failed to retry request"),
 								},
 							)
 						}
 						onDelete={(requestId) =>
 							deleteMutation.mutate(
-								{ instanceId: currentInstanceId, requestId },
+								{ instanceId: activeRequest.instanceId, requestId },
 								{
 									onSuccess: () => {
 										toast.success("Request deleted");
-										setSelectedRequest(null);
+										closeCompletedRequest(activeRequest.instanceId, requestId);
 									},
-									onError: () => toast.error("Failed to delete request"),
+									onError: (error) => notifySeerrActionError(error, "Failed to delete request"),
 								},
 							)
 						}
@@ -333,14 +407,14 @@ export const RequestsClient = () => {
 				</Suspense>
 			)}
 
-			{approveOptionsRequest && (
+			{activeOptions && (
 				<Suspense>
 					<ApproveWithOptionsDialog
-						request={approveOptionsRequest}
-						instanceId={currentInstanceId}
-						open={!!approveOptionsRequest}
+						request={activeOptions.request}
+						instanceId={activeOptions.instanceId}
+						open
 						onOpenChange={(open) => {
-							if (!open) setApproveOptionsRequest(null);
+							if (!open) closeApprovalOptions();
 						}}
 					/>
 				</Suspense>

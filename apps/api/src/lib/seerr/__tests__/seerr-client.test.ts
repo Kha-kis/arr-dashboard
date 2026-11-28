@@ -1,15 +1,17 @@
 import type { FastifyBaseLogger } from "fastify";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ArrClientFactory, ClientInstanceData } from "../../arr/client-factory.js";
-import { SeerrApiError } from "../../errors.js";
+import { SeerrApiError, SeerrMutationOutcomeUnknownError } from "../../errors.js";
+import { UpstreamValidationError } from "../../validation/parse-upstream.js";
 import { GENRE_TTL_MS, type SeerrCache } from "../seerr-cache.js";
 import type { SeerrCircuitBreaker } from "../seerr-circuit-breaker.js";
 import { SeerrClient } from "../seerr-client.js";
 
 // Mock retry to just call the function directly (no actual retry/delay)
-vi.mock("../seerr-retry.js", () => ({
-	withSeerrRetry: (fn: () => Promise<unknown>) => fn(),
+const retryMock = vi.hoisted(() => ({
+	withSeerrRetry: vi.fn((fn: () => Promise<unknown>) => fn()),
 }));
+vi.mock("../seerr-retry.js", () => retryMock);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -119,6 +121,7 @@ let cache: {
 let client: SeerrClient;
 
 beforeEach(() => {
+	retryMock.withSeerrRetry.mockClear();
 	factory = { rawRequest: vi.fn() };
 	instance = {
 		id: "inst-1",
@@ -151,6 +154,56 @@ beforeEach(() => {
 		circuitBreaker as unknown as SeerrCircuitBreaker,
 		cache as unknown as SeerrCache,
 	);
+});
+
+describe("request replay boundary", () => {
+	it("retains retry orchestration for a GET", async () => {
+		factory.rawRequest.mockResolvedValue(mockResponse(makeRequestCount()));
+		await client.getRequestCount();
+		expect(retryMock.withSeerrRetry).toHaveBeenCalledOnce();
+	});
+
+	it("does not send an ambiguous request action through the retry wrapper", async () => {
+		factory.rawRequest
+			.mockResolvedValueOnce(mockResponse({})) // CSRF preflight
+			.mockRejectedValueOnce(new Error("connection reset after dispatch"));
+		await expect(client.approveRequest(1)).rejects.toBeInstanceOf(SeerrMutationOutcomeUnknownError);
+		expect(retryMock.withSeerrRetry).not.toHaveBeenCalled();
+		expect(factory.rawRequest).toHaveBeenCalledTimes(2);
+		expect(factory.rawRequest.mock.calls[1]?.[2]?.method).toBe("POST");
+	});
+
+	it("classifies a provider 5xx after one mutation dispatch as unknown", async () => {
+		factory.rawRequest
+			.mockResolvedValueOnce(mockResponse({}))
+			.mockResolvedValueOnce(mockResponse({ error: "synthetic" }, 500));
+		await expect(client.declineRequest(1)).rejects.toBeInstanceOf(SeerrMutationOutcomeUnknownError);
+		expect(factory.rawRequest).toHaveBeenCalledTimes(2);
+	});
+
+	it("classifies HTTP 408 after one mutation dispatch as unknown", async () => {
+		factory.rawRequest
+			.mockResolvedValueOnce(mockResponse({}))
+			.mockResolvedValueOnce(mockResponse({ error: "synthetic" }, 408));
+		await expect(client.declineRequest(1)).rejects.toBeInstanceOf(SeerrMutationOutcomeUnknownError);
+		expect(factory.rawRequest).toHaveBeenCalledTimes(2);
+	});
+
+	it("classifies an invalid 2xx mutation response as unknown without replay", async () => {
+		factory.rawRequest
+			.mockResolvedValueOnce(mockResponse({}))
+			.mockResolvedValueOnce(mockResponse({ malformed: true }));
+		await expect(client.approveRequest(1)).rejects.toBeInstanceOf(SeerrMutationOutcomeUnknownError);
+		expect(factory.rawRequest).toHaveBeenCalledTimes(2);
+	});
+
+	it("keeps a definite provider 400 mutation rejection as a failure", async () => {
+		factory.rawRequest
+			.mockResolvedValueOnce(mockResponse({}))
+			.mockResolvedValueOnce(mockResponse({ error: "synthetic" }, 400));
+		await expect(client.declineRequest(1)).rejects.toBeInstanceOf(SeerrApiError);
+		expect(factory.rawRequest).toHaveBeenCalledTimes(2);
+	});
 });
 
 // ===========================================================================
@@ -351,7 +404,7 @@ describe("deleteRequest", () => {
 	it("propagates errors", async () => {
 		factory.rawRequest.mockResolvedValue(mockResponse({ error: "Server Error" }, 500));
 
-		await expect(client.deleteRequest(1)).rejects.toThrow(SeerrApiError);
+		await expect(client.deleteRequest(1)).rejects.toBeInstanceOf(SeerrMutationOutcomeUnknownError);
 	});
 });
 
@@ -465,6 +518,75 @@ describe("discover funnel (shared)", () => {
 // ===========================================================================
 // 10. getMovieGenres
 // ===========================================================================
+
+describe("getTvDetailsFull", () => {
+	function upcomingTvDetails(fields: Record<string, unknown> = {}) {
+		return {
+			id: 1396,
+			name: "Upcoming Series",
+			firstAirDate: "2027-01-15",
+			status: "Planned",
+			genres: [{ id: 18, name: "Drama" }],
+			credits: { cast: [], crew: [] },
+			keywords: [],
+			seasons: [{ id: 1, seasonNumber: 1, episodeCount: 7, airDate: "2027-01-15" }],
+			recommendations: { page: 1, totalPages: 1, totalResults: 0, results: [] },
+			similar: { page: 1, totalPages: 1, totalResults: 0, results: [] },
+			...fields,
+		};
+	}
+
+	it.each([
+		{ label: "null", fields: { lastAirDate: null }, expected: null },
+		{ label: "absent", fields: {}, expected: undefined },
+		{ label: "string", fields: { lastAirDate: "2027-01-15" }, expected: "2027-01-15" },
+	])("returns populated seasons when lastAirDate is $label", async ({ fields, expected }) => {
+		factory.rawRequest.mockResolvedValue(mockResponse(upcomingTvDetails(fields)));
+
+		const result = await client.getTvDetailsFull(1396);
+
+		expect(result.id).toBe(1396);
+		expect(result.name).toBe("Upcoming Series");
+		expect(result.lastAirDate).toBe(expected);
+		expect(result.seasons).toEqual([
+			{ id: 1, seasonNumber: 1, episodeCount: 7, airDate: "2027-01-15" },
+		]);
+		expect(factory.rawRequest).toHaveBeenCalledOnce();
+		expect(factory.rawRequest).toHaveBeenCalledWith(
+			instance,
+			"/api/v1/tv/1396",
+			expect.objectContaining({ method: "GET" }),
+		);
+	});
+
+	it.each([
+		{ label: "number", value: 0 },
+		{ label: "boolean", value: false },
+		{ label: "object", value: {} },
+		{ label: "array", value: [] },
+	])("reports structured 502 for a $label lastAirDate", async ({ value }) => {
+		factory.rawRequest.mockResolvedValue(mockResponse(upcomingTvDetails({ lastAirDate: value })));
+
+		const result = client.getTvDetailsFull(1396);
+
+		await expect(result).rejects.toBeInstanceOf(UpstreamValidationError);
+		await expect(result).rejects.toMatchObject({
+			statusCode: 502,
+			integration: "seerr",
+			category: "getTvDetailsFull",
+			issues: [expect.stringContaining("lastAirDate:")],
+		});
+	});
+
+	it("still reports structured 502 when seasons are absent", async () => {
+		factory.rawRequest.mockResolvedValue(mockResponse(upcomingTvDetails({ seasons: undefined })));
+
+		await expect(client.getTvDetailsFull(1396)).rejects.toMatchObject({
+			statusCode: 502,
+			issues: [expect.stringContaining("seasons:")],
+		});
+	});
+});
 
 describe("getMovieGenres", () => {
 	it("fetches from API on cache miss and stores in cache", async () => {
@@ -622,7 +744,7 @@ describe("getNotificationAgents", () => {
 		factory.rawRequest.mockResolvedValue(mockResponse(makeAgentResponse()));
 		cache.get.mockReturnValue(undefined);
 
-		const agents = await client.getNotificationAgents();
+		const { agents } = await client.getNotificationAgents();
 
 		expect(agents.length).toBe(11);
 		expect(agents[0]!.types).toBe(30);
@@ -634,7 +756,7 @@ describe("getNotificationAgents", () => {
 		factory.rawRequest.mockResolvedValue(mockResponse(makeAgentResponse({ types: undefined })));
 		cache.get.mockReturnValue(undefined);
 
-		const agents = await client.getNotificationAgents();
+		const { agents } = await client.getNotificationAgents();
 
 		expect(agents.length).toBe(11);
 		for (const agent of agents) {
@@ -649,13 +771,17 @@ describe("getNotificationAgents", () => {
 
 		const agents = await client.getNotificationAgents();
 
-		// All 11 agents 404 → all skipped, empty array returned
-		expect(agents).toHaveLength(0);
+		// Only genuine unsupported responses constitute complete empty coverage.
+		expect(agents).toEqual({ agents: [], coverage: "complete", unavailableAgents: [] });
 		expect(log.warn).not.toHaveBeenCalled();
 	});
 
 	it("returns cached result without fetching", async () => {
-		const cached = [{ id: "discord", name: "Discord", enabled: true, types: 10, options: {} }];
+		const cached = {
+			agents: [{ id: "discord", name: "Discord", enabled: true, types: 10, options: {} }],
+			coverage: "complete",
+			unavailableAgents: [],
+		};
 		cache.get.mockReturnValue(cached);
 
 		const agents = await client.getNotificationAgents();

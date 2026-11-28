@@ -1,6 +1,9 @@
 # Arr Dashboard
 
-> **Version 2.24.1** — The **recovery and timezone correctness patch**. Sonarr episode cleanup now resumes safely after partial failures, OIDC callbacks honor configured public origins behind reverse proxies, and Sonarr calendar dates remain correct across viewer timezones and visible-grid boundaries. Workflow action pins and public repository hygiene are also refreshed.
+> **Version 2.25.3** — Reduces contention during protected SQLite retention and improves Radarr artwork, new-device notifications, and Plex freshness alerts.
+
+> [!IMPORTANT]
+> **Before upgrading Docker SQLite to v2.25.1 or later**, confirm that its database uses an explicit persistent directory mount. Pause automatic container updates and pin your current image if you follow `latest`, `2`, or `2.25`. If the database is in the writable layer, keep the original container and verify an encrypted backup before moving to separately initialized persistent storage. [Read the startup advisory](https://github.com/Kha-kis/arr-dashboard/releases/tag/v2.25.0#sqlite-startup-advisory).
 
 A unified dashboard for managing multiple **Sonarr**, **Radarr**, **Prowlarr**, **Lidarr**, **Readarr**, **Plex**, **Tautulli**, **Jellyfin**, **Emby**, and **Seerr** instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
@@ -154,7 +157,7 @@ Now integrates with **[autobrr/qui](https://github.com/autobrr/qui)** as a feder
 - **Zero-Config Security** — Auto-generated encryption keys on first run
 
 ### Management
-- **Encrypted Backups** — Automated encrypted export with configurable retention and scheduling; restore is temporarily disabled pending crash-safe recovery ([backup inventory](docs/BACKUPS.md))
+- **Encrypted Backup & Restore** — Encrypted backups with configurable retention and scheduling, guarded restore, and explicit recovery outcomes ([backup guide](docs/BACKUPS.md))
 - **Tag Organization** — Organize instances with custom tags and storage groups
 - **Multi-Instance** — Manage unlimited instances across all supported services
 - **System Settings** — Configurable ports, listen address, and application restart from the UI
@@ -166,6 +169,7 @@ Now integrates with **[autobrr/qui](https://github.com/autobrr/qui)** as a feder
 ```bash
 docker run -d \
   --name arr-dashboard \
+  --stop-timeout 120 \
   -p 3000:3000 \
   -v /path/to/config:/config \
   -e PUID=1000 \
@@ -189,6 +193,7 @@ services:
     ports:
       - 3000:3000
     restart: unless-stopped
+    stop_grace_period: 120s
 ```
 
 Then start:
@@ -239,6 +244,10 @@ First-class support is reserved for services listed in the table above.
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
+| `2.25.3` | **SQLite availability and provider maintenance** — Avoids unnecessary writer admission, fixes authenticated Radarr artwork and two notification behaviors, and adds scoped SQLite and Jellyfin diagnostics. |
+| `2.25.2` | **Inventory maintenance and Docker listener fixes** — Bounded staging cleanup, progressive retry delays, and consistent listener settings across startup, the Web proxy, health checks, and internal restarts. |
+| `2.25.1` | **Startup recovery and maintenance** — Requires persistent Docker SQLite storage, resumes verified interrupted enrollment, and improves TRaSH quality order and Jellyfin diagnostics. [Upgrade notes](https://github.com/Kha-kis/arr-dashboard/blob/main/CHANGELOG.md). |
+| `2.25.0` | **Durable grabs and restore recovery** — Updates the Manual Search Grab and Backup Restore APIs, keeps the last published Plex and Jellyfin inventory readable during refresh, and improves populated SQLite startup. [Upgrade notes](https://github.com/Kha-kis/arr-dashboard/blob/main/CHANGELOG.md). |
 | `2.24.1` | **Recovery and timezone correctness** — Makes Sonarr episode cleanup recovery durable, fixes OIDC callback origins behind reverse proxies, and corrects Sonarr calendar bucketing and fetch boundaries in the viewer's timezone (#755, #759, #761, #763). |
 | `2.24.0` | **Safer cleanup & resilient automation** — Adds episode-scoped Sonarr cleanup and tighter shared-library deletion checks. TRaSH deployments and auto-sync recover from interrupted runs and refuse stale or unverified data. Also fixes Plex cache refreshes, OIDC linking, qUI webhooks, Seerr routing, PostgreSQL upgrades, vulnerable dependencies, and provider-cache memory (#629, #661, #685, #693, #718, #721, #743, #745, #747–#750). |
 | `2.23.0` | **Torrent payload safeguards** — Adds an opt-in Queue Cleaner torrent file-extension allowlist inspected through qui. Mixed torrents containing any unexpected file are removed in full through Sonarr or Radarr when existing safety gates permit cleanup; unavailable manifest metadata fails closed and is retried later (#565, #612). Updates PostCSS to 8.5.20 to resolve GHSA-6g55-p6wh-862q (#611). |
@@ -308,6 +317,7 @@ The `/config` volume contains critical data that must be preserved:
 | `PUID` | `911` | User ID for file permissions (LinuxServer.io style) |
 | `PGID` | `911` | Group ID for file permissions (LinuxServer.io style) |
 | `DATABASE_URL` | `file:/config/prod.db` | Database connection string (SQLite or PostgreSQL) |
+| `SQLITE_JOURNAL_MODE` | `preserve` | SQLite-only: keep the existing mode, or explicitly request `wal`/`delete` at startup. WAL requires a local filesystem. |
 | `SESSION_TTL_HOURS` | `24` | Session expiration time in hours |
 | `SESSION_COOKIE_NAME` | `arr_session` | Name of the session cookie |
 | `PASSWORD_POLICY` | `strict` | `strict` (uppercase, lowercase, number, special char) or `relaxed` (8+ chars, passphrase-friendly) |
@@ -328,6 +338,29 @@ The `/config` volume contains critical data that must be preserved:
 >
 > **Rootless (`--user`):** Run the container directly as a non-root user with `--user UID:GID` or `user: "UID:GID"` in Compose. No root required — ideal for Kubernetes and security-hardened deployments. Ensure `/config` is writable by the specified user. PUID/PGID env vars are ignored in this mode.
 
+### Passkeys on a public domain
+
+HTTPS and the relying-party domain must both match your deployment. For a browser
+at `https://dashboard.example.com`, configure these together:
+
+```yaml
+WEBAUTHN_RP_ID: dashboard.example.com
+WEBAUTHN_ORIGIN: https://dashboard.example.com
+```
+
+The RP ID is a domain without a protocol, port or path. The origin includes the
+protocol, host and any nondefault browser port, with no path. `APP_URL` alone does
+not replace the RP ID. Recreate/restart the application after changing these
+variables, then retry registration. The `localhost` defaults are for local
+development; HTTPS alone does not correct a mismatched RP ID.
+
+Existing passkeys remain scoped to their original RP ID. Keep another working
+sign-in method before changing it; credentials are not automatically migrated.
+A roaming key must support the existing discoverable FIDO2 credential and user
+verification requirements. Browser/password-manager chooser behavior is separate
+from RP configuration; this guidance does not establish compatibility with a
+particular physical key.
+
 ## Platform Support
 
 ### Unraid
@@ -338,13 +371,23 @@ Community Applications template available. See the [wiki](https://github.com/Kha
 
 Use Docker Compose method with appropriate volume paths.
 
+SQLite WAL is an opt-in concurrency setting, not a substitute for short write
+transactions: it lets readers continue during a writer, but SQLite still has
+only one writer at a time. Keep the entire `/config` volume together. While the
+app is running in WAL mode, `prod.db-wal` and `prod.db-shm` may exist and must
+not be separated from `prod.db` in raw file copies. For an offline file backup,
+stop the app cleanly and verify the database before copying it. Use
+`SQLITE_JOURNAL_MODE=delete` only for a deliberate rollback with no other
+database process open; removing the setting later merely preserves WAL mode.
+
 ### PostgreSQL Database
 
-By default, Arr Dashboard uses SQLite stored at `/config/prod.db`. For larger deployments:
+By default, Arr Dashboard uses SQLite stored at `/config/prod.db`. Docker SQLite requires an explicitly configured persistent directory. Before upgrading a container with no SQLite mount, follow the [SQLite storage transition guide](docs/SQLITE-STORAGE.md). For larger deployments:
 
 ```bash
 docker run -d \
   --name arr-dashboard \
+  --stop-timeout 120 \
   -p 3000:3000 \
   -v /path/to/config:/config \
   -e DATABASE_URL="postgresql://user:password@hostname:5432/arr_dashboard" \
@@ -428,6 +471,7 @@ Using PUID/PGID (starts as root, drops privileges):
 ```bash
 docker run -d \
   --name arr-dashboard \
+  --stop-timeout 120 \
   --security-opt=no-new-privileges:true \
   --cap-drop=ALL \
   -p 3000:3000 \
@@ -441,6 +485,7 @@ Using rootless mode (no root required):
 ```bash
 docker run -d \
   --name arr-dashboard \
+  --stop-timeout 120 \
   --user 1000:1000 \
   -p 3000:3000 \
   -v /path/to/config:/config \
@@ -483,8 +528,54 @@ docker-compose up -d
 | Port in use | Change port mapping: `-p 8080:3000` |
 | Database locked | Ensure only one instance is running |
 | Connection refused | Check container logs: `docker logs arr-dashboard` |
-| Login issues | Reset password: `pnpm run reset-admin-password` |
+| Login issues | Use the [offline password recovery command](#offline-password-recovery) after stopping the normal service |
 | Blank page after update | Clear browser cache or hard refresh |
+
+### Offline password recovery
+
+Use the installed `reset-admin-password` command from the same image and service
+configuration as the normal deployment. It uses the existing database and
+requires downtime. Stop every API/container using that database first, including
+older images that do not enforce native ownership. Do not run recovery through
+`docker exec` against the live API.
+
+For the repository's Compose service, run these commands separately from a real
+interactive terminal. Compose allocates the TTY automatically; do not use `-T`:
+
+```bash
+docker compose stop arr-dashboard
+docker compose run --rm --no-deps --interactive --entrypoint reset-admin-password arr-dashboard
+```
+
+The one-off service inherits the configured image, volumes, database URL,
+`PASSWORD_POLICY` and runtime user settings. Keep PostgreSQL available when it is
+the selected database. Do not omit or substitute the existing configuration.
+Root execution drops to numeric `PUID`/`PGID` (default `911:911`); a non-root
+container retains its actual UID/GID. Recovery does not change file ownership.
+See [Docker recovery details](docker/README.md#offline-password-recovery).
+
+Enter one exact, case-sensitive existing username, then the new password twice.
+Input is hidden, including the username. Password arguments, environment/file
+input and noninteractive stdin are unsupported. The configured strict/relaxed
+password policy applies, with an 8-character minimum and 128-character maximum.
+
+Only an account that already has a local password can be recovered. The command
+atomically changes its password, clears its lockout and revokes its sessions.
+It preserves `mustChangePassword`, other accounts, passkeys, OIDC links, settings,
+connections and encryption secrets. It does not migrate, reset, restore or
+bootstrap the application.
+
+After confirmed success, restart the normal service and sign in:
+
+```bash
+docker compose up -d arr-dashboard
+```
+
+An active or suspended native owner makes recovery refuse. A cancelled or failed
+run is not reported as successful. If the outcome is unconfirmed, do not retry
+automatically: restart the normal service and check sign-in before deciding
+whether another recovery attempt is needed. Never delete coordination files or
+edit the runtime journal to bypass a refusal.
 
 ### Getting Help
 

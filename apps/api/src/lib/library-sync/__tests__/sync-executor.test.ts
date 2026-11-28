@@ -14,6 +14,7 @@ import type { FastifyBaseLogger } from "fastify";
 import { describe, expect, it, vi } from "vitest";
 import type { PrismaClient, ServiceInstance, ServiceType } from "../../../lib/prisma.js";
 import type { ArrClientFactory } from "../../arr/client-factory.js";
+import { streamLibraryItems } from "../../arr/library-stream.js";
 import { createArrServiceFingerprint } from "../../arr/service-fingerprint.js";
 import type { Encryptor } from "../../auth/encryption.js";
 import { evaluateSingleCondition, extractRating } from "../../library-cleanup/rule-evaluators.js";
@@ -171,15 +172,16 @@ function createMockPrisma(
 	// Shared spy list — the transaction closure captures these by reference
 	const txCreates: Array<{ data: Record<string, unknown> }> = [];
 	const txUpdates: Array<{ where: { id: string }; data: Record<string, unknown> }> = [];
+	const librarySyncStatus = {
+		upsert: vi.fn().mockResolvedValue({}),
+		update: vi.fn().mockResolvedValue({}),
+	};
 
 	return {
 		_selectCalls: selectCalls,
 		_txCreates: txCreates,
 		_txUpdates: txUpdates,
-		librarySyncStatus: {
-			upsert: vi.fn().mockResolvedValue({}),
-			update: vi.fn().mockResolvedValue({}),
-		},
+		librarySyncStatus,
 		libraryCache: {
 			findMany: vi.fn().mockImplementation((args: { select?: Record<string, unknown> }) => {
 				selectCalls.push(args?.select);
@@ -192,6 +194,7 @@ function createMockPrisma(
 		$transaction: vi.fn().mockImplementation(
 			async (
 				fn: (tx: {
+					librarySyncStatus: typeof librarySyncStatus;
 					libraryCache: {
 						update: (args: {
 							where: { id: string };
@@ -199,9 +202,10 @@ function createMockPrisma(
 						}) => Promise<unknown>;
 						create: (args: { data: Record<string, unknown> }) => Promise<unknown>;
 					};
-				}) => Promise<void>,
+				}) => Promise<unknown>,
 			) => {
 				const tx = {
+					librarySyncStatus,
 					libraryCache: {
 						update: async (args: { where: { id: string }; data: Record<string, unknown> }) => {
 							txUpdates.push(args);
@@ -211,7 +215,7 @@ function createMockPrisma(
 						},
 					},
 				};
-				await fn(tx);
+				return await fn(tx);
 			},
 		),
 	} as unknown as PrismaClient & {
@@ -349,6 +353,77 @@ function setupSync(
 // ============================================================================
 
 describe("syncInstance", () => {
+	it("retires an old movie hash and retry marker when Radarr replaces the file", async () => {
+		const raw = makeRawItem({
+			hasFile: true,
+			path: "/synthetic",
+			movieFile: { relativePath: "new.mkv", size: 1 },
+		});
+		const oldData = JSON.stringify({
+			title: "Test Item",
+			year: 2024,
+			path: "/synthetic",
+			movieFile: { relativePath: "old.mkv", size: 1 },
+		});
+		const { deps, instance, mockPrisma } = setupSync(
+			"RADARR",
+			[raw],
+			[{ id: "cache-1", arrItemId: 1, itemType: "movie", hasFile: true, data: oldData }],
+		);
+		const result = await syncInstance(deps, instance);
+		expect(result.success).toBe(true);
+		expect(mockPrisma._txUpdates[0]?.data).toEqual(
+			expect.objectContaining({
+				infoHash: null,
+				infoHashSource: null,
+				pathBackfillRetryAfter: null,
+				torrentState: null,
+			}),
+		);
+	});
+
+	it("treats malformed old movie data as an unknown file fingerprint", async () => {
+		const raw = makeRawItem({
+			hasFile: true,
+			path: "/synthetic",
+			movieFile: { relativePath: "current.mkv", size: 1 },
+		});
+		const { deps, instance, mockPrisma } = setupSync(
+			"RADARR",
+			[raw],
+			[{ id: "cache-1", arrItemId: 1, itemType: "movie", hasFile: true, data: "{" }],
+		);
+
+		const result = await syncInstance(deps, instance);
+		expect(result.success).toBe(true);
+		expect(mockPrisma._txUpdates[0]?.data).toEqual(
+			expect.objectContaining({ infoHash: null, pathBackfillRetryAfter: null }),
+		);
+	});
+
+	it("keeps a deferred movie miss deferred when Radarr reports the same file", async () => {
+		const raw = makeRawItem({
+			hasFile: true,
+			path: "/synthetic",
+			movieFile: { relativePath: "same.mkv", size: 1 },
+		});
+		const oldData = JSON.stringify({
+			title: "Test Item",
+			year: 2024,
+			path: "/synthetic",
+			movieFile: { relativePath: "same.mkv", size: 1 },
+		});
+		const { deps, instance, mockPrisma } = setupSync(
+			"RADARR",
+			[raw],
+			[{ id: "cache-1", arrItemId: 1, itemType: "movie", hasFile: true, data: oldData }],
+		);
+		const result = await syncInstance(deps, instance);
+		expect(result.success).toBe(true);
+		expect(mockPrisma._txUpdates[0]?.data).not.toHaveProperty("pathBackfillRetryAfter");
+		expect(mockPrisma._txUpdates[0]?.data).not.toHaveProperty("infoHash");
+	});
+
 	describe("rating cache contract", () => {
 		async function syncRating(
 			service: "RADARR" | "SONARR",
@@ -919,6 +994,65 @@ describe("syncInstance", () => {
 	// --- Item removal detection ---------------------------------------------
 
 	describe("Stale item removal", () => {
+		it.each([undefined, 0, "not-an-id", "42-trailing", -1, 1.25, 2147483648])(
+			"preserves prior cache when the provider row lacks an authoritative identity (%s)",
+			async (id) => {
+				const { deps, instance, mockPrisma } = setupSync(
+					"SONARR",
+					[makeRawItem({ id })],
+					[{ id: "cache-1", arrItemId: 42, itemType: "series", hasFile: true, data: null }],
+				);
+
+				const result = await syncInstance(deps, instance);
+
+				expect(result.success).toBe(false);
+				expect(result.itemsRemoved).toBe(0);
+				expect(result.itemsAdded).toBe(0);
+				expect(result.itemsUpdated).toBe(0);
+				expect(mockPrisma.libraryCache.deleteMany).not.toHaveBeenCalled();
+			},
+		);
+
+		it("keeps committed positive records and skips pruning on a late invalid identity", async () => {
+			const expected = Array.from({ length: 100 }, (_, index) => makeRawItem({ id: index + 1 }));
+			const { deps, instance, mockPrisma } = setupSync(
+				"SONARR",
+				[...expected, makeRawItem({ id: undefined })],
+				[
+					{ id: "cache-kept", arrItemId: 42, itemType: "series", hasFile: true, data: null },
+					{ id: "cache-unseen", arrItemId: 1000, itemType: "series", hasFile: true, data: null },
+				],
+			);
+
+			const result = await syncInstance(deps, instance);
+
+			expect(result.success).toBe(false);
+			expect(result.itemsProcessed).toBe(100);
+			expect(result.itemsAdded).toBe(99);
+			expect(result.itemsUpdated).toBe(1);
+			expect(result.itemsRemoved).toBe(0);
+			expect(mockPrisma.libraryCache.deleteMany).not.toHaveBeenCalled();
+		});
+
+		it("retains compatible numeric string identity for a complete inventory", async () => {
+			const { deps, instance, mockPrisma } = setupSync(
+				"SONARR",
+				[makeRawItem({ id: "42" })],
+				[
+					{ id: "cache-1", arrItemId: 42, itemType: "series", hasFile: true, data: null },
+					{ id: "cache-2", arrItemId: 99, itemType: "series", hasFile: true, data: null },
+				],
+			);
+
+			const result = await syncInstance(deps, instance);
+
+			expect(result.success).toBe(true);
+			expect(result.itemsUpdated).toBe(1);
+			expect(mockPrisma.libraryCache.deleteMany).toHaveBeenCalledWith({
+				where: { id: { in: ["cache-2"] } },
+			});
+		});
+
 		it("removes items in cache that are not in the ARR response", async () => {
 			const rawItems = [makeRawItem({ id: 1 })];
 			const existingItems = [
@@ -935,6 +1069,55 @@ describe("syncInstance", () => {
 			expect(mockPrisma.libraryCache.deleteMany).toHaveBeenCalledWith({
 				where: { id: { in: ["cache-2"] } },
 			});
+		});
+
+		it("does not prune existing cache rows when an array contains a malformed entry", async () => {
+			const { deps, instance, mockPrisma } = setupSync(
+				"SONARR",
+				[],
+				[{ id: "cache-unseen", arrItemId: 999, itemType: "series", hasFile: true, data: null }],
+			);
+			const encoder = new TextEncoder();
+			const records = Array.from({ length: 100 }, (_, index) =>
+				JSON.stringify(makeRawItem({ id: index + 1 })),
+			);
+			const responseBody = new ReadableStream<Uint8Array>({
+				start(controller) {
+					controller.enqueue(encoder.encode(`[${records.join(",")}`));
+					controller.enqueue(encoder.encode(",null]"));
+					controller.close();
+				},
+			});
+			const streamFactory = {
+				rawRequest: vi.fn().mockResolvedValue(new Response(responseBody)),
+			} as unknown as ArrClientFactory;
+			deps.streamLibraryItems = (_factory, streamedInstance, log) =>
+				streamLibraryItems(streamFactory, streamedInstance, log);
+
+			const result = await syncInstance(deps, instance);
+
+			expect(result.success).toBe(false);
+			expect(result.itemsProcessed).toBe(100);
+			expect(result.itemsRemoved).toBe(0);
+			expect(mockPrisma.libraryCache.deleteMany).not.toHaveBeenCalled();
+		});
+
+		it("does not prune existing cache rows when the provider stream is incomplete", async () => {
+			const existingItems = [
+				{ id: "cache-live", arrItemId: 1, itemType: "series", hasFile: true, data: null },
+				{ id: "cache-unseen", arrItemId: 99, itemType: "series", hasFile: true, data: null },
+			];
+			const { deps, instance, mockPrisma } = setupSync("SONARR", [], existingItems);
+			deps.streamLibraryItems = async function* () {
+				for (let id = 1; id <= 101; id++) yield makeRawItem({ id });
+				throw new Error("streamLibraryItems: expected a top-level JSON array");
+			};
+
+			const result = await syncInstance(deps, instance);
+
+			expect(result.success).toBe(false);
+			expect(result.itemsRemoved).toBe(0);
+			expect(mockPrisma.libraryCache.deleteMany).not.toHaveBeenCalled();
 		});
 
 		// Pins the v2.18.5 cursor-paginated existing-items load (issue #427
@@ -1106,6 +1289,72 @@ describe("syncInstance", () => {
 
 			expect(result.success).toBe(false);
 			expect(result.error).toBe("DB down");
+		});
+
+		it("settles a failed sync after one transient status-write timeout without repeating the stream", async () => {
+			const { deps, instance, mockPrisma } = setupSync("READARR");
+			let streamStarts = 0;
+			deps.streamLibraryItems = async function* () {
+				streamStarts++;
+				yield makeRawItem();
+				throw new Error("provider unavailable");
+			};
+			const statusUpdate = mockPrisma.librarySyncStatus.update as ReturnType<typeof vi.fn>;
+			statusUpdate
+				.mockRejectedValueOnce(Object.assign(new Error("operation timed out"), { code: "P1008" }))
+				.mockResolvedValue({});
+
+			const result = await syncInstance(deps, instance);
+
+			expect(result.success).toBe(false);
+			expect(result.error).toBe("provider unavailable");
+			expect(streamStarts).toBe(1);
+			expect(statusUpdate).toHaveBeenCalledTimes(2);
+			expect(mockPrisma.$transaction).toHaveBeenCalledTimes(2);
+			for (const [write] of statusUpdate.mock.calls) {
+				expect(write).toEqual({
+					where: { instanceId: instance.id },
+					data: { syncInProgress: false, lastError: "provider unavailable" },
+				});
+			}
+		});
+
+		it("stops retrying a failed sync status write after a bounded number of timeouts", async () => {
+			const { deps, instance, mockPrisma, log } = setupSync("READARR");
+			deps.streamLibraryItems = async function* () {
+				yield makeRawItem();
+				throw new Error("provider unavailable");
+			};
+			const statusUpdate = mockPrisma.librarySyncStatus.update as ReturnType<typeof vi.fn>;
+			statusUpdate.mockRejectedValue(
+				Object.assign(new Error("operation timed out"), { code: "P1008" }),
+			);
+
+			const result = await syncInstance(deps, instance);
+
+			expect(result.success).toBe(false);
+			expect(statusUpdate).toHaveBeenCalledTimes(5);
+			expect(mockPrisma.$transaction).toHaveBeenCalledTimes(5);
+			expect(log.error).toHaveBeenCalledWith(
+				expect.objectContaining({ err: expect.any(Error) }),
+				"Failed to update sync status with error",
+			);
+		});
+
+		it("does not retry a non-transient failed sync status write", async () => {
+			const { deps, instance, mockPrisma } = setupSync("READARR");
+			deps.streamLibraryItems = async function* () {
+				yield makeRawItem();
+				throw new Error("provider unavailable");
+			};
+			const statusUpdate = mockPrisma.librarySyncStatus.update as ReturnType<typeof vi.fn>;
+			statusUpdate.mockRejectedValue(Object.assign(new Error("row missing"), { code: "P2025" }));
+
+			const result = await syncInstance(deps, instance);
+
+			expect(result.success).toBe(false);
+			expect(statusUpdate).toHaveBeenCalledTimes(1);
+			expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
 		});
 	});
 

@@ -1,6 +1,7 @@
 import type { ProviderNativeInventoryResponse, ServiceInstanceSummary } from "@arr/shared";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { IncognitoProvider } from "../../../../contexts/IncognitoContext";
 
 const state = vi.hoisted(() => ({
 	incognito: false,
@@ -13,10 +14,14 @@ const state = vi.hoisted(() => ({
 	servicesError: false,
 	servicesRefetch: vi.fn(),
 	refetch: vi.fn(),
+	services: [] as ServiceInstanceSummary[],
 	hookCalls: [] as Array<Record<string, unknown>>,
 }));
 
 vi.mock("../../../../components/ui", () => ({
+	Badge: ({ children, ...props }: React.HTMLAttributes<HTMLSpanElement>) => (
+		<span {...props}>{children}</span>
+	),
 	Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
 		<button {...props}>{children}</button>
 	),
@@ -41,13 +46,7 @@ vi.mock("../../../../components/ui", () => ({
 }));
 vi.mock("../../../../hooks/api/useServicesQuery", () => ({
 	useServicesQuery: () => ({
-		data: state.servicesSuccess
-			? [
-					service("plex-1", "Private Plex"),
-					service("jellyfin-1", "Private Jellyfin"),
-					{ ...service("radarr-1", "Private Radarr"), service: "radarr" },
-				]
-			: undefined,
+		data: state.servicesSuccess ? state.services : undefined,
 		isSuccess: state.servicesSuccess,
 		isLoading: state.servicesLoading,
 		isError: state.servicesError,
@@ -72,7 +71,15 @@ vi.mock("../../../../lib/incognito", () => ({
 	getLinuxIsoName: () => "masked-item.iso",
 }));
 
-import { ProviderNativeInventoryPanel } from "../provider-native-inventory-panel";
+import {
+	ProviderNativeInventoryPanel as InventoryPanel,
+	useProviderNativeInventoryPanelState,
+} from "../provider-native-inventory-panel";
+
+function ProviderNativeInventoryPanel() {
+	const inventory = useProviderNativeInventoryPanelState();
+	return <InventoryPanel inventory={inventory} />;
+}
 
 function service(id: string, label: string): ServiceInstanceSummary {
 	return {
@@ -131,6 +138,82 @@ function available(
 	};
 }
 
+it("shows recorded watch coverage separately while retaining known, last-known and unknown badges", async () => {
+	state.services = [service("jellyfin-1", "Private server")];
+	state.data = available({
+		watchCoverage: {
+			status: "available",
+			observedAt: "2026-09-14T12:00:00.000Z",
+			expectedScopes: 8,
+			verifiedScopes: 7,
+			incompleteScopes: 1,
+			diagnosticStatus: "recorded",
+			reasonCodes: ["changed-observations", "coverage-incomplete"],
+			refreshPhase: "finalizing",
+		},
+		rows: [
+			{
+				nativeId: "one",
+				mediaType: "episode",
+				libraryIds: ["library-1"],
+				parentNativeId: "series",
+				seasonNumber: 1,
+				episodeNumber: 1,
+				title: "Known",
+				watch: {
+					state: "unwatched",
+					freshness: "last-known",
+					valueSemantics: "exact",
+					observedAt: "2026-09-14T12:00:00.000Z",
+				},
+			},
+			{
+				nativeId: "two",
+				mediaType: "episode",
+				libraryIds: ["library-1"],
+				parentNativeId: "series",
+				seasonNumber: 1,
+				episodeNumber: 2,
+				title: "Unknown",
+				watch: {
+					state: "unknown",
+					freshness: "unavailable",
+					valueSemantics: "unknown",
+					observedAt: null,
+				},
+			},
+		],
+	});
+	render(<ProviderNativeInventoryPanel />);
+	fireEvent.change(screen.getByLabelText("Inventory domain"), { target: { value: "episode" } });
+	expect(await screen.findByText("Recorded watch coverage")).toBeInTheDocument();
+	expect(screen.getByText(/7 of 8 scopes verified/)).toBeInTheDocument();
+	expect(
+		screen.getByText(/Observations changed between collection and verification/),
+	).toBeInTheDocument();
+	expect(screen.getByText("Unwatched")).toBeInTheDocument();
+	expect(screen.getByText("Last known")).toBeInTheDocument();
+	expect(screen.getByText("Watch state unknown")).toBeInTheDocument();
+	expect(screen.getByText(/Absence is not proof of unwatched/)).toBeInTheDocument();
+	expect(screen.getByRole("link", { name: "View watch refresh in Pulse" })).toHaveAttribute(
+		"href",
+		"/pulse",
+	);
+	expect(
+		screen.queryByRole("button", { name: "Refresh watch observations" }),
+	).not.toBeInTheDocument();
+});
+
+it("explains positive-only Plex unknown evidence without asserting unwatched", () => {
+	state.services = [service("plex-1", "Private server")];
+	state.data = available();
+	render(<ProviderNativeInventoryPanel />);
+	fireEvent.change(screen.getByLabelText("Inventory domain"), { target: { value: "episode" } });
+	expect(
+		screen.getByText(/Plex watch badges use positive watched observations only/),
+	).toBeInTheDocument();
+});
+
 beforeEach(() => {
 	state.incognito = false;
 	state.data = available();
@@ -143,9 +226,356 @@ beforeEach(() => {
 	state.servicesRefetch.mockReset();
 	state.refetch.mockReset();
 	state.hookCalls.length = 0;
+	state.services = [
+		service("plex-1", "Private Plex"),
+		service("plex-2", "Other private Plex"),
+		service("jellyfin-1", "Private Jellyfin"),
+		{ ...service("radarr-1", "Private Radarr"), service: "radarr" },
+	];
+	window.history.replaceState({}, "", "/library");
 });
 
 describe("ProviderNativeInventoryPanel", () => {
+	describe("watch observation time", () => {
+		it.each([
+			{ state: "unwatched", freshness: "current", valueSemantics: "exact", badge: "Current" },
+			{ state: "unwatched", freshness: "last-known", valueSemantics: "exact", badge: "Last known" },
+			{
+				state: "watched",
+				freshness: "last-known",
+				valueSemantics: "lower-bound",
+				badge: "Last known",
+			},
+		] as const)(
+			"distinguishes $freshness $valueSemantics watch time from inventory time",
+			(watch) => {
+				state.services = [service("jellyfin-1", "Private server")];
+				state.incognito = true;
+				state.data = available({
+					observedAt: "2026-09-14T12:00:00.000Z",
+					rows: [
+						{
+							...available().rows[0]!,
+							mediaType: "episode",
+							watch: {
+								state: watch.state,
+								freshness: watch.freshness,
+								valueSemantics: watch.valueSemantics,
+								observedAt: "2026-09-13T08:00:00.000Z",
+							},
+						},
+					],
+				});
+				render(<ProviderNativeInventoryPanel />, { wrapper: IncognitoProvider });
+				fireEvent.change(screen.getByLabelText("Inventory domain"), {
+					target: { value: "episode" },
+				});
+				const watchTime = screen.getByText(/^Watch observed:/).querySelector("time");
+				expect(watchTime).toBeVisible();
+				expect(watchTime).toHaveAttribute("datetime", "2026-09-13T08:00:00.000Z");
+				expect(screen.getByText(watch.badge)).toBeInTheDocument();
+				expect(
+					screen.getByText(watch.state === "watched" ? "Watched" : "Unwatched"),
+				).toBeInTheDocument();
+				if (watch.valueSemantics === "lower-bound")
+					expect(screen.getByText("Lower bound")).toBeInTheDocument();
+				expect(screen.queryByText("Private movie title")).not.toBeInTheDocument();
+				expect(screen.getByText("masked-item.iso")).toBeInTheDocument();
+			},
+		);
+		it.each([null, "not-a-recorded-time"])(
+			"does not substitute inventory time for unavailable watch time %s",
+			(observedAt) => {
+				state.services = [service("jellyfin-1", "Private server")];
+				state.data = available({
+					rows: [
+						{
+							...available().rows[0]!,
+							mediaType: "episode",
+							watch: {
+								state: "unknown",
+								freshness: "unavailable",
+								valueSemantics: "unknown",
+								observedAt,
+							},
+						},
+					],
+				});
+				render(<ProviderNativeInventoryPanel />, { wrapper: IncognitoProvider });
+				fireEvent.change(screen.getByLabelText("Inventory domain"), {
+					target: { value: "episode" },
+				});
+				expect(screen.getByText("Watch observation time unavailable")).toBeInTheDocument();
+				expect(screen.queryByText(/^Watch observed:/)).not.toBeInTheDocument();
+				expect(screen.getByText("Watch state unknown")).toBeInTheDocument();
+				expect(screen.queryByText("Current")).not.toBeInTheDocument();
+				expect(screen.queryByText("Last known")).not.toBeInTheDocument();
+			},
+		);
+	});
+	describe("Plex metadata review", () => {
+		it.each([undefined, {}, { tmdb: [] }, { tvdb: [42] }, { tmdb: [42, 99] }])(
+			"highlights recorded Plex library mapping gaps without relying on the ARR relationship: %j",
+			(externalIds) => {
+				state.data = available({
+					rows: [
+						{
+							...available().rows[0]!,
+							externalIds,
+							connection: { status: "matched", reason: "matched-identifiers", arrItems: [] },
+						},
+					],
+				});
+				render(<ProviderNativeInventoryPanel />, { wrapper: IncognitoProvider });
+				expect(screen.getByText("Metadata review needed")).toBeInTheDocument();
+				expect(screen.getByText("No unique TMDB mapping")).toBeInTheDocument();
+				expect(screen.getByText("Matched ARR item")).toBeInTheDocument();
+				expect(screen.getByText("Private movie title")).toBeInTheDocument();
+			},
+		);
+		it("does not mistake a missing ARR relationship for a missing Plex metadata match", () => {
+			state.data = available({
+				rows: [
+					{
+						...available().rows[0]!,
+						externalIds: { tmdb: [42] },
+						connection: { status: "unmatched", reason: "no-arr-match", arrItems: [] },
+					},
+				],
+			});
+			render(<ProviderNativeInventoryPanel />, { wrapper: IncognitoProvider });
+			expect(screen.queryByText("Metadata review needed")).not.toBeInTheDocument();
+			expect(screen.getByText("No ARR match")).toBeInTheDocument();
+		});
+		it.each(["jellyfin", "emby"] as const)(
+			"does not prescribe Plex matching for %s library items",
+			(provider) => {
+				state.services = [{ ...service(`${provider}-1`, "Private server"), service: provider }];
+				render(<ProviderNativeInventoryPanel />, { wrapper: IncognitoProvider });
+				expect(screen.queryByText("Metadata review needed")).not.toBeInTheDocument();
+				expect(screen.queryByText("Check matching in Plex")).not.toBeInTheDocument();
+			},
+		);
+		it("does not interpret a Plex episode's absent TMDB identifier as a library matching issue", () => {
+			state.data = available({
+				rows: [
+					{
+						...available().rows[0]!,
+						mediaType: "episode",
+						parentNativeId: "parent-1",
+						seasonNumber: 1,
+						episodeNumber: 1,
+					},
+				],
+			});
+			render(<ProviderNativeInventoryPanel />, { wrapper: IncognitoProvider });
+			fireEvent.change(screen.getByLabelText("Inventory domain"), { target: { value: "episode" } });
+			expect(screen.queryByText("Metadata review needed")).not.toBeInTheDocument();
+		});
+		it("offers manual matching guidance without claiming the item is definitely unmatched", () => {
+			render(<ProviderNativeInventoryPanel />, { wrapper: IncognitoProvider });
+			const disclosure = screen.getByText("Check matching in Plex");
+			const guidance = screen.getByText(/does not prove this item is unmatched/);
+			expect(guidance).not.toBeVisible();
+			fireEvent.click(disclosure);
+			expect(guidance).toBeVisible();
+			expect(screen.getByText(/allow the normal cache refresh/)).toBeVisible();
+			expect(screen.getByText(/does not change watch state or cleanup eligibility/)).toBeVisible();
+			expect(
+				screen.queryByRole("link", { name: "Check matching in Plex" }),
+			).not.toBeInTheDocument();
+		});
+		it("keeps actionable metadata warnings in incognito without revealing item titles", () => {
+			state.incognito = true;
+			render(<ProviderNativeInventoryPanel />, { wrapper: IncognitoProvider });
+			expect(screen.getByText("Metadata review needed")).toBeInTheDocument();
+			expect(screen.getByText("Check matching in Plex")).toBeInTheDocument();
+			expect(screen.getByText("masked-item.iso")).toBeInTheDocument();
+			expect(screen.queryByText("Private movie title")).not.toBeInTheDocument();
+		});
+	});
+	it("opens the linked provider and domain rather than the first available inventory", async () => {
+		window.history.replaceState(
+			{},
+			"",
+			"/library?inventoryInstanceId=plex-2&inventoryDomain=episode#media-server-inventory",
+		);
+		render(<ProviderNativeInventoryPanel />);
+		await waitFor(() =>
+			expect(state.hookCalls.at(-1)).toMatchObject({ instanceId: "plex-2", domain: "episode" }),
+		);
+	});
+	it("opens a Plex metadata deep link with the published inventory filter selected", async () => {
+		window.history.replaceState(
+			{},
+			"",
+			"/library?inventoryInstanceId=plex-2&inventoryDomain=library&inventoryMetadataFilter=missing-tmdb#media-server-inventory",
+		);
+		render(<ProviderNativeInventoryPanel />);
+		await waitFor(() =>
+			expect(state.hookCalls.at(-1)).toMatchObject({
+				instanceId: "plex-2",
+				domain: "library",
+				metadataFilter: "missing-tmdb",
+			}),
+		);
+		expect((screen.getByLabelText("Inventory filter") as HTMLSelectElement).value).toBe(
+			"missing-tmdb",
+		);
+	});
+	it("waits for a refreshed service list before applying a metadata deep link", async () => {
+		state.services = [service("plex-1", "Private Plex")];
+		window.history.replaceState(
+			{},
+			"",
+			"/library?inventoryInstanceId=plex-2&inventoryDomain=library&inventoryMetadataFilter=missing-tmdb#media-server-inventory",
+		);
+		const view = render(<ProviderNativeInventoryPanel />);
+		expect(state.hookCalls.at(-1)).toMatchObject({
+			instanceId: "plex-1",
+			metadataFilter: null,
+		});
+		state.services = [service("plex-1", "Private Plex"), service("plex-2", "Other private Plex")];
+		view.rerender(<ProviderNativeInventoryPanel />);
+		await waitFor(() =>
+			expect(state.hookCalls.at(-1)).toMatchObject({
+				instanceId: "plex-2",
+				metadataFilter: "missing-tmdb",
+			}),
+		);
+	});
+	it("keeps a manual provider choice when a missing deep-link target arrives later", async () => {
+		state.services = [service("plex-1", "Private Plex"), service("jellyfin-1", "Private Jellyfin")];
+		window.history.replaceState(
+			{},
+			"",
+			"/library?inventoryInstanceId=plex-2&inventoryDomain=library&inventoryMetadataFilter=missing-tmdb#media-server-inventory",
+		);
+		const view = render(<ProviderNativeInventoryPanel />);
+		fireEvent.change(screen.getByLabelText("Provider"), { target: { value: "jellyfin-1" } });
+		state.services = [...state.services, service("plex-2", "Other private Plex")];
+		view.rerender(<ProviderNativeInventoryPanel />);
+		await waitFor(() =>
+			expect(state.hookCalls.at(-1)).toMatchObject({
+				instanceId: "jellyfin-1",
+				metadataFilter: null,
+			}),
+		);
+	});
+	it("ignores a metadata deep link for a non-Plex inventory", async () => {
+		window.history.replaceState(
+			{},
+			"",
+			"/library?inventoryInstanceId=jellyfin-1&inventoryDomain=library&inventoryMetadataFilter=missing-tmdb#media-server-inventory",
+		);
+		render(<ProviderNativeInventoryPanel />);
+		await waitFor(() =>
+			expect(state.hookCalls.at(-1)).toMatchObject({
+				instanceId: "jellyfin-1",
+				domain: "library",
+				metadataFilter: null,
+			}),
+		);
+		expect(screen.queryByLabelText("Inventory filter")).not.toBeInTheDocument();
+	});
+	it("lets an admin narrow the Plex library to published missing-TMDb rows", async () => {
+		state.data = available({
+			itemCount: 2,
+			filteredItemCount: 1,
+			rows: [
+				{
+					nativeId: "unmapped",
+					mediaType: "movie",
+					libraryIds: ["library-1"],
+					parentNativeId: null,
+					seasonNumber: null,
+					episodeNumber: null,
+					title: "Private unmatched movie",
+				},
+			],
+		});
+		render(<ProviderNativeInventoryPanel />);
+		await waitFor(() =>
+			expect((screen.getByLabelText("Provider") as HTMLSelectElement).value).toBe("plex-1"),
+		);
+		fireEvent.change(screen.getByLabelText("Inventory filter"), {
+			target: { value: "missing-tmdb" },
+		});
+		expect(state.hookCalls.at(-1)).toMatchObject({ metadataFilter: "missing-tmdb" });
+		expect(
+			screen.getByText(/1 of 2 recorded items need Plex metadata matching/i),
+		).toBeInTheDocument();
+		fireEvent.change(screen.getByLabelText("Inventory domain"), {
+			target: { value: "episode" },
+		});
+		expect(state.hookCalls.at(-1)).toMatchObject({ domain: "episode", metadataFilter: null });
+	});
+	it("shows watched, unwatched, last-known, and unknown native episode evidence without ARR matches", () => {
+		const row = {
+			nativeId: "episode-1",
+			mediaType: "episode" as const,
+			libraryIds: ["library-1"],
+			parentNativeId: "series-1",
+			seasonNumber: 1,
+			episodeNumber: 1,
+			title: "Private episode title",
+			connection: { status: "unmatched" as const, reason: "no-arr-match" as const, arrItems: [] },
+		};
+		state.data = available({
+			itemCount: 4,
+			rows: [
+				{
+					...row,
+					watch: {
+						state: "watched",
+						freshness: "current",
+						valueSemantics: "exact",
+						observedAt: "2026-09-14T12:00:00.000Z",
+					},
+				},
+				{
+					...row,
+					nativeId: "episode-2",
+					watch: {
+						state: "unwatched",
+						freshness: "current",
+						valueSemantics: "exact",
+						observedAt: "2026-09-14T12:00:00.000Z",
+					},
+				},
+				{
+					...row,
+					nativeId: "episode-3",
+					watch: {
+						state: "watched",
+						freshness: "last-known",
+						valueSemantics: "lower-bound",
+						observedAt: "2026-09-14T11:00:00.000Z",
+					},
+				},
+				{
+					...row,
+					nativeId: "episode-4",
+					watch: {
+						state: "unknown",
+						freshness: "unavailable",
+						valueSemantics: "unknown",
+						observedAt: null,
+					},
+				},
+			],
+		});
+		state.incognito = true;
+		render(<ProviderNativeInventoryPanel />);
+		expect(screen.getAllByText("Watched")).toHaveLength(2);
+		expect(screen.getByText("Unwatched")).toBeInTheDocument();
+		expect(screen.getByText("Watch state unknown")).toBeInTheDocument();
+		expect(screen.getByText("Last known")).toBeInTheDocument();
+		expect(screen.getAllByText("No ARR match")).toHaveLength(4);
+		expect(screen.queryByText("Private episode title")).not.toBeInTheDocument();
+		expect(screen.getAllByText("masked-item.iso")).toHaveLength(4);
+	});
+
 	it("renders a complete recorded page and supported scope guidance", () => {
 		render(<ProviderNativeInventoryPanel />);
 
@@ -295,12 +725,63 @@ describe("ProviderNativeInventoryPanel", () => {
 		expect(screen.getByText(/current scan is not confirmed/i)).toBeInTheDocument();
 	});
 
+	it("shows bounded scan progress separately from retained last-known rows", () => {
+		state.data = available({
+			freshness: "last-known",
+			complete: false,
+			attempt: {
+				state: "running",
+				passOrdinal: 2,
+				pagesCompleted: 3,
+				itemsStaged: 300,
+				failureCount: 0,
+				reasonCode: null,
+			},
+		});
+		render(<ProviderNativeInventoryPanel />);
+		expect(screen.getByText("Last known inventory")).toBeInTheDocument();
+		expect(screen.getByText(/inventory scan in progress/i)).toBeInTheDocument();
+		expect(screen.getByText(/pass 2.*3 pages.*300 items staged/i)).toBeInTheDocument();
+	});
+
+	it("shows pending scan without publishing a zero-item catalog", () => {
+		state.data = {
+			status: "unavailable",
+			reason: "no-publication",
+			attempt: {
+				state: "pending",
+				passOrdinal: 1,
+				pagesCompleted: 0,
+				itemsStaged: 0,
+				failureCount: 0,
+				reasonCode: null,
+			},
+		};
+		render(<ProviderNativeInventoryPanel />);
+		expect(screen.getByText(/inventory scan is scheduled/i)).toBeInTheDocument();
+		expect(screen.queryByText(/0 recorded items?/i)).not.toBeInTheDocument();
+	});
+
 	it("does not call a cached snapshot complete after a transport error", () => {
 		state.isError = true;
 		render(<ProviderNativeInventoryPanel />);
 
 		expect(screen.getByText("Last known inventory")).toBeInTheDocument();
 		expect(screen.getByText(/current scan is not confirmed/i)).toBeInTheDocument();
+	});
+
+	it("labels completed Jellyfin episode observations as partial rather than exact inventory", () => {
+		state.data = available({
+			evidence: "positive-only",
+			complete: false,
+			freshness: "last-known",
+			lastAttemptResult: "failed",
+			lastAttemptReason: "coverage-incomplete",
+		});
+		render(<ProviderNativeInventoryPanel />);
+		expect(screen.getByText("Observed items (partial coverage)")).toBeInTheDocument();
+		expect(screen.getByText(/missing items are not confirmed absent/i)).toBeInTheDocument();
+		expect(screen.queryByText("Complete at last scan")).not.toBeInTheDocument();
 	});
 
 	it("clears rows on scope changes and pins the next page to the generation", async () => {
@@ -350,20 +831,18 @@ describe("ProviderNativeInventoryPanel", () => {
 		});
 	});
 
-	it("offers reload after a snapshot changes and masks provider names and titles in incognito", () => {
+	it("explains snapshot changes and masks provider names and titles in incognito", () => {
 		state.incognito = true;
 		state.data = { status: "unavailable", reason: "snapshot-changed" };
 		render(<ProviderNativeInventoryPanel />);
 
-		fireEvent.click(screen.getByText("Reload"));
-		expect(state.hookCalls.at(-1)?.refreshKey).toBe(1);
 		expect(
 			screen.getByText(
 				"The inventory changed while you were browsing. Reload to see the latest scan.",
 			),
 		).toBeInTheDocument();
 		expect(screen.queryByText(/snapshot-changed/i)).not.toBeInTheDocument();
-		expect(screen.getByText("Masked server (Plex)")).toBeInTheDocument();
+		expect(screen.getAllByText("Masked server (Plex)")).toHaveLength(2);
 		expect(screen.queryByText("Private movie title")).not.toBeInTheDocument();
 		expect(screen.queryByRole("button", { name: /delete|watch|monitor/i })).not.toBeInTheDocument();
 	});

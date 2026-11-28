@@ -19,12 +19,10 @@
  *    indexes skip `nlink == 1` because those files cannot correlate to a
  *    separate hardlink. Destructive verification also indexes them so a
  *    library path that is the qBit content file itself remains visible.
- *  - qui's `addTorrentFilesToFileIDIndex` walks each torrent's FILE list
- *    (from qBit's API) and stats every file. We do the same by walking
- *    the directory tree under each torrent's content path — when the
- *    content path is a folder (folder-wrapped releases, season packs,
- *    album packs, etc.), every file inside is stat'd and indexed under
- *    the torrent's hash. This is essential because qui's hardlink-mode
+ *  - qui's `addTorrentFilesToFileIDIndex` stats each torrent's FILE list
+ *    (from qBit's API). We walk a torrent-specific content root, but when
+ *    only the shared save directory exists we index only provider-declared
+ *    relative file paths. This is essential because qui's hardlink-mode
  *    cross-seed layout ALWAYS wraps torrents in a `Name--shortHash/`
  *    folder, so an index that stat'd only the folder root would record
  *    the FOLDER's inode and miss the inode of the actual .mkv inside.
@@ -58,14 +56,17 @@
  *    built here is already complete.
  */
 
+import { createHash } from "node:crypto";
 import type { Dirent } from "node:fs";
-import { readdir, stat } from "node:fs/promises";
+import { lstat, readdir, stat } from "node:fs/promises";
+import { posix } from "node:path";
 import { gunzipSync, gzipSync } from "node:zlib";
 import type { QuiTorrent } from "@arr/shared";
 import type { FastifyBaseLogger } from "fastify";
 import { withIndependentCleanupOperationGuard } from "../library-cleanup/cleanup-maintenance-gate.js";
 import type { PrismaClient, ServiceInstance } from "../prisma.js";
 import type { QuiClient } from "../qui/client-factory.js";
+import { readProviderContentPath } from "../qui/torrent-content-path.js";
 import { getErrorMessage } from "../utils/error-message.js";
 
 /**
@@ -89,6 +90,10 @@ export interface InodeMatchResult {
  * cross-seed visibility everywhere downstream.
  */
 export interface FileIdIndex {
+	/** Connection generation that authorized a persisted index. Missing means legacy/unknown. */
+	sourceConnectionGeneration?: number;
+	/** Ownership proof used for fallback save-path matches; older snapshots must rebuild. */
+	fallbackOwnershipVersion?: number;
 	/** Map from `"dev:ino"` → set of torrent hashes that share this inode. */
 	byFileId: Map<string, Set<string>>;
 	/**
@@ -105,6 +110,8 @@ export interface FileIdIndex {
 	skippedNoLinks: number;
 	/** Number of torrents whose root content path couldn't be stat'd. */
 	skippedUnstatable: number;
+	/** True only when the provider's entire paginated inventory was verified. */
+	inventoryComplete?: boolean;
 	/**
 	 * Number of directory inventories that could not be read completely,
 	 * were capped, or contained files that could not be stat'd.
@@ -114,6 +121,18 @@ export interface FileIdIndex {
 	 * always supplies and validates this field.
 	 */
 	incompleteDirectoryWalks?: number;
+	/** Aggregate-only reasons for incomplete walks; never includes paths or hashes. */
+	walkIssues?: DirectoryWalkIssues;
+	/** Per-torrent generic failure counts for incomplete walks; contains no names or paths. */
+	issues?: FileIdCoverageIssue[];
+	/** Digest of the qUI listing indexed; names and paths are not persisted here. */
+	torrentInventoryFingerprint?: string;
+	/** Aggregate-only scope and size of capped walks; never includes paths or hashes. */
+	rootDiagnostics?: RootWalkDiagnostics;
+	/** Aggregate-only evidence about provider-reported roots; never serialized paths. */
+	contentPathDiagnostics?: ContentPathDiagnostics;
+	/** Aggregate-only distribution of failed provider-file inventories. */
+	fallbackIssueDiagnostics?: FallbackIssueDiagnostics;
 	/**
 	 * Torrent-root and nested-directory markers captured before their files
 	 * were indexed. A destructive build validates them after the walk, which
@@ -121,15 +140,94 @@ export interface FileIdIndex {
 	 * a second 5-15 minute full-file stat pass.
 	 */
 	stabilityMarkers?: Map<string, FileSystemMarker>;
+	/** Strict-build no-follow markers for provider-declared fallback file paths. */
+	fallbackPathMarkers?: Map<string, FileSystemMarker>;
+}
+
+/** Generic, path-free attribution for one incomplete torrent inventory scope. */
+export interface FileIdCoverageIssue {
+	hash: string;
+	qbitInstanceId: number | null;
+	missingFiles: number;
+	sizeMismatches: number;
+	otherFailures: number;
 }
 
 interface FileSystemMarker {
 	dev: number;
 	ino: number;
 	nlink: number;
+	size: number;
 	ctimeMs: number;
 	mtimeMs: number;
 	kind: "file" | "directory" | "other";
+}
+
+interface DirectoryWalkIssues {
+	readFailures: number;
+	entryLimitExceeded: number;
+	unsupportedEntries: number;
+	entryStatFailures: number;
+	entryMissing: number;
+	entryKindMismatches: number;
+	entrySizeMismatches: number;
+	fallbackIncompleteFileFailures: number;
+	fallbackCompleteFileFailures: number;
+	fallbackSizeMismatchSmaller: number;
+	fallbackSizeMismatchLarger: number;
+	fallbackSizeMismatchErrorTorrent: number;
+	fallbackSizeMismatchOtherTorrent: number;
+	stabilityFailures: number;
+	providerBudgetExceeded: number;
+}
+
+interface RootWalkDiagnostics {
+	cappedPrimaryWalks: number;
+	cappedFallbackWalks: number;
+	largestCappedWalkEntries: number;
+}
+
+interface ContentPathDiagnostics {
+	present: number;
+	fallbackPresent: number;
+	fallbackDistinctFromSavePath: number;
+	fallbackStatable: number;
+	fallbackContentFileRoots: number;
+	fallbackContentDirectoryRoots: number;
+	/** Failed fallback entries whose declared size matches an alternate provider root. Diagnostic only. */
+	fallbackFailedFilesAltExact: number;
+	fallbackFailedFilesAltLarger: number;
+	fallbackFailedFilesAltSmaller: number;
+}
+
+interface FallbackIssueDiagnostics {
+	missingEntryTorrents: number;
+	sizeMismatchTorrents: number;
+	maxMissingEntriesPerTorrent: number;
+	maxSizeMismatchesPerTorrent: number;
+	sizeMismatchFileContentRoots: number;
+	sizeMismatchDirectoryContentRoots: number;
+	sizeMismatchUnavailableContentRoots: number;
+}
+
+function emptyDirectoryWalkIssues(): DirectoryWalkIssues {
+	return {
+		readFailures: 0,
+		entryLimitExceeded: 0,
+		unsupportedEntries: 0,
+		entryStatFailures: 0,
+		entryMissing: 0,
+		entryKindMismatches: 0,
+		entrySizeMismatches: 0,
+		fallbackIncompleteFileFailures: 0,
+		fallbackCompleteFileFailures: 0,
+		fallbackSizeMismatchSmaller: 0,
+		fallbackSizeMismatchLarger: 0,
+		fallbackSizeMismatchErrorTorrent: 0,
+		fallbackSizeMismatchOtherTorrent: 0,
+		stabilityFailures: 0,
+		providerBudgetExceeded: 0,
+	};
 }
 
 interface CachedIndex {
@@ -149,6 +247,7 @@ const INDEX_CACHE = new Map<string, CachedIndex>();
 //
 // Test code overrides via `__testOnly.INDEX_TTL_MS`.
 const INDEX_TTL_MS = 30 * 60 * 1000;
+export const FILE_ID_INDEX_FRESH_MS = INDEX_TTL_MS;
 
 /**
  * In-flight build deduplication. When a cold cache + concurrent panel
@@ -161,7 +260,27 @@ const INDEX_TTL_MS = 30 * 60 * 1000;
  * later request can retry. The TTL cache (above) handles the "succeeded
  * recently" case independently.
  */
-const INDEX_PENDING = new Map<string, Promise<FileIdIndex>>();
+const INDEX_PENDING = new Map<
+	string,
+	{ promise: Promise<FileIdIndex>; connectionGeneration: number; epoch: number }
+>();
+const LEGACY_UPGRADE_RETRY_MS = 5 * 60 * 1000;
+const LEGACY_UPGRADE_RETRY_AFTER = new Map<string, number>();
+const INDEX_EPOCH = new Map<string, number>();
+
+function indexEpoch(instanceId: string): number {
+	return INDEX_EPOCH.get(instanceId) ?? 0;
+}
+
+function builtIndexIsIncomplete(index: FileIdIndex | undefined): boolean {
+	if (!index) return true;
+	return (
+		index.inventoryComplete !== true ||
+		index.skippedUnstatable !== 0 ||
+		index.incompleteDirectoryWalks === undefined ||
+		index.incompleteDirectoryWalks > 0
+	);
+}
 
 /**
  * Hard safety cap on the recursive directory walk per torrent. Movies and
@@ -173,6 +292,9 @@ const INDEX_PENDING = new Map<string, Promise<FileIdIndex>>();
  * filesystem ourselves, so we need our own bound.
  */
 const MAX_WALK_ENTRIES_PER_TORRENT = 500;
+const MAX_FALLBACK_FILE_INVENTORIES = 128;
+const MAX_FALLBACK_FILES_PER_TORRENT = 5000;
+const FALLBACK_OWNERSHIP_VERSION = 4;
 
 // ─── Persistence layer ─────────────────────────────────────────────────
 //
@@ -200,9 +322,25 @@ export function serializeFileIdIndex(index: FileIdIndex): Buffer {
 	}
 	const payload = JSON.stringify({
 		v: 1,
+		sourceConnectionGeneration: index.sourceConnectionGeneration,
+		fallbackOwnershipVersion: index.fallbackOwnershipVersion,
 		statted: index.statted,
 		skippedNoLinks: index.skippedNoLinks,
 		skippedUnstatable: index.skippedUnstatable,
+		inventoryComplete: index.inventoryComplete === true,
+		incompleteDirectoryWalks: index.incompleteDirectoryWalks,
+		walkIssues: index.walkIssues,
+		issues: index.issues?.map((issue) => ({
+			hash: issue.hash,
+			qbitInstanceId: issue.qbitInstanceId,
+			missingFiles: issue.missingFiles,
+			sizeMismatches: issue.sizeMismatches,
+			otherFailures: issue.otherFailures,
+		})),
+		torrentInventoryFingerprint: index.torrentInventoryFingerprint,
+		rootDiagnostics: index.rootDiagnostics,
+		contentPathDiagnostics: index.contentPathDiagnostics,
+		fallbackIssueDiagnostics: index.fallbackIssueDiagnostics,
 		entries,
 	});
 	return gzipSync(Buffer.from(payload, "utf8"), { level: 9 });
@@ -218,25 +356,89 @@ export function deserializeFileIdIndex(buf: Buffer): FileIdIndex | null {
 		const json = gunzipSync(buf).toString("utf8");
 		const data = JSON.parse(json) as {
 			v: number;
+			sourceConnectionGeneration?: number;
+			fallbackOwnershipVersion?: number;
 			statted: number;
 			skippedNoLinks: number;
 			skippedUnstatable: number;
+			inventoryComplete?: boolean;
+			incompleteDirectoryWalks?: number;
+			walkIssues?: DirectoryWalkIssues;
+			issues?: unknown;
+			torrentInventoryFingerprint?: unknown;
+			rootDiagnostics?: RootWalkDiagnostics;
+			contentPathDiagnostics?: ContentPathDiagnostics;
+			fallbackIssueDiagnostics?: FallbackIssueDiagnostics;
 			entries: Array<[string, string[]]>;
 		};
 		if (data.v !== 1) return null;
+		if (data.fallbackOwnershipVersion === FALLBACK_OWNERSHIP_VERSION) {
+			if (
+				!Array.isArray(data.issues) ||
+				!data.issues.every(isFileIdCoverageIssue) ||
+				!isTorrentInventoryFingerprint(data.torrentInventoryFingerprint) ||
+				!Number.isSafeInteger(data.skippedUnstatable) ||
+				data.skippedUnstatable < 0 ||
+				!Number.isSafeInteger(data.incompleteDirectoryWalks) ||
+				(data.incompleteDirectoryWalks ?? -1) < 0 ||
+				data.issues.length !== data.skippedUnstatable + data.incompleteDirectoryWalks!
+			) {
+				return null;
+			}
+		}
 		const byFileId = new Map<string, Set<string>>();
 		for (const [key, hashes] of data.entries) {
 			byFileId.set(key, new Set(hashes));
 		}
 		return {
 			byFileId,
+			sourceConnectionGeneration: data.sourceConnectionGeneration,
+			fallbackOwnershipVersion: data.fallbackOwnershipVersion,
 			statted: data.statted,
 			skippedNoLinks: data.skippedNoLinks,
 			skippedUnstatable: data.skippedUnstatable,
+			inventoryComplete:
+				typeof data.inventoryComplete === "boolean" ? data.inventoryComplete : undefined,
+			incompleteDirectoryWalks: data.incompleteDirectoryWalks,
+			walkIssues: data.walkIssues,
+			issues: Array.isArray(data.issues) ? data.issues : undefined,
+			torrentInventoryFingerprint: isTorrentInventoryFingerprint(data.torrentInventoryFingerprint)
+				? data.torrentInventoryFingerprint
+				: undefined,
+			rootDiagnostics: data.rootDiagnostics,
+			contentPathDiagnostics: data.contentPathDiagnostics,
+			fallbackIssueDiagnostics: data.fallbackIssueDiagnostics,
 		};
 	} catch {
 		return null;
 	}
+}
+
+function isFileIdCoverageIssue(value: unknown): value is FileIdCoverageIssue {
+	if (!value || typeof value !== "object") return false;
+	const issue = value as Partial<FileIdCoverageIssue>;
+	const keys = Object.keys(value);
+	return (
+		keys.length === 5 &&
+		keys.every((key) =>
+			["hash", "qbitInstanceId", "missingFiles", "sizeMismatches", "otherFailures"].includes(key),
+		) &&
+		typeof issue.hash === "string" &&
+		issue.hash.length > 0 &&
+		issue.hash === issue.hash.trim().toLowerCase() &&
+		(issue.qbitInstanceId === null ||
+			(Number.isSafeInteger(issue.qbitInstanceId) && (issue.qbitInstanceId as number) > 0)) &&
+		Number.isSafeInteger(issue.missingFiles) &&
+		(issue.missingFiles as number) >= 0 &&
+		Number.isSafeInteger(issue.sizeMismatches) &&
+		(issue.sizeMismatches as number) >= 0 &&
+		Number.isSafeInteger(issue.otherFailures) &&
+		(issue.otherFailures as number) >= 0
+	);
+}
+
+function isTorrentInventoryFingerprint(value: unknown): value is string {
+	return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
 }
 
 /**
@@ -253,14 +455,23 @@ export async function loadFileIdIndexFromDb(
 ): Promise<CachedIndex | null> {
 	const row = await prisma.inodeIndexCache.findUnique({
 		where: { instanceId },
-		select: { builtAt: true, serializedData: true },
+		select: {
+			builtAt: true,
+			serializedData: true,
+			instance: { select: { connectionGeneration: true } },
+		},
 	});
 	if (!row) return null;
 	const buf = Buffer.isBuffer(row.serializedData)
 		? row.serializedData
 		: Buffer.from(row.serializedData);
 	const index = deserializeFileIdIndex(buf);
-	if (!index) return null;
+	if (
+		!index ||
+		index.sourceConnectionGeneration !== row.instance.connectionGeneration ||
+		index.fallbackOwnershipVersion !== FALLBACK_OWNERSHIP_VERSION
+	)
+		return null;
 	return { index, builtAt: row.builtAt.getTime() };
 }
 
@@ -274,38 +485,52 @@ async function saveFileIdIndexToDb(
 	instanceId: string,
 	index: FileIdIndex,
 	log?: FastifyBaseLogger,
-): Promise<void> {
+): Promise<"saved" | "stale" | "unavailable"> {
 	try {
+		const serializeStartedAt = Date.now();
 		const serialized = serializeFileIdIndex(index);
+		log?.info(
+			{ bytes: serialized.length, serializeMs: Date.now() - serializeStartedAt },
+			"inode-index: serialized snapshot before publication",
+		);
 		// Prisma's Bytes type wants `Uint8Array<ArrayBuffer>`. Node Buffer
 		// is `Uint8Array<ArrayBufferLike>`. Allocate a fresh ArrayBuffer
 		// (not the SharedArrayBuffer-permissible union) and copy into it.
 		const ab = new ArrayBuffer(serialized.byteLength);
 		const bytes = new Uint8Array(ab);
 		bytes.set(serialized);
-		await prisma.inodeIndexCache.upsert({
-			where: { instanceId },
-			create: {
-				instanceId,
-				builtAt: new Date(),
-				filesIndexed: index.statted,
-				serializedData: bytes,
-			},
-			update: {
-				builtAt: new Date(),
-				filesIndexed: index.statted,
-				serializedData: bytes,
-			},
+		const transactionStartedAt = Date.now();
+		const saved = await prisma.$transaction(async (tx) => {
+			const instance = await tx.serviceInstance.findUnique({
+				where: { id: instanceId },
+				select: { connectionGeneration: true },
+			});
+			if (!instance || instance.connectionGeneration !== index.sourceConnectionGeneration)
+				return false;
+			const builtAt = new Date();
+			await tx.inodeIndexCache.upsert({
+				where: { instanceId },
+				create: { instanceId, builtAt, filesIndexed: index.statted, serializedData: bytes },
+				update: { builtAt, filesIndexed: index.statted, serializedData: bytes },
+			});
+			return true;
 		});
+		log?.info(
+			{ transactionMs: Date.now() - transactionStartedAt, saved },
+			"inode-index: publication transaction finished",
+		);
+		if (!saved) return "stale";
 		log?.info(
 			{ instanceId, filesIndexed: index.statted, bytes: serialized.length },
 			"inode-index: persisted snapshot to DB",
 		);
+		return "saved";
 	} catch (err) {
 		log?.warn(
 			{ err, instanceId },
 			"inode-index: persistence write failed (non-fatal; rebuild will retry)",
 		);
+		return "unavailable";
 	}
 }
 
@@ -327,11 +552,19 @@ export async function hydrateFileIdIndexFromDb(
 ): Promise<{ loaded: number; failed: number }> {
 	let loaded = 0;
 	let failed = 0;
+	const hydrationEpoch = new Map(INDEX_EPOCH);
 	try {
 		const rows = await prisma.inodeIndexCache.findMany({
-			select: { instanceId: true, builtAt: true, serializedData: true, filesIndexed: true },
+			select: {
+				instanceId: true,
+				builtAt: true,
+				serializedData: true,
+				filesIndexed: true,
+				instance: { select: { connectionGeneration: true } },
+			},
 		});
 		for (const row of rows) {
+			if (indexEpoch(row.instanceId) !== (hydrationEpoch.get(row.instanceId) ?? 0)) continue;
 			const buf = Buffer.isBuffer(row.serializedData)
 				? row.serializedData
 				: Buffer.from(row.serializedData);
@@ -344,7 +577,24 @@ export async function hydrateFileIdIndexFromDb(
 				);
 				continue;
 			}
-			INDEX_CACHE.set(row.instanceId, { index, builtAt: row.builtAt.getTime() });
+			if (
+				index.sourceConnectionGeneration !== row.instance.connectionGeneration ||
+				index.fallbackOwnershipVersion !== FALLBACK_OWNERSHIP_VERSION
+			) {
+				// Pre-generation snapshots cannot prove which qUI connection
+				// produced their hashes. Rebuild cold once rather than treating
+				// old positive matches as authority after a possible repoint.
+				failed++;
+				log?.info(
+					{ instanceId: row.instanceId },
+					"inode-index: persisted snapshot lacks current connection generation; rebuilding",
+				);
+				continue;
+			}
+			const current = INDEX_CACHE.get(row.instanceId);
+			if (!current || current.builtAt < row.builtAt.getTime()) {
+				INDEX_CACHE.set(row.instanceId, { index, builtAt: row.builtAt.getTime() });
+			}
 			loaded++;
 			log?.info(
 				{
@@ -393,9 +643,10 @@ export function applyPathRewrite(quiPath: string, pathPrefix: string | null | un
  *     hardlink-mode cross-seeds, season packs, album packs) → walk into
  *     the folder and index each file inside.
  *
- * Mirrors qui's `addTorrentFilesToFileIDIndex` but reads files via
- * filesystem walk instead of qBit's per-torrent files API — same end
- * state, no extra HTTP round-trips.
+ * Torrent-specific roots use the bounded filesystem walk. A fallback to a
+ * potentially shared save directory uses qUI's per-torrent file list and
+ * no-follow filesystem checks; scanning that directory as a whole could
+ * assign unrelated hardlinks to the wrong torrent.
  *
  * Files with `nlink == 1` are skipped (no hardlinks → can't correlate
  * to anything). Files we can't stat are skipped silently — a single
@@ -403,7 +654,7 @@ export function applyPathRewrite(quiPath: string, pathPrefix: string | null | un
  */
 export async function buildFileIdIndex(
 	client: QuiClient,
-	instance: Pick<ServiceInstance, "id" | "label" | "pathPrefix">,
+	instance: Pick<ServiceInstance, "id" | "label" | "pathPrefix" | "connectionGeneration">,
 	log?: FastifyBaseLogger,
 	/**
 	 * Optional Prisma client. When provided, successful builds are
@@ -413,8 +664,29 @@ export async function buildFileIdIndex(
 	 */
 	prisma?: PrismaClient,
 ): Promise<FileIdIndex> {
-	const cached = INDEX_CACHE.get(instance.id);
-	if (cached && Date.now() - cached.builtAt < INDEX_TTL_MS) {
+	const cachedCandidate = INDEX_CACHE.get(instance.id);
+	const cached =
+		cachedCandidate?.index.sourceConnectionGeneration === instance.connectionGeneration
+			? cachedCandidate
+			: undefined;
+	const fresh = cached && Date.now() - cached.builtAt < INDEX_TTL_MS;
+	const legacy =
+		cached &&
+		(cached.index.inventoryComplete === undefined ||
+			cached.index.incompleteDirectoryWalks === undefined);
+	const retryable =
+		cached &&
+		(legacy ||
+			cached.index.inventoryComplete !== true ||
+			cached.index.skippedUnstatable !== 0 ||
+			(cached.index.incompleteDirectoryWalks ?? 0) > 0);
+	if (fresh && !retryable) {
+		return cached.index;
+	}
+	const retryAfter =
+		LEGACY_UPGRADE_RETRY_AFTER.get(instance.id) ??
+		(legacy ? 0 : (cached?.builtAt ?? 0) + LEGACY_UPGRADE_RETRY_MS);
+	if (fresh && retryable && Date.now() < retryAfter) {
 		return cached.index;
 	}
 
@@ -424,17 +696,39 @@ export async function buildFileIdIndex(
 	// each spawn their own `listAllTorrents` + ~50k stat ops in parallel
 	// — saturating both qui and the FS until everything timed out.
 	const pending = INDEX_PENDING.get(instance.id);
-	if (pending) return pending;
+	if (
+		pending &&
+		pending.connectionGeneration === instance.connectionGeneration &&
+		pending.epoch === indexEpoch(instance.id)
+	) {
+		return fresh && retryable ? cached.index : pending.promise;
+	}
 
+	const epoch = indexEpoch(instance.id);
+	const assertCurrent = (): void => {
+		if (indexEpoch(instance.id) !== epoch) {
+			throw new Error("qUI inode index was invalidated during build");
+		}
+		const publishedGeneration = INDEX_CACHE.get(instance.id)?.index.sourceConnectionGeneration;
+		if (publishedGeneration !== undefined && publishedGeneration > instance.connectionGeneration) {
+			throw new Error("qUI inode index connection changed during build");
+		}
+	};
 	const buildAndPublish = async (): Promise<FileIdIndex> => {
 		const built = await doBuildFileIdIndex(client, instance, log);
-		INDEX_CACHE.set(instance.id, { index: built, builtAt: Date.now() });
+		built.sourceConnectionGeneration = instance.connectionGeneration;
+		assertCurrent();
 		// Persist before publishing completion so database maintenance cannot
 		// replace topology while a stale cache write remains in flight.
 		// Persistence remains best-effort inside saveFileIdIndexToDb.
 		if (prisma) {
-			await saveFileIdIndexToDb(prisma, instance.id, built, log);
+			const persistence = await saveFileIdIndexToDb(prisma, instance.id, built, log);
+			if (persistence === "stale") {
+				throw new Error("qUI inode index connection changed during publication");
+			}
 		}
+		assertCurrent();
+		INDEX_CACHE.set(instance.id, { index: built, builtAt: Date.now() });
 		return built;
 	};
 	// A panel route stops awaiting this single-flight producer after its
@@ -443,11 +737,44 @@ export async function buildFileIdIndex(
 	const buildPromise = prisma
 		? withIndependentCleanupOperationGuard(buildAndPublish)
 		: buildAndPublish();
-	INDEX_PENDING.set(instance.id, buildPromise);
+	INDEX_PENDING.set(instance.id, {
+		promise: buildPromise,
+		connectionGeneration: instance.connectionGeneration,
+		epoch,
+	});
+	const clearPending = (): void => {
+		if (INDEX_PENDING.get(instance.id)?.promise === buildPromise) INDEX_PENDING.delete(instance.id);
+	};
+	if (fresh && retryable) {
+		// Preserve positive matches from the older persisted snapshot while
+		// upgrading its unknown coverage metadata. A single-flight rebuild
+		// continues under the same restore/cleanup guard as a normal build.
+		void buildPromise.then(
+			() => {
+				clearPending();
+				if (indexEpoch(instance.id) !== epoch) return;
+				if (builtIndexIsIncomplete(INDEX_CACHE.get(instance.id)?.index)) {
+					LEGACY_UPGRADE_RETRY_AFTER.set(instance.id, Date.now() + LEGACY_UPGRADE_RETRY_MS);
+				} else {
+					LEGACY_UPGRADE_RETRY_AFTER.delete(instance.id);
+				}
+			},
+			(err) => {
+				clearPending();
+				if (indexEpoch(instance.id) !== epoch) return;
+				LEGACY_UPGRADE_RETRY_AFTER.set(instance.id, Date.now() + LEGACY_UPGRADE_RETRY_MS);
+				log?.warn(
+					{ err, quiInstanceId: instance.id },
+					"inode-index: legacy coverage upgrade failed; retaining positive-only snapshot",
+				);
+			},
+		);
+		return cached.index;
+	}
 	try {
 		return await buildPromise;
 	} finally {
-		INDEX_PENDING.delete(instance.id);
+		clearPending();
 	}
 }
 
@@ -494,14 +821,58 @@ async function doBuildFileIdIndex(
 	snapshot?: QuiTorrent[],
 	requireStableSnapshot = false,
 ): Promise<FileIdIndex> {
-	const torrents = snapshot ?? (await client.listAllTorrents());
+	let torrents: QuiTorrent[];
+	let inventoryComplete = true;
+	if (snapshot) {
+		torrents = snapshot;
+	} else {
+		try {
+			torrents = await client.listAllTorrents({ requireComplete: true });
+		} catch {
+			// Legacy qUI inventory shapes can still provide positive display
+			// matches, but cannot prove absence or an exact count.
+			inventoryComplete = false;
+			torrents = await client.listAllTorrents();
+		}
+	}
 	const byFileId = new Map<string, Set<string>>();
 	const inodeMarkers = new Map<string, FileSystemMarker>();
 	const stabilityMarkers = requireStableSnapshot ? new Map<string, FileSystemMarker>() : undefined;
+	const fallbackPathMarkers = requireStableSnapshot
+		? new Map<string, FileSystemMarker>()
+		: undefined;
 	let statted = 0;
 	let skippedNoLinks = 0;
 	let skippedUnstatable = 0;
 	let incompleteDirectoryWalks = 0;
+	let fallbackFileInventories = 0;
+	const walkIssues = emptyDirectoryWalkIssues();
+	const rootDiagnostics: RootWalkDiagnostics = {
+		cappedPrimaryWalks: 0,
+		cappedFallbackWalks: 0,
+		largestCappedWalkEntries: 0,
+	};
+	const issues: FileIdCoverageIssue[] = [];
+	const contentPathDiagnostics: ContentPathDiagnostics = {
+		present: 0,
+		fallbackPresent: 0,
+		fallbackDistinctFromSavePath: 0,
+		fallbackStatable: 0,
+		fallbackContentFileRoots: 0,
+		fallbackContentDirectoryRoots: 0,
+		fallbackFailedFilesAltExact: 0,
+		fallbackFailedFilesAltLarger: 0,
+		fallbackFailedFilesAltSmaller: 0,
+	};
+	const fallbackIssueDiagnostics: FallbackIssueDiagnostics = {
+		missingEntryTorrents: 0,
+		sizeMismatchTorrents: 0,
+		maxMissingEntriesPerTorrent: 0,
+		maxSizeMismatchesPerTorrent: 0,
+		sizeMismatchFileContentRoots: 0,
+		sizeMismatchDirectoryContentRoots: 0,
+		sizeMismatchUnavailableContentRoots: 0,
+	};
 	let firstStatErrorLogged = false;
 
 	// Helper: add a hash to the set at this FileID key, creating the set
@@ -522,9 +893,28 @@ async function doBuildFileIdIndex(
 	};
 
 	for (const torrent of torrents) {
+		const issue: FileIdCoverageIssue = {
+			hash: torrent.hash.trim().toLowerCase(),
+			qbitInstanceId:
+				Number.isSafeInteger(torrent.instanceId) && (torrent.instanceId ?? 0) > 0
+					? torrent.instanceId!
+					: null,
+			missingFiles: 0,
+			sizeMismatches: 0,
+			otherFailures: 0,
+		};
+		let torrentIncomplete = false;
+		const providerContentPath = readProviderContentPath(torrent);
+		const rewrittenProviderContentPath = providerContentPath
+			? applyPathRewrite(providerContentPath, instance.pathPrefix).replace(/\/+$/, "")
+			: undefined;
+		if (providerContentPath) contentPathDiagnostics.present++;
 		const trimmed = torrent.savePath ? torrent.savePath.replace(/\/+$/, "") : "";
 		if (!trimmed) {
 			skippedUnstatable++;
+			issue.otherFailures++;
+			torrentIncomplete = true;
+			issues.push(issue);
 			continue;
 		}
 
@@ -541,15 +931,36 @@ async function doBuildFileIdIndex(
 		];
 
 		let resolved = false;
-		for (const rootPath of candidates) {
+		for (const [candidateIndex, rootPath] of candidates.entries()) {
 			const rootInfo = await statSafe(rootPath);
 			if (!rootInfo) continue;
 			resolved = true;
+			let providerContentRootKind: "file" | "directory" | "unavailable" = "unavailable";
+			if (candidateIndex > 0 && rewrittenProviderContentPath) {
+				contentPathDiagnostics.fallbackPresent++;
+				if (rewrittenProviderContentPath !== rootPath)
+					contentPathDiagnostics.fallbackDistinctFromSavePath++;
+				const providerRootInfo = await lstatSafe(rewrittenProviderContentPath);
+				if (providerRootInfo?.kind === "file" || providerRootInfo?.kind === "directory")
+					providerContentRootKind = providerRootInfo.kind;
+				if (providerRootInfo) contentPathDiagnostics.fallbackStatable++;
+				if (providerRootInfo?.kind === "file") contentPathDiagnostics.fallbackContentFileRoots++;
+				if (providerRootInfo?.kind === "directory")
+					contentPathDiagnostics.fallbackContentDirectoryRoots++;
+			}
 			if (stabilityMarkers && !stabilityMarkers.has(rootPath)) {
 				stabilityMarkers.set(rootPath, toFileSystemMarker(rootInfo));
 			}
 
 			if (rootInfo.kind === "file") {
+				if (candidateIndex > 0) {
+					// A save path is a directory, never a torrent-owned file.
+					incompleteDirectoryWalks++;
+					walkIssues.unsupportedEntries++;
+					issue.otherFailures++;
+					torrentIncomplete = true;
+					break;
+				}
 				if (rootInfo.nlink < 2 && !requireStableSnapshot) {
 					skippedNoLinks++;
 				} else {
@@ -557,22 +968,82 @@ async function doBuildFileIdIndex(
 					statted++;
 				}
 			} else if (rootInfo.kind === "directory") {
-				const stats = await indexDirectoryFiles(
-					rootPath,
-					torrent.hash,
-					addHash,
-					stabilityMarkers,
-					requireStableSnapshot,
-				);
+				const stats =
+					candidateIndex === 0
+						? await indexDirectoryFiles(
+								rootPath,
+								torrent.hash,
+								addHash,
+								stabilityMarkers,
+								requireStableSnapshot,
+							)
+						: fallbackFileInventories++ >= MAX_FALLBACK_FILE_INVENTORIES
+							? {
+									statted: 0,
+									skippedNoLinks: 0,
+									complete: false,
+									issues: { ...emptyDirectoryWalkIssues(), providerBudgetExceeded: 1 },
+									entriesSeen: 0,
+								}
+							: await indexFallbackTorrentFiles(
+									client,
+									torrent,
+									rootPath,
+									addHash,
+									requireStableSnapshot,
+									fallbackPathMarkers,
+									rewrittenProviderContentPath,
+									contentPathDiagnostics,
+								);
 				statted += stats.statted;
 				skippedNoLinks += stats.skippedNoLinks;
-				if (!stats.complete) incompleteDirectoryWalks++;
+				if (!stats.complete) {
+					incompleteDirectoryWalks++;
+					torrentIncomplete = true;
+					issue.missingFiles += stats.issues.entryMissing;
+					issue.sizeMismatches += stats.issues.entrySizeMismatches;
+					issue.otherFailures += countOtherWalkFailures(stats.issues);
+				}
+				if (stats.issues.entryLimitExceeded > 0) {
+					if (candidateIndex === 0) rootDiagnostics.cappedPrimaryWalks++;
+					else rootDiagnostics.cappedFallbackWalks++;
+					rootDiagnostics.largestCappedWalkEntries = Math.max(
+						rootDiagnostics.largestCappedWalkEntries,
+						stats.entriesSeen,
+					);
+				}
+				for (const reason of Object.keys(walkIssues) as Array<keyof DirectoryWalkIssues>) {
+					walkIssues[reason] += stats.issues[reason];
+				}
+				if (candidateIndex > 0) {
+					if (stats.issues.entryMissing > 0) {
+						fallbackIssueDiagnostics.missingEntryTorrents++;
+						fallbackIssueDiagnostics.maxMissingEntriesPerTorrent = Math.max(
+							fallbackIssueDiagnostics.maxMissingEntriesPerTorrent,
+							stats.issues.entryMissing,
+						);
+					}
+					if (stats.issues.entrySizeMismatches > 0) {
+						fallbackIssueDiagnostics.sizeMismatchTorrents++;
+						fallbackIssueDiagnostics.maxSizeMismatchesPerTorrent = Math.max(
+							fallbackIssueDiagnostics.maxSizeMismatchesPerTorrent,
+							stats.issues.entrySizeMismatches,
+						);
+						if (providerContentRootKind === "file")
+							fallbackIssueDiagnostics.sizeMismatchFileContentRoots++;
+						else if (providerContentRootKind === "directory")
+							fallbackIssueDiagnostics.sizeMismatchDirectoryContentRoots++;
+						else fallbackIssueDiagnostics.sizeMismatchUnavailableContentRoots++;
+					}
+				}
 			}
 			break;
 		}
 
 		if (!resolved) {
 			skippedUnstatable++;
+			issue.otherFailures++;
+			torrentIncomplete = true;
 			if (!firstStatErrorLogged) {
 				log?.warn(
 					{
@@ -587,16 +1058,26 @@ async function doBuildFileIdIndex(
 				firstStatErrorLogged = true;
 			}
 		}
+		if (torrentIncomplete) issues.push(issue);
 	}
 
 	const index: FileIdIndex = {
+		fallbackOwnershipVersion: FALLBACK_OWNERSHIP_VERSION,
+		torrentInventoryFingerprint: fingerprintQuiTorrentInventory(torrents),
 		byFileId,
 		inodeMarkers,
 		statted,
 		skippedNoLinks,
 		skippedUnstatable,
 		incompleteDirectoryWalks,
+		walkIssues,
+		issues,
+		rootDiagnostics,
+		contentPathDiagnostics,
+		fallbackIssueDiagnostics,
+		inventoryComplete,
 		...(stabilityMarkers ? { stabilityMarkers } : {}),
+		...(fallbackPathMarkers ? { fallbackPathMarkers } : {}),
 	};
 	// Cache write happens in the buildFileIdIndex wrapper (after this
 	// function resolves) so the in-flight Promise dedup stays consistent.
@@ -608,13 +1089,231 @@ async function doBuildFileIdIndex(
 			skippedNoLinks,
 			skippedUnstatable,
 			incompleteDirectoryWalks,
+			walkIssues,
+			rootDiagnostics,
+			contentPathDiagnostics,
+			fallbackIssueDiagnostics,
 		},
 		"inode-backfill: built FileID index",
 	);
 	return index;
 }
 
-function torrentInventoryFingerprint(torrents: QuiTorrent[]): string {
+function countOtherWalkFailures(issues: DirectoryWalkIssues): number {
+	return (
+		issues.readFailures +
+		issues.entryLimitExceeded +
+		issues.unsupportedEntries +
+		issues.entryKindMismatches +
+		issues.stabilityFailures +
+		issues.providerBudgetExceeded +
+		Math.max(
+			0,
+			issues.entryStatFailures -
+				issues.entryMissing -
+				issues.entrySizeMismatches -
+				issues.entryKindMismatches,
+		)
+	);
+}
+
+async function indexFallbackTorrentFiles(
+	client: QuiClient,
+	torrent: QuiTorrent,
+	rootPath: string,
+	addHash: (key: string, hash: string, info: StatInfo) => void,
+	includeSingleLinks: boolean,
+	fallbackPathMarkers?: Map<string, FileSystemMarker>,
+	providerContentPath?: string,
+	contentPathDiagnostics?: ContentPathDiagnostics,
+): Promise<{
+	statted: number;
+	skippedNoLinks: number;
+	complete: boolean;
+	issues: DirectoryWalkIssues;
+	entriesSeen: number;
+}> {
+	const issues = emptyDirectoryWalkIssues();
+	let statted = 0;
+	let skippedNoLinks = 0;
+	if ((await lstatSafe(rootPath))?.kind !== "directory") {
+		issues.unsupportedEntries++;
+		return { statted, skippedNoLinks, complete: false, issues, entriesSeen: 0 };
+	}
+	if (!Number.isInteger(torrent.instanceId) || (torrent.instanceId ?? 0) <= 0) {
+		issues.readFailures++;
+		return { statted, skippedNoLinks, complete: false, issues, entriesSeen: 0 };
+	}
+	let files: Awaited<ReturnType<typeof client.getTorrentFiles>>;
+	try {
+		files = await client.getTorrentFiles(torrent.instanceId!, torrent.hash, { refresh: true });
+	} catch {
+		issues.readFailures++;
+		return { statted, skippedNoLinks, complete: false, issues, entriesSeen: 0 };
+	}
+	if (files.length === 0) {
+		issues.readFailures++;
+		return { statted, skippedNoLinks, complete: false, issues, entriesSeen: 0 };
+	}
+	if (files.length > MAX_FALLBACK_FILES_PER_TORRENT) {
+		issues.entryLimitExceeded++;
+		return { statted, skippedNoLinks, complete: false, issues, entriesSeen: files.length };
+	}
+	let complete = true;
+	for (const file of files) {
+		const parts = file.name.split("/");
+		if (
+			file.name.startsWith("/") ||
+			parts.some((part) => !part || part === "." || part === ".." || part.includes("\0"))
+		) {
+			complete = false;
+			issues.unsupportedEntries++;
+			continue;
+		}
+		const recordFallbackFailure = (): void => {
+			if (file.progress < 1) issues.fallbackIncompleteFileFailures++;
+			else issues.fallbackCompleteFileFailures++;
+		};
+		const diagnoseAlternate = async (): Promise<void> => {
+			if (includeSingleLinks || !providerContentPath || !contentPathDiagnostics) return;
+			const category = await classifyProviderContentFileSize(
+				providerContentPath,
+				rootPath,
+				parts,
+				file.size,
+				files.length,
+			);
+			if (category === "exact") contentPathDiagnostics.fallbackFailedFilesAltExact++;
+			else if (category === "larger") contentPathDiagnostics.fallbackFailedFilesAltLarger++;
+			else if (category === "smaller") contentPathDiagnostics.fallbackFailedFilesAltSmaller++;
+		};
+		let filePath = rootPath;
+		let info: StatInfo | null = null;
+		let pathValid = true;
+		for (const [partIndex, part] of parts.entries()) {
+			filePath = posix.join(filePath, part);
+			info = await lstatSafe(filePath);
+			if (!info || info.kind !== (partIndex === parts.length - 1 ? "file" : "directory")) {
+				complete = false;
+				issues.entryStatFailures++;
+				if (!info) issues.entryMissing++;
+				else issues.entryKindMismatches++;
+				recordFallbackFailure();
+				await diagnoseAlternate();
+				pathValid = false;
+				break;
+			}
+			if (fallbackPathMarkers && !fallbackPathMarkers.has(filePath)) {
+				fallbackPathMarkers.set(filePath, toFileSystemMarker(info));
+			}
+		}
+		if (!pathValid || !info) continue;
+		if (info.size !== file.size) {
+			complete = false;
+			issues.entryStatFailures++;
+			issues.entrySizeMismatches++;
+			if (info.size < file.size) issues.fallbackSizeMismatchSmaller++;
+			else issues.fallbackSizeMismatchLarger++;
+			if (torrent.state === "error" || torrent.state === "missingFiles")
+				issues.fallbackSizeMismatchErrorTorrent++;
+			else issues.fallbackSizeMismatchOtherTorrent++;
+			recordFallbackFailure();
+			await diagnoseAlternate();
+			continue;
+		}
+		if (info.nlink < 2 && !includeSingleLinks) {
+			skippedNoLinks++;
+			continue;
+		}
+		addHash(`${info.dev}:${info.ino}`, torrent.hash, info);
+		statted++;
+	}
+	if (includeSingleLinks) {
+		try {
+			const after = await client.getTorrentFiles(torrent.instanceId!, torrent.hash, {
+				refresh: true,
+			});
+			const fingerprint = (items: typeof files) =>
+				JSON.stringify(
+					items
+						.map((item) => [
+							item.index,
+							item.name,
+							item.size,
+							item.progress,
+							item.priority,
+							item.isSeeding ?? null,
+						])
+						.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+				);
+			if (fingerprint(files) !== fingerprint(after)) {
+				complete = false;
+				issues.stabilityFailures++;
+			}
+		} catch {
+			complete = false;
+			issues.readFailures++;
+		}
+	}
+	return { statted, skippedNoLinks, complete, issues, entriesSeen: files.length };
+}
+
+async function classifyProviderContentFileSize(
+	providerPath: string,
+	fallbackRoot: string,
+	parts: string[],
+	expectedSize: number,
+	fileCount: number,
+): Promise<"exact" | "larger" | "smaller" | "missing"> {
+	if (providerPath === fallbackRoot) return "missing";
+	const rootInfo = await lstatSafe(providerPath);
+	if (rootInfo?.kind === "file") {
+		if (fileCount !== 1) return "missing";
+		return rootInfo.size === expectedSize
+			? "exact"
+			: rootInfo.size > expectedSize
+				? "larger"
+				: "smaller";
+	}
+	if (rootInfo?.kind !== "directory") return "missing";
+	let foundLarger = false;
+	let foundSmaller = false;
+	const candidateRoots = new Set([providerPath, posix.dirname(providerPath)]);
+	const providerParts = providerPath.split("/").filter(Boolean);
+	for (let overlap = 2; overlap < parts.length && overlap <= providerParts.length; overlap++) {
+		if (providerParts.slice(-overlap).every((part, index) => part === parts[index])) {
+			let ancestor = providerPath;
+			for (let depth = 0; depth < overlap; depth++) ancestor = posix.dirname(ancestor);
+			candidateRoots.add(ancestor);
+		}
+	}
+	for (const candidateRoot of candidateRoots) {
+		if (candidateRoot === fallbackRoot) continue;
+		let current = candidateRoot;
+		let candidateInfo: StatInfo | null = null;
+		let valid = true;
+		for (const [index, part] of parts.entries()) {
+			current = posix.join(current, part);
+			candidateInfo = await lstatSafe(current);
+			if (
+				!candidateInfo ||
+				candidateInfo.kind !== (index === parts.length - 1 ? "file" : "directory")
+			) {
+				valid = false;
+				break;
+			}
+		}
+		if (!valid || candidateInfo?.kind !== "file") continue;
+		if (candidateInfo.size === expectedSize) return "exact";
+		if (candidateInfo.size > expectedSize) foundLarger = true;
+		else foundSmaller = true;
+	}
+	return foundLarger ? "larger" : foundSmaller ? "smaller" : "missing";
+}
+
+function torrentInventoryFingerprint(
+	torrents: ReadonlyArray<Pick<QuiTorrent, "instanceId" | "hash" | "name" | "savePath" | "size">>,
+): string {
 	return JSON.stringify(
 		torrents
 			.map((torrent) =>
@@ -628,6 +1327,13 @@ function torrentInventoryFingerprint(torrents: QuiTorrent[]): string {
 			)
 			.sort(),
 	);
+}
+
+/** Digest the canonical listing without persisting its private names or paths. */
+export function fingerprintQuiTorrentInventory(
+	torrents: ReadonlyArray<Pick<QuiTorrent, "instanceId" | "hash" | "name" | "savePath" | "size">>,
+): string {
+	return createHash("sha256").update(torrentInventoryFingerprint(torrents)).digest("hex");
 }
 
 function assertCompleteFileIdIndex(index: FileIdIndex): void {
@@ -646,6 +1352,12 @@ async function assertStableFileSystemSnapshot(index: FileIdIndex): Promise<void>
 		const current = await statSafe(path);
 		if (!current || !sameFileSystemMarker(expected, current)) {
 			throw new Error("qUI torrent filesystem changed during inode verification");
+		}
+	}
+	for (const [path, expected] of index.fallbackPathMarkers ?? []) {
+		const current = await lstatSafe(path);
+		if (!current || !sameFileSystemMarker(expected, current)) {
+			throw new Error("qUI fallback file changed during destructive verification");
 		}
 	}
 }
@@ -669,16 +1381,24 @@ async function indexDirectoryFiles(
 	addHash: (key: string, hash: string, info: StatInfo) => void,
 	stabilityMarkers?: Map<string, FileSystemMarker>,
 	includeSingleLinks = false,
-): Promise<{ statted: number; skippedNoLinks: number; complete: boolean }> {
+): Promise<{
+	statted: number;
+	skippedNoLinks: number;
+	complete: boolean;
+	issues: DirectoryWalkIssues;
+	entriesSeen: number;
+}> {
 	let statted = 0;
 	let skippedNoLinks = 0;
 	let complete = true;
+	const issues = emptyDirectoryWalkIssues();
 
 	let entries: Dirent[];
 	try {
 		entries = await readdir(rootPath, { recursive: true, withFileTypes: true });
 	} catch {
-		return { statted, skippedNoLinks, complete: false };
+		issues.readFailures++;
+		return { statted, skippedNoLinks, complete: false, issues, entriesSeen: 0 };
 	}
 
 	if (stabilityMarkers) {
@@ -694,6 +1414,7 @@ async function indexDirectoryFiles(
 			const directoryInfo = await statSafe(directoryPath);
 			if (directoryInfo?.kind !== "directory") {
 				complete = false;
+				issues.stabilityFailures++;
 				continue;
 			}
 			stabilityMarkers.set(directoryPath, toFileSystemMarker(directoryInfo));
@@ -706,10 +1427,12 @@ async function indexDirectoryFiles(
 				withFileTypes: true,
 			});
 		} catch {
-			return { statted, skippedNoLinks, complete: false };
+			issues.readFailures++;
+			return { statted, skippedNoLinks, complete: false, issues, entriesSeen: entries.length };
 		}
 		if (directoryEntriesFingerprint(entries) !== directoryEntriesFingerprint(verifiedEntries)) {
-			return { statted, skippedNoLinks, complete: false };
+			issues.stabilityFailures++;
+			return { statted, skippedNoLinks, complete: false, issues, entriesSeen: entries.length };
 		}
 		entries = verifiedEntries;
 	}
@@ -721,7 +1444,10 @@ async function indexDirectoryFiles(
 		entries.length > MAX_WALK_ENTRIES_PER_TORRENT
 			? entries.slice(0, MAX_WALK_ENTRIES_PER_TORRENT)
 			: entries;
-	if (limited.length !== entries.length) complete = false;
+	if (limited.length !== entries.length) {
+		complete = false;
+		issues.entryLimitExceeded++;
+	}
 
 	for (const entry of limited) {
 		if (entry.isDirectory()) continue;
@@ -731,6 +1457,7 @@ async function indexDirectoryFiles(
 			// inventory claim completeness without indexing content qBit may
 			// still be reading through that entry.
 			complete = false;
+			issues.unsupportedEntries++;
 			continue;
 		}
 		// `parentPath` is always present on Node 20.12+. We target Node 22
@@ -739,9 +1466,16 @@ async function indexDirectoryFiles(
 		const info = await statSafe(filePath);
 		if (!info) {
 			complete = false;
+			issues.entryStatFailures++;
+			issues.entryMissing++;
 			continue;
 		}
-		if (info.kind !== "file") continue;
+		if (info.kind !== "file") {
+			complete = false;
+			issues.entryStatFailures++;
+			issues.entryKindMismatches++;
+			continue;
+		}
 		if (info.nlink < 2 && !includeSingleLinks) {
 			skippedNoLinks++;
 			continue;
@@ -750,7 +1484,7 @@ async function indexDirectoryFiles(
 		statted++;
 	}
 
-	return { statted, skippedNoLinks, complete };
+	return { statted, skippedNoLinks, complete, issues, entriesSeen: entries.length };
 }
 
 function directoryEntriesFingerprint(entries: Dirent[]): string {
@@ -811,12 +1545,27 @@ export async function getAllHashesForFileId(
 	libraryPath: string,
 	index: FileIdIndex,
 ): Promise<string[]> {
+	return (await getAllHashesForFileIdWithPathEvidence(libraryPath, index)).hashes;
+}
+
+/** Display lookup that preserves whether a missing hash was actually observable. */
+export async function getAllHashesForFileIdWithPathEvidence(
+	libraryPath: string,
+	index: FileIdIndex,
+): Promise<{ hashes: string[]; pathVerified: boolean; correlationComplete: boolean }> {
 	const info = await statSafe(libraryPath);
-	if (info?.kind !== "file") return [];
-	if (info.nlink < 2) return [];
+	if (info?.kind !== "file") {
+		return { hashes: [], pathVerified: false, correlationComplete: false };
+	}
+	if (info.nlink < 2) {
+		return { hashes: [], pathVerified: true, correlationComplete: false };
+	}
 	const hashes = index.byFileId.get(`${info.dev}:${info.ino}`);
-	if (!hashes) return [];
-	return Array.from(hashes);
+	return {
+		hashes: hashes ? Array.from(hashes) : [],
+		pathVerified: true,
+		correlationComplete: true,
+	};
 }
 
 export interface CompleteFileIdHashResolution {
@@ -844,6 +1593,7 @@ export async function getAllHashesForFileIdComplete(
 			dev: value.dev,
 			ino: value.ino,
 			nlink: value.nlink,
+			size: value.size,
 			ctimeMs: value.ctimeMs,
 			mtimeMs: value.mtimeMs,
 			kind: value.isFile() ? "file" : value.isDirectory() ? "directory" : "other",
@@ -870,6 +1620,7 @@ interface StatInfo {
 	dev: number;
 	ino: number;
 	nlink: number;
+	size: number;
 	ctimeMs: number;
 	mtimeMs: number;
 	kind: "file" | "directory" | "other";
@@ -880,6 +1631,7 @@ function toFileSystemMarker(info: StatInfo): FileSystemMarker {
 		dev: info.dev,
 		ino: info.ino,
 		nlink: info.nlink,
+		size: info.size,
 		ctimeMs: info.ctimeMs,
 		mtimeMs: info.mtimeMs,
 		kind: info.kind,
@@ -891,6 +1643,7 @@ function sameFileSystemMarker(expected: FileSystemMarker, current: StatInfo): bo
 		expected.dev === current.dev &&
 		expected.ino === current.ino &&
 		expected.nlink === current.nlink &&
+		expected.size === current.size &&
 		expected.ctimeMs === current.ctimeMs &&
 		expected.mtimeMs === current.mtimeMs &&
 		expected.kind === current.kind
@@ -915,6 +1668,26 @@ async function statSafe(path: string): Promise<StatInfo | null> {
 			dev: Number(s.dev),
 			ino: Number(s.ino),
 			nlink: Number(s.nlink),
+			size: Number(s.size),
+			ctimeMs: Number(s.ctimeMs),
+			mtimeMs: Number(s.mtimeMs),
+			kind,
+		};
+	} catch {
+		return null;
+	}
+}
+
+/** Reject symlinks at every declared fallback-file path component. */
+async function lstatSafe(path: string): Promise<StatInfo | null> {
+	try {
+		const s = await lstat(path);
+		const kind: StatInfo["kind"] = s.isFile() ? "file" : s.isDirectory() ? "directory" : "other";
+		return {
+			dev: Number(s.dev),
+			ino: Number(s.ino),
+			nlink: Number(s.nlink),
+			size: Number(s.size),
 			ctimeMs: Number(s.ctimeMs),
 			mtimeMs: Number(s.mtimeMs),
 			kind,
@@ -932,15 +1705,64 @@ async function statSafe(path: string): Promise<StatInfo | null> {
  */
 export function clearFileIdIndexCache(instanceId?: string): void {
 	if (instanceId) {
+		INDEX_EPOCH.set(instanceId, indexEpoch(instanceId) + 1);
 		INDEX_CACHE.delete(instanceId);
+		INDEX_PENDING.delete(instanceId);
+		LEGACY_UPGRADE_RETRY_AFTER.delete(instanceId);
 	} else {
+		for (const id of new Set([
+			...INDEX_CACHE.keys(),
+			...INDEX_PENDING.keys(),
+			...LEGACY_UPGRADE_RETRY_AFTER.keys(),
+		])) {
+			INDEX_EPOCH.set(id, indexEpoch(id) + 1);
+		}
 		INDEX_CACHE.clear();
+		INDEX_PENDING.clear();
+		LEGACY_UPGRADE_RETRY_AFTER.clear();
 	}
+}
+
+/** Read generic cached coverage without triggering filesystem or provider work. */
+export function readCachedFileIdCoverage(instance: { id: string; connectionGeneration: number }): {
+	builtAtMs: number;
+	inventoryComplete: boolean;
+	skippedUnstatable: number;
+	incompleteDirectoryWalks: number;
+	issues: FileIdCoverageIssue[];
+	torrentInventoryFingerprint: string;
+} | null {
+	const cached = INDEX_CACHE.get(instance.id);
+	if (!cached) return null;
+	const index = cached.index;
+	if (
+		index.sourceConnectionGeneration !== instance.connectionGeneration ||
+		index.fallbackOwnershipVersion !== FALLBACK_OWNERSHIP_VERSION ||
+		typeof index.inventoryComplete !== "boolean" ||
+		!Number.isSafeInteger(index.skippedUnstatable) ||
+		!Number.isSafeInteger(index.incompleteDirectoryWalks) ||
+		!Array.isArray(index.issues) ||
+		!index.issues.every(isFileIdCoverageIssue) ||
+		!isTorrentInventoryFingerprint(index.torrentInventoryFingerprint) ||
+		index.issues.length !== index.skippedUnstatable + index.incompleteDirectoryWalks!
+	) {
+		return null;
+	}
+	return {
+		builtAtMs: cached.builtAt,
+		inventoryComplete: index.inventoryComplete,
+		skippedUnstatable: index.skippedUnstatable,
+		incompleteDirectoryWalks: index.incompleteDirectoryWalks!,
+		issues: index.issues,
+		torrentInventoryFingerprint: index.torrentInventoryFingerprint,
+	};
 }
 
 export const __testOnly = {
 	applyPathRewrite,
-	clearCache: () => INDEX_CACHE.clear(),
+	clearCache: () => {
+		clearFileIdIndexCache();
+	},
 	INDEX_TTL_MS,
 	MAX_WALK_ENTRIES_PER_TORRENT,
 	peekCache: (instanceId: string): CachedIndex | undefined => INDEX_CACHE.get(instanceId),

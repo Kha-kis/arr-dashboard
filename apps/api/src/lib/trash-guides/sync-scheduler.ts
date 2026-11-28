@@ -8,9 +8,12 @@
 import type { NotificationEventType } from "@arr/shared";
 import type { FastifyBaseLogger } from "fastify";
 import type { ArrClientFactory } from "../arr/client-factory.js";
+import {
+	CleanupMaintenanceConflictError,
+	withCleanupOperationGuard,
+} from "../library-cleanup/cleanup-maintenance-gate.js";
 import type { NotificationPayload } from "../notifications/types.js";
 import type { PrismaClient } from "../prisma.js";
-import { withCleanupOperationGuard } from "../library-cleanup/cleanup-maintenance-gate.js";
 import {
 	passthroughTickWrapper,
 	type TickWrapper,
@@ -28,6 +31,10 @@ const CHECK_INTERVAL_MS = 60 * 1000; // Check every minute
 
 export class TrashSyncScheduler {
 	private intervalId: NodeJS.Timeout | null = null;
+	private scheduleGeneration = 0;
+	private admissionClosed = false;
+	private pendingChecks = new Set<Promise<void>>();
+	private shutdownPromise: Promise<void> | null = null;
 	private isRunning = false;
 	private trackTick: TickWrapper;
 
@@ -46,6 +53,7 @@ export class TrashSyncScheduler {
 	}
 
 	start() {
+		if (this.admissionClosed) return;
 		if (this.intervalId) {
 			this.logger.warn("TRaSH sync scheduler already running");
 			return;
@@ -53,17 +61,14 @@ export class TrashSyncScheduler {
 
 		this.logger.info("Starting TRaSH sync scheduler");
 
-		// Run immediately on startup (catches overdue schedules after restart)
-		this.trackTick(() => this.checkAndRunSchedules()).catch((error) => {
-			this.logger.error({ err: error }, "Failed initial TRaSH sync schedule check");
-		});
-
+		const generation = ++this.scheduleGeneration;
 		// Then check every minute
 		this.intervalId = setInterval(() => {
-			this.trackTick(() => this.checkAndRunSchedules()).catch((error) => {
-				this.logger.error({ err: error }, "Failed TRaSH sync schedule check");
-			});
+			void this.runCheck(generation, "Failed TRaSH sync schedule check");
 		}, CHECK_INTERVAL_MS);
+
+		// Install admission before checking overdue schedules immediately on startup.
+		void this.runCheck(generation, "Failed initial TRaSH sync schedule check");
 	}
 
 	stop() {
@@ -71,6 +76,42 @@ export class TrashSyncScheduler {
 			clearInterval(this.intervalId);
 			this.intervalId = null;
 			this.logger.info("TRaSH sync scheduler stopped");
+		}
+	}
+
+	/** Close admission without delaying sibling plugins' preClose hooks. */
+	closeAdmission(): void {
+		this.admissionClosed = true;
+		this.stop();
+	}
+
+	/** Retain accepted serial batches through deployment, bookkeeping, and notification. */
+	shutdown(): Promise<void> {
+		this.closeAdmission();
+		this.shutdownPromise ??= (async () => {
+			while (this.pendingChecks.size > 0) await Promise.all(this.pendingChecks);
+		})();
+		return this.shutdownPromise;
+	}
+
+	private async runCheck(generation: number, errorMessage: string): Promise<void> {
+		if (this.admissionClosed || !this.intervalId || generation !== this.scheduleGeneration) return;
+		let settle!: () => void;
+		const completion = new Promise<void>((resolve) => {
+			settle = resolve;
+		});
+		this.pendingChecks.add(completion);
+		try {
+			await this.trackTick(() => this.checkAndRunSchedules());
+		} catch (err) {
+			if (err instanceof CleanupMaintenanceConflictError) {
+				this.logger.debug("TRaSH sync check paused during database maintenance");
+			} else {
+				this.logger.error({ err }, errorMessage);
+			}
+		} finally {
+			this.pendingChecks.delete(completion);
+			settle();
 		}
 	}
 

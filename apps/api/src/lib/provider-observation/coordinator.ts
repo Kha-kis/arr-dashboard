@@ -153,6 +153,11 @@ export async function runClaimedProviderObservationAttempt<
 	} catch (error) {
 		const reason = boundedFailureReason(input.failureReason, error);
 		try {
+			input.options?.onStage?.("failure-recording");
+		} catch {
+			// Observer failure must not skip or detach the failure-status write.
+		}
+		try {
 			await finishProviderCacheRefreshAttemptFailure(
 				input.prisma,
 				input.cacheType,

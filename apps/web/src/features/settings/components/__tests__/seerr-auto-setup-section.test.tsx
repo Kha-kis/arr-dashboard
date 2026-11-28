@@ -64,14 +64,13 @@ function renderSection(
 	seerrUrl = "http://seerr:5055",
 	onApiKeyFetched = vi.fn(),
 	mode: "add" | "edit" = "add",
-	onTestConnection = vi.fn(),
 	httpAuth?: { username: string; password: string },
 ) {
 	return render(
 		<SeerrAutoSetupSection
 			seerrUrl={seerrUrl}
 			onApiKeyFetched={onApiKeyFetched as (apiKey: string) => void}
-			onTestConnection={onTestConnection as () => void}
+			isCurrentDraft={() => true}
 			mode={mode}
 			httpAuth={httpAuth}
 		/>,
@@ -150,7 +149,7 @@ describe("SeerrAutoSetupSection", () => {
 	it("passes staged HTTP Basic credentials when fetching the API key", async () => {
 		vi.mocked(usePlexOAuth).mockReturnValue(mockPlexOAuth({ tokenRef: "existing-ref" }));
 
-		renderSection(undefined, undefined, "add", undefined, {
+		renderSection(undefined, undefined, "add", {
 			username: "proxy",
 			password: "secret",
 		});

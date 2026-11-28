@@ -88,29 +88,40 @@ const trashUpdateSchedulerPlugin = fastifyPlugin(
 							deploymentExecutor: app.deploymentExecutor,
 							notifyFn: (payload, options) => app.notificationService.notify(payload, options),
 							trackTick: (fn) => app.schedulerRegistry.track(JOB_ID.trashUpdate, fn),
+							trackProducer: (fn) => app.notificationService.runProducer(fn),
 						},
 					);
 
 					app.decorate("trashUpdateScheduler", scheduler);
-
-					// Start scheduler
-					scheduler.start();
-					app.log.info("TRaSH Guides update scheduler started successfully");
 				},
 			);
 		});
 
-		// Stop scheduler on server close
+		// Automatic checks may wait on external dependencies. Start only after
+		// native activation and listen, so their tracked lifetime cannot hold
+		// bootstrap admission closed. Existing shutdown still joins accepted work.
+		app.addHook("onListen", async () => {
+			await app.restoreRuntime.runIndependentOperation(() => {
+				app.trashUpdateScheduler?.start();
+			});
+		});
+
+		app.addHook("preClose", async () => {
+			app.trashUpdateScheduler?.closeAdmission();
+		});
+
+		// Drain accepted checks before notification and database dependencies close.
 		app.addHook("onClose", async () => {
 			if (app.trashUpdateScheduler) {
 				app.log.info("Stopping TRaSH Guides update scheduler");
-				app.trashUpdateScheduler.stop();
+				await app.trashUpdateScheduler.shutdown();
 			}
 		});
 	},
 	{
 		name: "trash-update-scheduler",
 		dependencies: ["prisma", "deployment-executor", "scheduler-registry"],
+		decorators: { fastify: ["notificationService"] },
 	},
 );
 

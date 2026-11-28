@@ -77,8 +77,9 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 		};
 		const prisma = {
 			libraryCleanupConfig: {
-				upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
-				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+				findUnique: vi.fn().mockResolvedValue(null),
+				create: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
+				update: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
 			},
 			serviceInstance: {
 				findFirst: vi.fn().mockResolvedValue(instance),
@@ -142,8 +143,9 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 		};
 		const prisma = {
 			libraryCleanupConfig: {
-				upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
-				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+				findUnique: vi.fn().mockResolvedValue(null),
+				create: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
+				update: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
 			},
 			serviceInstance: {
 				findFirst: vi.fn().mockResolvedValue({
@@ -369,8 +371,9 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 	it("preserves applied details and profile evidence when a bulk target conflicts", async () => {
 		const prisma = {
 			libraryCleanupConfig: {
-				upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
-				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+				findUnique: vi.fn().mockResolvedValue(null),
+				create: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
+				update: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
 			},
 			trashTemplate: {
 				findUnique: vi.fn().mockResolvedValue({ id: "template-1", name: "Radarr - Any" }),
@@ -438,8 +441,9 @@ describe("DeploymentExecutorService Task 4A result propagation", () => {
 	it("counts an unverified bulk write as uncertain instead of failed", async () => {
 		const prisma = {
 			libraryCleanupConfig: {
-				upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
-				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+				findUnique: vi.fn().mockResolvedValue(null),
+				create: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
+				update: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
 			},
 			trashTemplate: {
 				findUnique: vi.fn().mockResolvedValue({ id: "template-1", name: "Any" }),

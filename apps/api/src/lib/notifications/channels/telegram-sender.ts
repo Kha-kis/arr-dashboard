@@ -1,4 +1,10 @@
 import type { TelegramConfig } from "@arr/shared";
+import {
+	httpFailureCategory,
+	networkFailureCategory,
+	notificationFailure,
+	NotificationFailureError,
+} from "../failure-diagnostics.js";
 import type { ChannelPlugin, ChannelSender, NotificationPayload, SendResult } from "../types.js";
 import { extractMetadataFields } from "./format-metadata.js";
 
@@ -41,7 +47,7 @@ export const telegramSender: ChannelSender = {
 			"<b>Test Notification</b>\n\nArr Dashboard notification channel is working!",
 		);
 		if (!result.success) {
-			throw new Error(result.error ?? "Telegram test failed");
+			throw new NotificationFailureError(result.failureCategory ?? "unknown");
 		}
 	},
 };
@@ -77,26 +83,24 @@ async function sendMessage(botToken: string, chatId: string, text: string): Prom
 			return { success: true, retryable: false };
 		}
 
-		const body = (await response.json().catch(() => ({}))) as {
-			description?: string;
-			parameters?: { retry_after?: number };
-		};
-		const desc = body.description ?? response.statusText;
-		const error = `Telegram API failed: ${response.status} ${desc}`;
-
 		if (response.status === 429) {
-			const retryAfterMs = body.parameters?.retry_after
-				? body.parameters.retry_after * 1000
-				: undefined;
-			return { success: false, retryable: true, retryAfterMs, error };
+			const body: unknown = await response.json().catch(() => undefined);
+			const parameters =
+				typeof body === "object" && body !== null && "parameters" in body
+					? body.parameters
+					: undefined;
+			const retryAfter =
+				typeof parameters === "object" && parameters !== null && "retry_after" in parameters
+					? parameters.retry_after
+					: undefined;
+			const retryAfterMs =
+				typeof retryAfter === "number" && retryAfter ? retryAfter * 1000 : undefined;
+			return notificationFailure("rate-limited", true, retryAfterMs);
 		}
-		if (response.status >= 500) {
-			return { success: false, retryable: true, error };
-		}
-		return { success: false, retryable: false, error };
+		await response.body?.cancel().catch(() => {});
+		return notificationFailure(httpFailureCategory(response.status), response.status >= 500);
 	} catch (err) {
-		const error = err instanceof Error ? err.message : String(err);
-		return { success: false, retryable: true, error: `Telegram network error: ${error}` };
+		return notificationFailure(networkFailureCategory(err), true);
 	}
 }
 

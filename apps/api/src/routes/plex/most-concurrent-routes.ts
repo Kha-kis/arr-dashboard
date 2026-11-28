@@ -8,8 +8,9 @@
 import type { MostConcurrentResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
+import { readSessionSnapshotMetricsPages } from "../../lib/statistics/session-snapshot-pages.js";
 import { validateRequest } from "../../lib/utils/validate.js";
-import { aggregateMostConcurrent } from "./lib/most-concurrent-helpers.js";
+import { createMostConcurrentAccumulator } from "./lib/most-concurrent-helpers.js";
 
 const mostConcurrentQuery = z.object({
 	days: z
@@ -35,28 +36,23 @@ export async function registerMostConcurrentRoutes(
 	app.get("/", async (request, reply) => {
 		const { days, limit } = validateRequest(mostConcurrentQuery, request.query);
 		const userId = request.currentUser!.id;
-
-		const plexInstances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: "PLEX", enabled: true },
-			select: { id: true },
-		});
-
-		if (plexInstances.length === 0) {
-			const empty: MostConcurrentResponse = { peakConcurrent: 0, events: [] };
-			return reply.send(empty);
-		}
-
 		const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-		const snapshots = await app.prisma.sessionSnapshot.findMany({
-			where: {
-				instanceId: { in: plexInstances.map((i) => i.id) },
-				capturedAt: { gte: cutoff },
+		const accumulator = createMostConcurrentAccumulator({ limit });
+		const read = await readSessionSnapshotMetricsPages(
+			app.prisma,
+			{
+				userId,
+				services: ["PLEX"],
+				cutoff,
+				onPage: (page) => accumulator.addSnapshots(page),
 			},
-			select: { capturedAt: true, concurrentStreams: true, totalBandwidth: true },
-			orderBy: { capturedAt: "asc" },
-			take: 50000,
-		});
+			"most-concurrent",
+		);
 
-		return reply.send(aggregateMostConcurrent(snapshots, { limit }));
+		const result: MostConcurrentResponse = accumulator.getResult(read.collection);
+		return reply.send({
+			...result,
+			measurement: { ...result.measurement, configuredSources: read.instanceCount },
+		});
 	});
 }

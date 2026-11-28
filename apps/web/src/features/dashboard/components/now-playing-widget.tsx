@@ -1,6 +1,15 @@
 "use client";
 
-import type { JellyfinSessionInfo, PlexSession, TautulliSession } from "@arr/shared";
+import {
+	getSessionBandwidthKbps,
+	type JellyfinSessionInfo,
+	measureSessionBandwidth,
+	normalizeSessionPlaybackDecision,
+	type PlexSession,
+	type SessionBandwidthBasis,
+	type SessionBandwidthCoverage,
+	type TautulliSession,
+} from "@arr/shared";
 import {
 	Activity,
 	ChevronRight,
@@ -45,8 +54,11 @@ interface NowPlayingSession {
 	videoDecision: string;
 	audioDecision: string;
 	videoResolution?: string;
+	videoCodec?: string;
 	audioCodec?: string;
 	bandwidth?: number;
+	rateStatus?: "current" | "last-known" | "unverified";
+	rateBasis?: SessionBandwidthBasis;
 	location?: "lan" | "wan";
 	mediaType: "movie" | "episode" | "track" | "unknown";
 	thumb?: string;
@@ -93,6 +105,9 @@ function normalizePlexSession(s: PlexSession): NowPlayingSession {
 		videoDecision: s.videoDecision,
 		audioDecision: s.audioDecision,
 		bandwidth: s.bandwidth,
+		videoCodec: s.videoCodec,
+		audioCodec: s.audioCodec,
+		videoResolution: s.videoResolution,
 		mediaType,
 		thumb: s.thumb,
 		instanceName: s.instanceName,
@@ -123,6 +138,7 @@ function normalizeTautulliSession(s: TautulliSession): NowPlayingSession {
 		videoDecision: s.videoDecision,
 		audioDecision: s.audioDecision,
 		videoResolution: s.videoResolution,
+		videoCodec: s.videoCodec,
 		audioCodec: s.audioCodec,
 		bandwidth: s.bandwidth,
 		location: s.location,
@@ -155,7 +171,8 @@ function normalizeJellyfinSession(s: JellyfinSessionInfo): NowPlayingSession {
 		platform: s.deviceName,
 		videoDecision: s.videoDecision,
 		audioDecision: s.audioDecision,
-		videoResolution: undefined,
+		videoResolution: s.videoResolution,
+		videoCodec: s.videoCodec,
 		audioCodec: s.audioCodec,
 		bandwidth: s.bandwidth,
 		mediaType,
@@ -192,6 +209,41 @@ function formatBandwidth(kbps: number): string {
 	return `${kbps} kbps`;
 }
 
+function sessionRateEvidence(query: {
+	isError: boolean;
+	isLoading: boolean;
+	data?: {
+		sessions: readonly { bandwidth?: number }[];
+		bandwidthCoverage?: SessionBandwidthCoverage;
+		bandwidthBasis?: SessionBandwidthBasis;
+	};
+}): { status: "current" | "last-known" | "unverified"; basis?: SessionBandwidthBasis } {
+	const data = query.data;
+	const receipt = data?.bandwidthCoverage;
+	const basis = data?.bandwidthBasis;
+	const calculated = data ? measureSessionBandwidth(data.sessions) : undefined;
+	if (
+		!receipt ||
+		!calculated ||
+		(basis !== "provider-reported" && basis !== "encoding-estimate") ||
+		receipt.status !== calculated.status ||
+		receipt.observedSessions !== calculated.observedSessions ||
+		receipt.measuredSessions !== calculated.measuredSessions ||
+		receipt.knownTotalKbps !== calculated.knownTotalKbps
+	) {
+		return { status: "unverified" };
+	}
+	return { status: query.isError || query.isLoading ? "last-known" : "current", basis };
+}
+
+function describeSessionRate(session: NowPlayingSession): string {
+	if (session.rateStatus === "unverified" || !session.rateStatus) return "Rate unverified";
+	const rate = getSessionBandwidthKbps(session.bandwidth);
+	if (rate === null) return "Rate unknown";
+	const basis = session.rateBasis === "encoding-estimate" ? "Estimated" : "Reported";
+	return `${basis} ${formatBandwidth(rate)}${session.rateStatus === "last-known" ? " (last-known)" : ""}`;
+}
+
 function getMediaIcon(mediaType: NowPlayingSession["mediaType"]) {
 	return mediaType === "movie"
 		? Film
@@ -215,15 +267,17 @@ const SessionBadges = ({
 	session: NowPlayingSession;
 	size?: "sm" | "md";
 }) => {
-	const videoDecisionLower = session.videoDecision.toLowerCase();
-	const isDirectPlay = videoDecisionLower.includes("direct");
-	const isCopy = videoDecisionLower === "copy";
+	const videoDecision = normalizeSessionPlaybackDecision(session.videoDecision);
+	const isDirectPlay = videoDecision === "direct_play";
+	const isCopy = videoDecision === "direct_stream";
 	const transcodeColor = isDirectPlay || isCopy ? SEMANTIC_COLORS.success : SEMANTIC_COLORS.warning;
 	const transcodeLabel = isDirectPlay
 		? "Direct Play"
 		: isCopy
 			? "Direct Stream"
-			: session.videoDecision || "Transcode";
+			: videoDecision === "transcode"
+				? "Transcode"
+				: "Playback unknown";
 	const MediaIcon = getMediaIcon(session.mediaType);
 
 	const badgeClass =
@@ -258,15 +312,15 @@ const SessionBadges = ({
 			>
 				<Monitor className={iconClass} />
 				{transcodeLabel}
+				{session.videoCodec ? ` · ${session.videoCodec.toUpperCase()}` : ""}
 				{session.videoResolution ? ` · ${session.videoResolution}` : ""}
 			</span>
 
 			{/* Audio codec + decision */}
 			{session.audioCodec &&
 				(() => {
-					const audioLower = session.audioDecision.toLowerCase();
-					const isAudioDirect = audioLower.includes("direct") || audioLower === "copy";
-					const audioColor = isAudioDirect ? undefined : SEMANTIC_COLORS.warning;
+					const audioDecision = normalizeSessionPlaybackDecision(session.audioDecision);
+					const audioColor = audioDecision === "transcode" ? SEMANTIC_COLORS.warning : undefined;
 					return (
 						<span
 							className={
@@ -286,25 +340,29 @@ const SessionBadges = ({
 						>
 							{size === "md" && <Headphones className={iconClass} />}
 							{session.audioCodec.toUpperCase()}
-							{!isAudioDirect && " (Transcode)"}
+							{audioDecision === "transcode"
+								? " (Transcode)"
+								: audioDecision === "unknown"
+									? " (method unknown)"
+									: ""}
 						</span>
 					);
 				})()}
 
 			{/* Bandwidth */}
-			{session.bandwidth != null && session.bandwidth > 0 && (
-				<span
-					className={badgeClass}
-					style={{
-						backgroundColor: SEMANTIC_COLORS.info.bg,
-						border: `1px solid ${SEMANTIC_COLORS.info.border}`,
-						color: SEMANTIC_COLORS.info.text,
-					}}
-				>
-					{size === "md" && <Wifi className={iconClass} />}
-					{formatBandwidth(session.bandwidth)}
-				</span>
-			)}
+			<span
+				role="note"
+				aria-label="Session stream rate"
+				className={badgeClass}
+				style={{
+					backgroundColor: SEMANTIC_COLORS.info.bg,
+					border: `1px solid ${SEMANTIC_COLORS.info.border}`,
+					color: SEMANTIC_COLORS.info.text,
+				}}
+			>
+				{size === "md" && <Wifi className={iconClass} />}
+				{describeSessionRate(session)}
+			</span>
 
 			{/* LAN/WAN */}
 			{session.location && (
@@ -355,7 +413,18 @@ export const NowPlayingWidget = ({
 		{ enabled: hasJellyfinInstances, query: jellyfinQuery },
 	]);
 
-	const rawSessions = mergeSessions(plexSessions, tautulliSessions, jellyfinSessions);
+	const rateEvidence = {
+		plex: sessionRateEvidence(plexQuery),
+		tautulli: sessionRateEvidence(tautulliQuery),
+		jellyfin: sessionRateEvidence(jellyfinQuery),
+	};
+	const rawSessions = mergeSessions(plexSessions, tautulliSessions, jellyfinSessions).map(
+		(session) => ({
+			...session,
+			rateStatus: rateEvidence[session.source].status,
+			rateBasis: rateEvidence[session.source].basis,
+		}),
+	);
 	const sessions = incognitoMode
 		? rawSessions.map((s) => ({
 				...s,
@@ -367,16 +436,30 @@ export const NowPlayingWidget = ({
 				instanceName: getLinuxInstanceName(s.instanceName),
 			}))
 		: rawSessions;
-	const plexBandwidth = hasPlexInstances
-		? (plexQuery.data?.totalBandwidth ?? 0)
-		: useTautulliFallback
-			? (tautulliQuery.data?.totalBandwidth ?? 0)
-			: 0;
-	const totalBandwidth = coverage.exact
-		? plexBandwidth + (hasJellyfinInstances ? (jellyfinQuery.data?.totalBandwidth ?? 0) : 0)
-		: 0;
-	const lanBandwidth = useTautulliFallback ? (tautulliQuery.data?.lanBandwidth ?? 0) : 0;
-	const wanBandwidth = useTautulliFallback ? (tautulliQuery.data?.wanBandwidth ?? 0) : 0;
+	const enabledRateEvidence = [
+		...(hasPlexInstances ? [rateEvidence.plex] : []),
+		...(useTautulliFallback ? [rateEvidence.tautulli] : []),
+		...(hasJellyfinInstances ? [rateEvidence.jellyfin] : []),
+	];
+	const allRatesCurrent = enabledRateEvidence.every((evidence) => evidence.status === "current");
+	const rateCoverage = measureSessionBandwidth(
+		sessions.map((session) => ({
+			bandwidth: session.rateStatus === "current" ? session.bandwidth : undefined,
+		})),
+	);
+	const rateBasis = enabledRateEvidence.some((evidence) => evidence.basis === "encoding-estimate")
+		? enabledRateEvidence.some((evidence) => evidence.basis === "provider-reported")
+			? "Reported/estimated"
+			: "Estimated"
+		: "Reported";
+	const rateSummary =
+		rateCoverage.knownTotalKbps === null || (sessions.length === 0 && !allRatesCurrent)
+			? enabledRateEvidence.some((evidence) => evidence.status === "unverified")
+				? "Stream rate unverified"
+				: `Current stream rate unknown (${rateCoverage.measuredSessions}/${sessions.length} observations)`
+			: allRatesCurrent && coverage.exact && rateCoverage.status === "complete"
+				? `${rateBasis} stream rate: ${formatBandwidth(rateCoverage.knownTotalKbps)}`
+				: `Known subtotal: ${formatBandwidth(rateCoverage.knownTotalKbps)} (${rateBasis.toLowerCase()}; ${rateCoverage.measuredSessions}/${sessions.length} observations)`;
 	const summary = coverage.exact
 		? `${sessions.length} active stream${sessions.length !== 1 ? "s" : ""}`
 		: `${sessions.length} session observation${sessions.length !== 1 ? "s" : ""}`;
@@ -446,9 +529,13 @@ export const NowPlayingWidget = ({
 								</div>
 								<div>
 									<h3 className="text-sm font-semibold text-foreground">Now Playing</h3>
-									<p className="text-xs text-muted-foreground">
-										{summary}
-										{totalBandwidth > 0 ? ` · ${formatBandwidth(totalBandwidth)}` : ""}
+									<p className="text-xs text-muted-foreground">{summary}</p>
+									<p
+										role="note"
+										aria-label="Observed stream rate summary"
+										className="text-xs text-muted-foreground"
+									>
+										{rateSummary}
 									</p>
 								</div>
 							</div>
@@ -514,22 +601,13 @@ export const NowPlayingWidget = ({
 					<Radio className="h-4 w-4" style={{ color: plexGradient.from }} />
 					<span className="text-sm font-semibold text-foreground">{summary}</span>
 				</div>
-				{totalBandwidth > 0 && (
-					<div className="flex items-center gap-2 text-xs text-muted-foreground">
-						<Wifi className="h-3 w-3" />
-						<span>{formatBandwidth(totalBandwidth)}</span>
-						{lanBandwidth > 0 && (
-							<span className="text-muted-foreground/60">
-								(LAN: {formatBandwidth(lanBandwidth)})
-							</span>
-						)}
-						{wanBandwidth > 0 && (
-							<span className="text-muted-foreground/60">
-								(WAN: {formatBandwidth(wanBandwidth)})
-							</span>
-						)}
-					</div>
-				)}
+				<p
+					role="note"
+					aria-label="Observed stream rate summary"
+					className="text-xs text-muted-foreground"
+				>
+					{rateSummary}
+				</p>
 			</div>
 
 			{coverage.exact && sessions.length === 0 && (

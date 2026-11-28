@@ -14,7 +14,7 @@ import {
 	Wifi,
 	X,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { PremiumEmptyState, PremiumSection, PremiumSkeleton } from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
@@ -64,26 +64,35 @@ export const SessionsSection = () => {
 	const { gradient: themeGradient } = useThemeGradient();
 
 	const [sessions, setSessions] = useState<SessionInfo[]>([]);
-	const [totalSessions, setTotalSessions] = useState(0);
+	const [totalSessions, setTotalSessions] = useState<number | null>(null);
+	const [readUnavailable, setReadUnavailable] = useState(false);
+	const readGeneration = useRef(0);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 	const [refreshing, setRefreshing] = useState(false);
 	const [revokingId, setRevokingId] = useState<string | null>(null);
 
 	const loadSessions = useCallback(async (isRefresh = false) => {
+		const generation = ++readGeneration.current;
 		try {
 			if (isRefresh) {
 				setRefreshing(true);
 			}
 			setError(null);
 			const data: SessionsResponse = await getSessions();
+			if (generation !== readGeneration.current) return;
 			setSessions(data.sessions);
 			setTotalSessions(data.totalSessions);
+			setReadUnavailable(false);
 		} catch (err) {
+			if (generation !== readGeneration.current) return;
+			setReadUnavailable(true);
 			setError(getErrorMessage(err, "Failed to load sessions"));
 		} finally {
-			setLoading(false);
-			setRefreshing(false);
+			if (generation === readGeneration.current) {
+				setLoading(false);
+				setRefreshing(false);
+			}
 		}
 	}, []);
 
@@ -102,6 +111,9 @@ export const SessionsSection = () => {
 
 	useEffect(() => {
 		loadSessions();
+		return () => {
+			readGeneration.current += 1;
+		};
 	}, [loadSessions]);
 
 	const formatDate = (dateString: string) => {
@@ -214,34 +226,41 @@ export const SessionsSection = () => {
 				)}
 
 				{/* Session Count Summary */}
-				<div className="rounded-xl border border-border/30 bg-muted/10 p-4">
-					<div className="flex items-center gap-4">
-						<div
-							className="flex h-14 w-14 items-center justify-center rounded-2xl shrink-0"
-							style={{
-								background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
-								border: `1px solid ${themeGradient.from}30`,
-							}}
-						>
-							<Monitor className="h-7 w-7" style={{ color: themeGradient.from }} />
-						</div>
-						<div>
-							<p
-								className="text-3xl font-bold"
+				{readUnavailable && totalSessions !== null && (
+					<p className="text-sm text-muted-foreground" role="status">
+						Showing last known sessions; this information may be outdated.
+					</p>
+				)}
+				{totalSessions !== null && (
+					<div className="rounded-xl border border-border/30 bg-muted/10 p-4">
+						<div className="flex items-center gap-4">
+							<div
+								className="flex h-14 w-14 items-center justify-center rounded-2xl shrink-0"
 								style={{
-									background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
-									WebkitBackgroundClip: "text",
-									WebkitTextFillColor: "transparent",
+									background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+									border: `1px solid ${themeGradient.from}30`,
 								}}
 							>
-								{totalSessions}
-							</p>
-							<p className="text-sm text-muted-foreground">
-								{totalSessions === 1 ? "Active session" : "Active sessions"}
-							</p>
+								<Monitor className="h-7 w-7" style={{ color: themeGradient.from }} />
+							</div>
+							<div>
+								<p
+									className="text-3xl font-bold"
+									style={{
+										background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+										WebkitBackgroundClip: "text",
+										WebkitTextFillColor: "transparent",
+									}}
+								>
+									{totalSessions}
+								</p>
+								<p className="text-sm text-muted-foreground">
+									{totalSessions === 1 ? "Active session" : "Active sessions"}
+								</p>
+							</div>
 						</div>
 					</div>
-				</div>
+				)}
 
 				{/* Session List */}
 				<div className="rounded-xl border border-border/30 bg-muted/10 p-6">
@@ -411,11 +430,17 @@ export const SessionsSection = () => {
 									);
 								})}
 							</div>
+						) : totalSessions === null ? (
+							<PremiumEmptyState
+								icon={Monitor}
+								title="Session information unavailable"
+								description="Refresh to retrieve session information."
+							/>
 						) : (
 							<PremiumEmptyState
 								icon={Monitor}
 								title="No active sessions found"
-								description="Unable to retrieve session information"
+								description="No sessions were returned by the latest successful read."
 							/>
 						)}
 					</div>

@@ -102,7 +102,7 @@ export const QueueCleanerStatistics = () => {
 					icon={Trash2}
 					value={statistics.totals.itemsCleaned}
 					label="Total Cleaned"
-					description="Items removed all time"
+					description="Items removed in retained logs (last 90 days)"
 					animationDelay={0}
 				/>
 				<StatCard

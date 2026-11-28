@@ -61,8 +61,23 @@ Before bumping any version numbers, decide *what* this release contains.
 - [ ] Container starts and both API (3001) and Web (3000) respond
 - [ ] `GET /health` returns `{ "status": "ok", "version": "X.Y.Z", "commit": "..." }`
 - [ ] Test with `PUID`/`PGID` override
-- [ ] Test fresh install (no `/config` volume)
-- [ ] Test upgrade from previous version (existing `/config` volume)
+- [ ] For Docker SQLite, test a fresh install with an explicit persistent directory
+      mount, then clean shutdown, restart, and container replacement using the same mount.
+- [ ] Verify a fresh writable-layer-only SQLite launch refuses before database creation,
+      and a legacy writable-layer-only database is conserved on refusal. Verify the
+      [storage transition](SQLITE-STORAGE.md) with an encrypted backup from a disposable
+      legacy source and a separately enrolled mounted destination.
+- [ ] Test upgrade from previous version (existing `/config` volume) and verify the
+      deployed mount and database identity are preserved. Run the supported and refused
+      topology checks on native AMD64 and ARM64.
+      The immutable staging receipt requires those storage cases on both
+      architectures in addition to the existing restart, browser, asset and
+      scan gates.
+- [ ] Call out breaking deployment requirements before selecting a stable
+      version. The SQLite directory-mount requirement changes the startup
+      contract for previous writable-layer Docker installs. Require explicit
+      maintainer version disposition and pre-upgrade preservation guidance
+      before including it in a maintenance patch.
 
 ### 5. Functional Smoke Test
 
@@ -81,23 +96,81 @@ Before bumping any version numbers, decide *what* this release contains.
 
 ## Release
 
-### 7. Tag & Publish
+### 7. Qualify, approve and promote Docker artifacts
 
-```bash
-# Create annotated tag
-git tag -a vX.Y.Z -m "vX.Y.Z — <tagline>"
+#### Stage the actual release images
 
-# Push tag (triggers docker-combined.yml workflow)
-git push origin vX.Y.Z
-```
+- [ ] Confirm the final reviewed commit is the current `main`, its CI passed, and root
+  `package.json` contains the intended stable version.
+- [ ] Dispatch **Qualify Immutable Release Candidate** (`docker-stage.yml`) on
+  `main` with the full source SHA and the stable version, such as `2.25.0`.
+  This dispatch builds native Linux AMD64 and ARM64 with stable version metadata
+  and stages them under nonstable candidate references in Docker Hub and GHCR.
+- [ ] Require the workflow to succeed. Each architecture runs packaged asset,
+  native runtime, mobile browser and digest-pinned HIGH/CRITICAL image checks.
+  Both registry graphs must contain the exact child manifests, configs, layers
+  and BuildKit SBOM/provenance for the qualified multiarchitecture index.
+- [ ] Retain `release-qualification.json`, its file SHA-256, the stage run ID and
+  attempt, the release source commit/tree, and the exact child and index digests.
+  A failed, interrupted, expired or mismatched stage cannot qualify a release.
+  Use a fresh stage dispatch rather than reusing partial artifacts. Keep one successful stage
+  per exact source. A second incompatible success prevents automatic promotion
+  until the maintainer reviews the conflict and qualifies the resolved source.
 
-- [ ] Tag pushed to GitHub
-- [ ] `docker-combined.yml` workflow completes successfully
-  - Builds linux/amd64 and linux/arm64
-  - Pushes to Docker Hub (`khak1s/arr-dashboard:X.Y.Z`, `:X.Y`, `:X`, `:latest`)
-  - Pushes to GHCR (`ghcr.io/kha-kis/arr-dashboard:X.Y.Z`, etc.)
-  - Trivy security scan passes
-- [ ] Verify Docker Hub image is pullable: `docker pull khak1s/arr-dashboard:X.Y.Z`
+#### Authorize promotion with the release tag
+
+For the first tag-authorized release, a repository administrator must retire the
+historical **docker-combined.yml** workflow, ID 196258923. It can build and move
+stable aliases when a tag points to an older commit. Disable that workflow ID
+before releasing and verify that its API state is `disabled_manually`. The
+replacement `docker-stage.yml` must remain active under its own ID. The old path stays registered
+as an inert placeholder so you can disable the same historical ID.
+
+Restrict stable tag creation to the release maintainer. In repository **Settings
+→ Rules → Rulesets**, create an active tag ruleset for `v[0-9]*.[0-9]*.[0-9]*`,
+excluding prerelease and build metadata patterns `*-*` and `*+*`. Enable
+**Restrict creations**, **Restrict updates** and **Restrict deletions**. Allow
+bypass only for the trusted repository administrator role. Verify that a stable
+tag matches the active rule. The workflow independently requires a protected
+tag and restricts the tag push and recovery reruns to the canonical owner.
+
+- [ ] Confirm the stage completed and retain its immutable index, receipt SHA-256
+  and expected registry aliases. Require an unchanged current main and one
+  compatible qualification. The two registry credentials are the existing
+  repository Docker Hub credentials and the job-scoped GHCR token. Registry
+  accounts can still change tags directly if they have write access. Keep other
+  stable writers out of the publication window.
+- [ ] Obtain explicit authorization for the qualified source and index. Create
+  and push the annotated `vX.Y.Z` tag at the exact qualified main commit.
+  This push starts **Promote Qualified Release Docker Image**
+  (`docker-promote.yml`). The normal path has no separate dispatch or approval.
+- [ ] The workflow finds successful canonical staging evidence issued before the
+  tag, verifies its immutable archive and both OCI graphs, and refuses absent,
+  expired, conflicting or mismatched evidence. Only its write job uses registry
+  credentials. It copies the exact existing index without rebuilding.
+
+#### Verify promotion or reconcile a partial result
+
+The workflow publishes the version tag in both registries first, then the
+minor, major and `latest` aliases. Each write is checked and read back. A
+different existing version digest is a conflict. Floating aliases must match the
+recorded per-registry baseline before the first attempt. A failed build or scan,
+incomplete evidence or mismatched identity prevents stable writes.
+
+Registry updates are sequential. If interrupted or failed, the workflow stops on
+the first error and reports the alias state it can verify. Inspect every alias
+directly in both registries if a write or readback is uncertain. There is no
+automatic rollback. Before a maintainer authorizes a recovery rerun, reconcile
+the existing Git tag, original qualified index and both registries against the
+recorded baseline. Rerun the original tag workflow only as the release
+maintainer. It will reconcile aliases at their original digest or already at the
+qualified index and refuse any other state. Keep the original tag in place.
+Advanced main or expired evidence requires a separately reviewed release
+recovery decision.
+
+- [ ] Verify `X.Y.Z`, `X.Y`, `X` and `latest` in both registries resolve to the
+  qualified index. Pull both platform digests and verify installed source and
+  version. Continue to the GitHub release only after this verification.
 
 ### 8. GitHub Release
 
@@ -120,8 +193,8 @@ root package.json ("X.Y.Z")
     ├── Dockerfile builder stage
     │   └── version.json { version: "X.Y.Z", commitSha: "abc1234" }
     │
-    ├── Docker CI (docker-combined.yml)
-    │   ├── Git tag "vX.Y.Z" → VERSION build arg → OCI label
+    ├── Docker CI (docker-stage.yml)
+    │   ├── Qualified stable version → VERSION build arg → OCI label
     │   └── COMMIT_SHA build arg → version.json + OCI label
     │
     └── Runtime
@@ -160,4 +233,4 @@ For urgent fixes after a release:
 2. Fix, test, PR to main
 3. Bump patch version: `X.Y.Z` → `X.Y.Z+1`
 4. Follow the same checklist above (abbreviated — skip unchanged sections)
-5. Tag as `vX.Y.Z+1`
+5. Qualify, tag, and promote the approved patch using Step 7.

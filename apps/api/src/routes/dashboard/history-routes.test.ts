@@ -67,7 +67,22 @@ function flushLogger(logger: CapturedLogger) {
 
 function createPrismaStub() {
 	const sessions = new Map<string, any>();
-	return {
+	const prisma = {
+		$queryRaw: vi.fn(async (_query: TemplateStringsArray, id: string) => {
+			const row = sessions.get(id);
+			if (!row) return [];
+			const { user, ...session } = row;
+			return [
+				{
+					...session,
+					principalId: user.id,
+					principalUsername: user.username,
+					principalMustChangePassword: user.mustChangePassword,
+					principalCreatedAt: user.createdAt,
+					principalUpdatedAt: user.updatedAt,
+				},
+			];
+		}),
 		session: {
 			create: vi.fn(async ({ data }: any) => {
 				const row = {
@@ -99,6 +114,12 @@ function createPrismaStub() {
 				sessions.delete(where.id);
 			}),
 		},
+	};
+	return {
+		...prisma,
+		$transaction: vi.fn(async (callback: (tx: typeof prisma) => Promise<unknown>) =>
+			callback(prisma),
+		),
 	};
 }
 

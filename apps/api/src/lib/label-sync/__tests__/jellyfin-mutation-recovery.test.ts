@@ -59,7 +59,6 @@ function activeKey(row: ReturnType<typeof record>): string {
 
 function harness(rows: Array<Record<string, unknown>>) {
 	let updates = 0;
-	const terminalStatuses = new Set(["verified", "noop", "failed", "blocked"]);
 	const tx = {
 		labelSyncMutationAttempt: {
 			findMany: vi.fn(
@@ -68,10 +67,9 @@ function harness(rows: Array<Record<string, unknown>>) {
 					take: number;
 					orderBy: unknown;
 				}) => {
-					expect(args.where.status.notIn).toEqual(["verified", "noop", "failed", "blocked"]);
 					expect(args.take).toBe(10_001);
 					expect(args.orderBy).toEqual({ id: "asc" });
-					return rows.filter((row) => !terminalStatuses.has(String(row.status)));
+					return rows.filter((row) => !args.where.status.notIn.includes(String(row.status)));
 				},
 			),
 			updateMany: vi.fn(

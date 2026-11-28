@@ -1,4 +1,5 @@
 import Fastify, { type FastifyInstance } from "fastify";
+import { Prisma } from "../../../lib/prisma.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	createDeploymentConnectionStateToken,
@@ -124,7 +125,7 @@ describe("deployment history undeploy", () => {
 	const rawRequest = vi.fn();
 	const systemGet = vi.fn();
 	const transaction = vi.fn();
-	const cleanupUpdateMany = vi.fn();
+	const cleanupUpdate = vi.fn();
 	let transactionClient: Record<string, unknown>;
 
 	beforeEach(async () => {
@@ -139,8 +140,10 @@ describe("deployment history undeploy", () => {
 		transaction.mockImplementation(async (callback) => callback(transactionClient));
 		const prisma = {
 			libraryCleanupConfig: {
-				upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
-				updateMany: cleanupUpdateMany.mockResolvedValue({ count: 1 }),
+				findUnique: vi.fn().mockResolvedValue(null),
+				create: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
+				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+				update: cleanupUpdate.mockResolvedValue({ id: "cleanup-config" }),
 			},
 			templateDeploymentHistory: {
 				findFirst: historyFindFirst,
@@ -326,23 +329,30 @@ describe("deployment history undeploy", () => {
 		const response = await createInjectAuthenticated(app)("POST", "/history/history-1/undeploy");
 
 		expect(response.statusCode, response.body).toBe(200);
-		const acquireIndexes = cleanupUpdateMany.mock.calls.flatMap(([args], index) =>
+		const acquireIndexes = cleanupUpdate.mock.calls.flatMap(([args], index) =>
 			args.data.runClaimToken ? [index] : [],
 		);
-		const releaseIndexes = cleanupUpdateMany.mock.calls.flatMap(([args], index) =>
-			args.data.runClaimToken === null ? [index] : [],
-		);
 		expect(acquireIndexes).toHaveLength(1);
-		expect(releaseIndexes).toHaveLength(1);
+		const token = cleanupUpdate.mock.calls[acquireIndexes[0]!]![0].data.runClaimToken;
+		expect(token).toEqual(expect.any(String));
+		const releaseIndex = cleanupUpdate.mock.calls.findIndex(
+			([args]) => args.data.runClaimToken === null,
+		);
+		expect(releaseIndex).toBeGreaterThan(acquireIndexes[0]!);
+		expect(cleanupUpdate.mock.calls[releaseIndex]?.[0]).toEqual({
+			where: { id: "cleanup-config", userId, runClaimToken: token },
+			data: { runClaimToken: null, runClaimedAt: null },
+			select: { id: true },
+		});
 		const finalWriteIndex = historyUpdateMany.mock.calls.findIndex(
 			([args]) => args.data.rolledBack === true,
 		);
 		expect(finalWriteIndex).toBeGreaterThanOrEqual(0);
-		expect(cleanupUpdateMany.mock.invocationCallOrder[acquireIndexes[0]!]).toBeLessThan(
+		expect(cleanupUpdate.mock.invocationCallOrder[acquireIndexes[0]!]).toBeLessThan(
 			historyUpdateMany.mock.invocationCallOrder[0]!,
 		);
 		expect(historyUpdateMany.mock.invocationCallOrder[finalWriteIndex]).toBeLessThan(
-			cleanupUpdateMany.mock.invocationCallOrder[releaseIndexes[0]!]!,
+			cleanupUpdate.mock.invocationCallOrder[releaseIndex]!,
 		);
 	});
 
@@ -367,9 +377,14 @@ describe("deployment history undeploy", () => {
 		historyFindMany.mockResolvedValue([history]);
 		getFormatById.mockResolvedValue(targetFormat);
 		let renewals = 0;
-		cleanupUpdateMany.mockImplementation(async ({ data }) => {
-			if (!("runClaimToken" in data) && ++renewals === 4) return { count: 0 };
-			return { count: 1 };
+		cleanupUpdate.mockImplementation(async ({ data }) => {
+			if (!("runClaimToken" in data) && ++renewals === 4) {
+				throw new Prisma.PrismaClientKnownRequestError("Synthetic cleanup lease was lost", {
+					code: "P2025",
+					clientVersion: "test",
+				});
+			}
+			return { id: "cleanup-config" };
 		});
 
 		const response = await createInjectAuthenticated(app)("POST", "/history/history-1/undeploy");
@@ -406,9 +421,14 @@ describe("deployment history undeploy", () => {
 		getAllProfiles.mockResolvedValue([]);
 		getFormatById.mockResolvedValue(targetFormat);
 		let renewals = 0;
-		cleanupUpdateMany.mockImplementation(async ({ data }) => {
-			if (!("runClaimToken" in data) && ++renewals === 5) return { count: 0 };
-			return { count: 1 };
+		cleanupUpdate.mockImplementation(async ({ data }) => {
+			if (!("runClaimToken" in data) && ++renewals === 5) {
+				throw new Prisma.PrismaClientKnownRequestError("Synthetic cleanup lease was lost", {
+					code: "P2025",
+					clientVersion: "test",
+				});
+			}
+			return { id: "cleanup-config" };
 		});
 
 		const response = await createInjectAuthenticated(app)("POST", "/history/history-1/undeploy");
@@ -1545,7 +1565,7 @@ describe("deployment history delete", () => {
 	const historyDeleteMany = vi.fn();
 	const syncFindMany = vi.fn();
 	const backupFindFirst = vi.fn();
-	const cleanupUpdateMany = vi.fn();
+	const cleanupUpdate = vi.fn();
 
 	beforeEach(async () => {
 		vi.resetAllMocks();
@@ -1554,8 +1574,10 @@ describe("deployment history delete", () => {
 		registerTestErrorHandler(app);
 		const prisma = {
 			libraryCleanupConfig: {
-				upsert: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
-				updateMany: cleanupUpdateMany.mockResolvedValue({ count: 1 }),
+				findUnique: vi.fn().mockResolvedValue(null),
+				create: vi.fn().mockResolvedValue({ id: "cleanup-config" }),
+				updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+				update: cleanupUpdate.mockResolvedValue({ id: "cleanup-config" }),
 			},
 			templateDeploymentHistory: {
 				findFirst: historyFindFirst,
@@ -1751,9 +1773,22 @@ describe("deployment history delete", () => {
 
 	it("holds the topology lease while checking paired recovery state and deleting", async () => {
 		let leaseHeld = false;
-		cleanupUpdateMany.mockImplementation(async ({ data }) => {
-			leaseHeld = data.runClaimToken !== null;
-			return { count: 1 };
+		let activeToken: string | undefined;
+		cleanupUpdate.mockImplementation(async ({ data, where }) => {
+			if (data.runClaimToken && data.runClaimToken !== null) {
+				activeToken = data.runClaimToken;
+				leaseHeld = true;
+			}
+			if (data.runClaimToken === null) {
+				expect(where).toEqual({
+					id: "cleanup-config",
+					userId,
+					runClaimToken: expect.any(String),
+				});
+				expect(where.runClaimToken).toBe(activeToken);
+				leaseHeld = false;
+			}
+			return { id: "cleanup-config" };
 		});
 		historyFindFirst.mockResolvedValue(historyRow({ undeployStatus: "COMPLETED" }));
 		syncFindMany.mockImplementation(async () => {

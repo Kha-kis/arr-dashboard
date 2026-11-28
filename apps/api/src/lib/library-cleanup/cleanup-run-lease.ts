@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { Prisma } from "../prisma.js";
 import type { CleanupExecutorDeps } from "./types.js";
 
 export const CLEANUP_RUN_LEASE_MS = 2 * 60 * 60 * 1000;
@@ -18,6 +19,23 @@ export class CleanupRunLeaseLostError extends Error {
 	}
 }
 
+async function updateCleanupRunClaim(
+	prisma: CleanupExecutorDeps["prisma"],
+	where: Prisma.LibraryCleanupConfigWhereUniqueInput,
+	data: Prisma.LibraryCleanupConfigUpdateInput,
+): Promise<boolean> {
+	try {
+		// Keep the full guard on a scalar update so SQLite needs no deferred
+		// transaction with an earlier read snapshot.
+		await prisma.libraryCleanupConfig.update({ where, data, select: { id: true } });
+		return true;
+	} catch (error) {
+		if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025")
+			return false;
+		throw error;
+	}
+}
+
 export async function acquireCleanupRunLease(
 	prisma: CleanupExecutorDeps["prisma"],
 	userId: string,
@@ -25,8 +43,9 @@ export async function acquireCleanupRunLease(
 	now: Date = new Date(),
 	runClaimToken: string = randomUUID(),
 ): Promise<string | null> {
-	const claim = await prisma.libraryCleanupConfig.updateMany({
-		where: {
+	const claimed = await updateCleanupRunClaim(
+		prisma,
+		{
 			id: configId,
 			userId,
 			OR: [
@@ -35,9 +54,9 @@ export async function acquireCleanupRunLease(
 				{ runClaimedAt: { lt: new Date(now.getTime() - CLEANUP_RUN_LEASE_MS) } },
 			],
 		},
-		data: { runClaimToken, runClaimedAt: now },
-	});
-	return claim.count === 1 ? runClaimToken : null;
+		{ runClaimToken, runClaimedAt: now },
+	);
+	return claimed ? runClaimToken : null;
 }
 
 export async function releaseCleanupRunLease(
@@ -46,11 +65,11 @@ export async function releaseCleanupRunLease(
 	configId: string,
 	runClaimToken: string,
 ): Promise<boolean> {
-	const release = await prisma.libraryCleanupConfig.updateMany({
-		where: { id: configId, userId, runClaimToken },
-		data: { runClaimToken: null, runClaimedAt: null },
-	});
-	return release.count === 1;
+	return updateCleanupRunClaim(
+		prisma,
+		{ id: configId, userId, runClaimToken },
+		{ runClaimToken: null, runClaimedAt: null },
+	);
 }
 
 export async function renewCleanupRunLease(
@@ -60,11 +79,11 @@ export async function renewCleanupRunLease(
 	runClaimToken: string,
 	now: Date = new Date(),
 ): Promise<boolean> {
-	const renewal = await prisma.libraryCleanupConfig.updateMany({
-		where: { id: configId, userId, runClaimToken },
-		data: { runClaimedAt: now },
-	});
-	return renewal.count === 1;
+	return updateCleanupRunClaim(
+		prisma,
+		{ id: configId, userId, runClaimToken },
+		{ runClaimedAt: now },
+	);
 }
 
 export interface CleanupRunLease {

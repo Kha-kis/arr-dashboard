@@ -5,10 +5,15 @@
  * Aggregates across all user's Plex instances.
  */
 
-import type { PlexNowPlayingResponse, PlexSession, SessionAvailability } from "@arr/shared";
+import {
+	getSessionBandwidthKbps,
+	measureSessionBandwidth,
+	type PlexNowPlayingResponse,
+	type PlexSession,
+	type SessionAvailability,
+} from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { executeOnPlexInstances } from "../../lib/plex/plex-helpers.js";
-import { computeTotalBandwidth } from "./lib/now-playing-helpers.js";
 
 export async function registerNowPlayingRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	/**
@@ -36,7 +41,10 @@ export async function registerNowPlayingRoutes(app: FastifyInstance, _opts: Fast
 					duration: s.duration,
 					videoDecision: s.videoDecision,
 					audioDecision: s.audioDecision,
-					bandwidth: s.bandwidth,
+					bandwidth: getSessionBandwidthKbps(s.bandwidth) ?? undefined,
+					videoCodec: s.videoCodec,
+					audioCodec: s.audioCodec,
+					videoResolution: s.videoResolution,
 					thumb: s.thumb,
 					instanceId: instance.id,
 					instanceName: instance.label,
@@ -63,12 +71,18 @@ export async function registerNowPlayingRoutes(app: FastifyInstance, _opts: Fast
 
 		// aggregated is flattened by executeOnPlexInstances (uses flatMap)
 		const sessions = result.aggregated as unknown as PlexSession[];
-		const totalBandwidth = computeTotalBandwidth(sessions);
+		const bandwidthCoverage = measureSessionBandwidth(sessions);
+		if (configuredSources === 0) {
+			bandwidthCoverage.status = "unavailable";
+			bandwidthCoverage.knownTotalKbps = null;
+		}
 
 		const response: PlexNowPlayingResponse = {
 			sessions,
-			totalBandwidth,
+			totalBandwidth: bandwidthCoverage.knownTotalKbps ?? 0,
 			availability,
+			bandwidthCoverage,
+			bandwidthBasis: "provider-reported",
 		};
 
 		return reply.send(response);

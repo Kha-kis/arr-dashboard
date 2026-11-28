@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { Prisma } from "../../lib/prisma.js";
 
 // ---------------------------------------------------------------------------
 // Module-level mocks — vi.hoisted for references before vi.mock
@@ -111,8 +112,10 @@ function createMockPrisma() {
 	const prisma = {
 		user: userMock,
 		libraryCleanupConfig: {
-			upsert: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
+			findUnique: vi.fn().mockResolvedValue(null),
+			create: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
 			updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+			update: vi.fn().mockResolvedValue({ id: "cleanup-config-1" }),
 		},
 		serviceInstance: {
 			findMany: vi.fn().mockResolvedValue([]),
@@ -302,6 +305,7 @@ describe("POST /auth/login", () => {
 			"user-1",
 			false, // rememberMe default
 			expect.any(Object),
+			{ authorizePasswordSession: expect.any(Function) },
 		);
 		expect(mockSessionService.attachCookie).toHaveBeenCalled();
 	});
@@ -515,6 +519,8 @@ describe("DELETE /auth/password", () => {
 		});
 
 		expect(res.statusCode).toBe(200);
+		expect(res.json().message).toMatch(/OIDC/);
+		expect(res.json().message).not.toMatch(/passkey/i);
 		expect(mockPrisma.oIDCProvider.updateMany).toHaveBeenCalledWith({
 			where: {
 				...oidcProvider,
@@ -555,16 +561,44 @@ describe("DELETE /auth/account", () => {
 		mockPrisma.user.findFirst.mockResolvedValue(makeUser({ hashedPassword: null }));
 		mockPrisma.user.findUnique.mockResolvedValue(makeUser({ hashedPassword: null }));
 
+		mockPrisma.libraryCleanupConfig.update.mockResolvedValueOnce({ id: "cleanup-config-1" });
+		mockPrisma.libraryCleanupConfig.update.mockRejectedValueOnce(
+			new Prisma.PrismaClientKnownRequestError("Synthetic account cascade removed config", {
+				code: "P2025",
+				clientVersion: "test",
+			}),
+		);
 		const res = await injectAuthenticated("DELETE", "/auth/account");
 
 		expect(res.statusCode).toBe(200);
 		expect(mockPrisma.user.delete).toHaveBeenCalledWith({ where: { id: "user-1" } });
-		expect(mockPrisma.libraryCleanupConfig.updateMany).toHaveBeenCalledTimes(2);
+		expect(mockPrisma.libraryCleanupConfig.update).toHaveBeenCalledTimes(2);
+		const token = mockPrisma.libraryCleanupConfig.update.mock.calls[0]?.[0]?.data.runClaimToken;
+		expect(token).toEqual(expect.any(String));
+		expect(mockPrisma.libraryCleanupConfig.update.mock.calls[0]?.[0]).toMatchObject({
+			where: {
+				id: "cleanup-config-1",
+				userId: "user-1",
+				OR: expect.any(Array),
+			},
+			data: { runClaimToken: token, runClaimedAt: expect.any(Date) },
+			select: { id: true },
+		});
+		expect(mockPrisma.libraryCleanupConfig.update.mock.calls[1]?.[0]).toEqual({
+			where: { id: "cleanup-config-1", userId: "user-1", runClaimToken: token },
+			data: { runClaimToken: null, runClaimedAt: null },
+			select: { id: true },
+		});
 	});
 
 	it("returns 409 without deleting the account while cleanup owns the lease", async () => {
 		mockPrisma.user.findUnique.mockResolvedValue(makeUser({ hashedPassword: null }));
-		mockPrisma.libraryCleanupConfig.updateMany.mockResolvedValueOnce({ count: 0 });
+		mockPrisma.libraryCleanupConfig.update.mockRejectedValueOnce(
+			new Prisma.PrismaClientKnownRequestError("Cleanup config lease is already held", {
+				code: "P2025",
+				clientVersion: "test",
+			}),
+		);
 
 		const res = await injectAuthenticated("DELETE", "/auth/account");
 
@@ -591,7 +625,7 @@ describe("DELETE /auth/account", () => {
 			where: { userId: "user-1" },
 			select: { id: true },
 		});
-		expect(mockPrisma.libraryCleanupConfig.updateMany.mock.invocationCallOrder[0]).toBeLessThan(
+		expect(mockPrisma.libraryCleanupConfig.update.mock.invocationCallOrder[0]).toBeLessThan(
 			mockPrisma.serviceInstance.findMany.mock.invocationCallOrder[0]!,
 		);
 		expect(mockPrisma.user.delete).not.toHaveBeenCalled();

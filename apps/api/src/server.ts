@@ -12,6 +12,9 @@ import {
 import { type ApiEnv, envSchema } from "./config/env.js";
 import { arrErrorToHttpStatus, isArrError } from "./lib/arr/client-factory.js";
 import { registerBackupMutationGuard } from "./lib/backup/backup-mutation-gate.js";
+import type { RestoreRuntime } from "./lib/backup/restore-runtime-admission.js";
+import { registerRestoreRuntimeActivation } from "./lib/backup/restore-runtime-bootstrap.js";
+import type { CombinedListenerOverrides } from "./lib/lifecycle/combined-startup.js";
 import { logger } from "./lib/logger.js";
 
 function isPrismaKnownError(
@@ -28,7 +31,29 @@ function isPrismaKnownError(
 export type ServerOptions = {
 	logger?: boolean;
 	env?: ApiEnv;
+	restoreRuntime?: RestoreRuntime;
+	combinedListenerOverrides?: CombinedListenerOverrides;
 };
+
+/** Shared registration boundary for real server and native lifecycle tests. */
+export function registerSessionValidationHook(app: FastifyInstance): void {
+	app.addHook("preHandler", async (request) => {
+		request.currentUser = null;
+		request.sessionToken = null;
+		// Only the explicitly marked public liveness handler is independent of
+		// session/database admission. Never infer this from client URL input.
+		if (request.routeOptions.config.runtimeLiveness === true) return;
+		const resolved = await app.restoreRuntime.runIndependentOperation(
+			() => app.sessionService.validateRequest(request),
+			"session-validation",
+		);
+		if (resolved) {
+			request.currentUser = resolved.session.user;
+			request.sessionToken = resolved.token;
+			request.log = request.log.child({ userId: resolved.session.user.id });
+		}
+	});
+}
 
 export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 	const env = options.env ?? envSchema.parse(process.env);
@@ -41,6 +66,9 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 		trustProxy: env.TRUST_PROXY,
 	});
 	app.decorate("config", env);
+	if (options.combinedListenerOverrides)
+		app.decorate("combinedListenerOverrides", options.combinedListenerOverrides);
+	if (options.restoreRuntime) app.decorate("restoreRuntime", options.restoreRuntime);
 	registerBackupMutationGuard(app);
 
 	// Handle requests with unexpected Content-Type headers (e.g., Next.js proxy
@@ -83,17 +111,7 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 	app.decorateRequest("currentUser", null);
 	app.decorateRequest("sessionToken", null);
 
-	app.addHook("preHandler", async (request) => {
-		request.currentUser = null;
-		request.sessionToken = null;
-		const resolved = await app.sessionService.validateRequest(request);
-		if (resolved) {
-			request.currentUser = resolved.session.user;
-			request.sessionToken = resolved.token;
-			// Bind userId to this request's logger — all downstream logs include it
-			request.log = request.log.child({ userId: resolved.session.user.id });
-		}
-	});
+	registerSessionValidationHook(app);
 
 	app.setErrorHandler((error: unknown, request, reply) => {
 		// === ARR SDK errors — check FIRST (ArrError also has statusCode, so must precede duck-typing check) ===
@@ -170,6 +188,7 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 
 	registerPublicRoutes(app);
 	registerProtectedRoutes(app);
+	registerRestoreRuntimeActivation(app);
 
 	return app;
 };

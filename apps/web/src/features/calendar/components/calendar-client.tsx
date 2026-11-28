@@ -6,10 +6,11 @@ import { PlexQueryEvidenceNotice } from "../../../components/presentational/plex
 import { Alert, AlertDescription } from "../../../components/ui";
 import { useMultiInstanceCalendarQuery } from "../../../hooks/api/useDashboard";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
+import { useFirstDayOfWeek } from "../../../hooks/useFirstDayOfWeek";
+import { getPlexEvidenceFromError } from "../../../lib/plex-evidence";
 import { safeOpenUrl } from "../../../lib/utils/url-validation";
 import { useCalendarData } from "../hooks/use-calendar-data";
 import { useCalendarPlexLinks } from "../hooks/use-calendar-plex-links";
-import { useFirstDayOfWeek } from "../../../hooks/useFirstDayOfWeek";
 import { useCalendarState } from "../hooks/use-calendar-state";
 import { formatDateOnly, getPaddedCalendarDateRange } from "../lib/calendar-formatters";
 import { CalendarEventList } from "./calendar-event-list";
@@ -44,6 +45,19 @@ export const CalendarClient = () => {
 
 	const calendarData = useCalendarData(data, services, filters, visibleRange);
 	const { eventsByDate, serviceMap, instanceOptions, filteredEvents } = calendarData;
+	const availability =
+		error && data ? "last-known" : error ? "unavailable" : calendarData.availability;
+	const availabilityMessage = error
+		? data
+			? "Showing last-known calendar events. Current schedules could not be verified. Refresh or check connections."
+			: "Unable to verify calendar data. Refresh or check connections."
+		: availability === "partial"
+			? "Calendar coverage is incomplete. Known schedules are shown; additional events may be missing. Refresh or check connections."
+			: availability === "unavailable"
+				? "Calendar sources are unavailable. Schedules could not be verified. Refresh or check connections."
+				: availability === "not-configured"
+					? "No calendar sources match the current selection. Check connections or adjust service and instance filters."
+					: null;
 
 	// Plex deep links — only fetched when Plex is configured
 	const hasPlex = useMemo(() => services?.some((s) => s.service === "plex") ?? false, [services]);
@@ -129,10 +143,33 @@ export const CalendarClient = () => {
 
 	return (
 		<div className="space-y-5">
+			{plexLinks.invalidLinkItemCount > 0 && (
+				<div
+					role="status"
+					className="rounded-lg border border-border/30 p-4 text-sm text-muted-foreground"
+				>
+					Some calendar items lack a valid external ID for Plex links. Check their metadata in
+					Sonarr or Radarr. Schedule data remains available.
+				</div>
+			)}
+			{plexLinks.error && (
+				<div
+					role="status"
+					className="rounded-lg border border-border/30 p-4 text-sm text-muted-foreground"
+				>
+					Some Plex links could not be verified. Previously verified links remain available when
+					possible; missing links are unknown. Use Refresh calendar to retry.
+				</div>
+			)}
+			{plexLinks.pendingBatchCount > 0 && (
+				<div role="status" className="text-sm text-muted-foreground">
+					Calendar Plex links are loading. Schedule data remains available.
+				</div>
+			)}
 			<PlexQueryEvidenceNotice
-				error={plexLinks.error}
-				evidence={plexLinks.evidence}
+				evidence={plexLinks.evidence ?? getPlexEvidenceFromError(plexLinks.error)}
 				label="Calendar Plex links"
+				hasDisplayedValues={plexLinks.plexUrlMap.size > 0}
 			/>
 
 			{/* Header with navigation */}
@@ -142,7 +179,9 @@ export const CalendarClient = () => {
 				onPreviousMonth={calendarState.handlePreviousMonth}
 				onNextMonth={calendarState.handleNextMonth}
 				onGoToday={calendarState.handleGoToday}
-				onRefresh={() => void refetch()}
+				onRefresh={async () => {
+					await Promise.all([refetch(), plexLinks.refetch()]);
+				}}
 			/>
 
 			{/* Filters */}
@@ -160,11 +199,9 @@ export const CalendarClient = () => {
 			/>
 
 			{/* Error Alert */}
-			{error && (
-				<Alert variant="danger">
-					<AlertDescription>
-						Unable to load calendar data. Please refresh and try again.
-					</AlertDescription>
+			{availabilityMessage && (
+				<Alert variant={error || availability === "unavailable" ? "danger" : "default"}>
+					<AlertDescription>{availabilityMessage}</AlertDescription>
 				</Alert>
 			)}
 
@@ -198,6 +235,7 @@ export const CalendarClient = () => {
 				>
 					<div className="xl:sticky xl:top-6 xl:max-h-[calc(100vh-3rem)] xl:overflow-y-auto xl:[&::-webkit-scrollbar]:w-1 xl:[&::-webkit-scrollbar-thumb]:rounded-full xl:[&::-webkit-scrollbar-thumb]:bg-white/10">
 						<CalendarEventList
+							availability={availability}
 							selectedDate={selectedDate}
 							selectedEvents={selectedEvents}
 							serviceMap={serviceMap}

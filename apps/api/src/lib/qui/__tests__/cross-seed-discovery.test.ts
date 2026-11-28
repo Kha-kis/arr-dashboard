@@ -1,4 +1,4 @@
-import type { FastifyBaseLogger } from "fastify";
+import Fastify, { type FastifyBaseLogger } from "fastify";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { mockCreateQuiClient } = vi.hoisted(() => ({
@@ -9,6 +9,12 @@ vi.mock("../client-factory.js", () => ({
 	createQuiClient: mockCreateQuiClient,
 }));
 
+import {
+	createInjectAuthenticated,
+	registerTestErrorHandler,
+	setupAuthInjection,
+} from "../../../routes/__tests__/test-helpers.js";
+import { registerLibraryRoutes } from "../../../routes/qui/library-routes.js";
 import { getDiscoveryAvailability, runDiscoveryBatch } from "../cross-seed-discovery.js";
 
 const silentLog: FastifyBaseLogger = {
@@ -92,9 +98,59 @@ function makeRow(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+function makeSibling() {
+	return {
+		hash: "aaaa-sibling",
+		name: "Synthetic sibling",
+		instanceId: 1,
+		instanceName: "qbit",
+		state: "uploading",
+		progress: 1,
+		size: 100,
+		category: "",
+		savePath: "/",
+		contentPath: "/",
+		tracker: "tracker.example",
+		matchType: "release",
+		tags: "",
+	};
+}
+
 describe("getDiscoveryAvailability", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+	});
+
+	it("returns a bounded 503 from the registered scan route after availability loses qui", async () => {
+		const app = Fastify();
+		const prisma = makeApp().prisma;
+		let providerReads = 0;
+		mockCreateQuiClient.mockImplementation(() => {
+			providerReads++;
+			throw new Error("Unexpected provider read");
+		});
+		app.decorate("prisma", prisma);
+		setupAuthInjection(app);
+		registerTestErrorHandler(app);
+		registerLibraryRoutes(app);
+		try {
+			prisma.serviceInstance.findFirst.mockResolvedValue(makeQuiInstance());
+			prisma.libraryCache.count.mockResolvedValue(1);
+			const inject = createInjectAuthenticated(app);
+			const available = await inject("GET", "/qui/cross-seed/availability");
+			expect(available.statusCode).toBe(200);
+			expect(available.json().available).toBe(true);
+			prisma.serviceInstance.findFirst.mockResolvedValue(null);
+			const unavailable = await inject("GET", "/qui/cross-seed/discover");
+			expect(unavailable.statusCode).toBe(503);
+			expect(unavailable.json()).toEqual({
+				error: "Error",
+				message: "Cross-seed discovery is unavailable. Retry the scan.",
+			});
+			expect(providerReads).toBe(0);
+		} finally {
+			await app.close();
+		}
 	});
 
 	it("returns no_qui_instance when the user has no qui configured", async () => {
@@ -145,22 +201,82 @@ describe("runDiscoveryBatch", () => {
 		vi.clearAllMocks();
 	});
 
-	it("returns an empty batch when the user has no qui instance", async () => {
+	it("rejects an unavailable scan when the user's qui instance disappears", async () => {
 		const app = makeApp();
 		app.prisma.serviceInstance.findFirst.mockResolvedValue(null);
 
+		await expect(
+			runDiscoveryBatch({
+				app,
+				userId: "user-1",
+				cursor: null,
+				batchSize: 100,
+				log: silentLog,
+			}),
+		).rejects.toMatchObject({
+			statusCode: 503,
+			message: "Cross-seed discovery is unavailable. Retry the scan.",
+		});
+		// No qui client should have been built — caller is gated on availability.
+		expect(mockCreateQuiClient).not.toHaveBeenCalled();
+	});
+
+	it.each([true, false, undefined])(
+		"publishes inventory coverage %s while retaining positive siblings",
+		async (complete) => {
+			const app = makeApp();
+			app.prisma.serviceInstance.findFirst.mockResolvedValue(makeQuiInstance());
+			app.prisma.libraryCache.findMany.mockResolvedValue([makeRow()]);
+			const torrents = [makeTorrent()];
+			mockCreateQuiClient.mockReturnValue({
+				listAllTorrents: vi.fn().mockResolvedValue(torrents),
+				listTorrentInventory: vi.fn().mockResolvedValue({ torrents, complete }),
+				getCrossSeedMatches: vi.fn().mockResolvedValue([makeSibling()]),
+			});
+			const result = await runDiscoveryBatch({
+				app,
+				userId: "user-1",
+				cursor: null,
+				batchSize: 100,
+				log: silentLog,
+			});
+			expect(result.items[0]?.libraryCacheId).toBe("row-1");
+			expect(result.items[0]?.siblings[0]?.hash).toBe("aaaa-sibling");
+			expect(result.torrentInventoryComplete).toBe(complete === true);
+			expect(result.exhausted).toBe(true);
+		},
+	);
+
+	it("publishes only a generic category and aggregate count when sibling reads fail", async () => {
+		const app = makeApp();
+		app.prisma.serviceInstance.findFirst.mockResolvedValue(makeQuiInstance());
+		app.prisma.libraryCache.findMany.mockResolvedValue([makeRow(), makeRow({ id: "row-2" })]);
+		const warnings: unknown[] = [];
+		const log = {
+			...silentLog,
+			warn: (...args: unknown[]) => warnings.push(args),
+		} as FastifyBaseLogger;
+		mockCreateQuiClient.mockReturnValue({
+			listAllTorrents: vi.fn().mockResolvedValue([makeTorrent()]),
+			listTorrentInventory: vi
+				.fn()
+				.mockResolvedValue({ torrents: [makeTorrent()], complete: true }),
+			getCrossSeedMatches: vi.fn().mockRejectedValue(new Error("private provider diagnostic")),
+		});
 		const result = await runDiscoveryBatch({
 			app,
 			userId: "user-1",
 			cursor: null,
 			batchSize: 100,
-			log: silentLog,
+			log,
 		});
-
-		expect(result.items).toEqual([]);
-		expect(result.exhausted).toBe(true);
-		// No qui client should have been built — caller is gated on availability.
-		expect(mockCreateQuiClient).not.toHaveBeenCalled();
+		expect(result.siblingFetchErrors).toBe(2);
+		expect(warnings).toEqual([
+			[
+				{ category: "cross_seed_sibling_read_failed", count: 2 },
+				"Cross-seed discovery sibling reads failed",
+			],
+		]);
 	});
 
 	it("returns items only when qui has siblings for the matched hash", async () => {
@@ -173,11 +289,14 @@ describe("runDiscoveryBatch", () => {
 		]);
 
 		mockCreateQuiClient.mockReturnValue({
-			listAllTorrents: vi.fn().mockResolvedValue([
-				makeTorrent({ hash: "aaaa", instanceId: 1 }),
-				makeTorrent({ hash: "bbbb", instanceId: 1 }),
-				// cccc isn't in qui at all → skipped
-			]),
+			listTorrentInventory: vi.fn().mockResolvedValue({
+				complete: true,
+				torrents: [
+					makeTorrent({ hash: "aaaa", instanceId: 1 }),
+					makeTorrent({ hash: "bbbb", instanceId: 1 }),
+					// cccc isn't in qui at all → skipped
+				],
+			}),
 			getCrossSeedMatches: vi.fn((_instanceId, hash) => {
 				// Only aaaa has siblings; bbbb has none.
 				if (hash === "aaaa") {
@@ -229,7 +348,7 @@ describe("runDiscoveryBatch", () => {
 		app.prisma.libraryCache.findMany.mockResolvedValue(rows);
 
 		mockCreateQuiClient.mockReturnValue({
-			listAllTorrents: vi.fn().mockResolvedValue([]),
+			listTorrentInventory: vi.fn().mockResolvedValue({ complete: true, torrents: [] }),
 			getCrossSeedMatches: vi.fn().mockResolvedValue([]),
 		});
 
@@ -259,12 +378,13 @@ describe("runDiscoveryBatch", () => {
 		]);
 
 		mockCreateQuiClient.mockReturnValue({
-			listAllTorrents: vi
-				.fn()
-				.mockResolvedValue([
+			listTorrentInventory: vi.fn().mockResolvedValue({
+				complete: true,
+				torrents: [
 					makeTorrent({ hash: "aaaa", instanceId: 1 }),
 					makeTorrent({ hash: "bbbb", instanceId: 1 }),
-				]),
+				],
+			}),
 			getCrossSeedMatches: vi.fn((_id, hash) => {
 				if (hash === "aaaa") return Promise.reject(new Error("qui blew up"));
 				return Promise.resolve([
@@ -308,7 +428,9 @@ describe("runDiscoveryBatch", () => {
 			makeRow({ id: "row-1", instance: { label: "Strange", service: "WEIRD" } }),
 		]);
 		mockCreateQuiClient.mockReturnValue({
-			listAllTorrents: vi.fn().mockResolvedValue([makeTorrent({ hash: "aaaa" })]),
+			listTorrentInventory: vi
+				.fn()
+				.mockResolvedValue({ complete: true, torrents: [makeTorrent({ hash: "aaaa" })] }),
 			getCrossSeedMatches: vi.fn().mockResolvedValue([]),
 		});
 

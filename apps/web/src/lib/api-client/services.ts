@@ -1,16 +1,9 @@
 import type { ServiceInstanceSummary, ServiceResponse, ServicesResponse } from "@arr/shared";
-import { apiRequest, UnauthorizedError } from "./base";
+import { apiRequest } from "./base";
 
 export async function fetchServices(): Promise<ServiceInstanceSummary[]> {
-	try {
-		const data = await apiRequest<ServicesResponse>("/api/services");
-		return data.services;
-	} catch (error) {
-		if (error instanceof UnauthorizedError) {
-			return [];
-		}
-		throw error;
-	}
+	const data = await apiRequest<ServicesResponse>("/api/services");
+	return data.services;
 }
 
 export type CreateServicePayload = {

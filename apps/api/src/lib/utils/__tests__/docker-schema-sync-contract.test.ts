@@ -1,8 +1,11 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 describe("Docker schema synchronization contract", () => {
+	// Native-before-listen, one owner, handoff-before-health/web, and failure
+	// closure run in combined-startup-api.test.ts and docker/test-combined-startup.cjs.
+	// The shell no longer owns an independent pre-launch schema/settings actor.
 	const startupScript = readFileSync(
 		resolve(process.cwd(), "../../docker/start-combined.sh"),
 		"utf8",
@@ -11,31 +14,52 @@ describe("Docker schema synchronization contract", () => {
 		resolve(process.cwd(), "prisma/pre-sync/postgresql-v2.24-list-cache-identity.sql"),
 		"utf8",
 	);
-	const postgresSchemaSync = readFileSync(
-		resolve(process.cwd(), "../../docker/sync-postgresql-schema.cjs"),
+	const dockerfile = readFileSync(resolve(process.cwd(), "../../Dockerfile"), "utf8");
+	const runtimeValidator = readFileSync(
+		resolve(process.cwd(), "../../docker/validate-runtime.sh"),
 		"utf8",
 	);
+	const apiPackage = JSON.parse(readFileSync(resolve(process.cwd(), "package.json"), "utf8"));
 
-	it("synchronizes the runtime schema without approving data loss", () => {
-		const schemaSyncCommand = startupScript
-			.split("\n")
-			.find((line) => line.includes("prisma db push"));
-
-		expect(schemaSyncCommand).toContain("prisma db push --schema prisma/schema.prisma");
-		expect(schemaSyncCommand).not.toContain("--accept-data-loss");
+	it("uses runtime-selected port metadata for database-independent image liveness", () => {
+		expect(dockerfile).toContain("docker/runtime-health.cjs");
+		expect(dockerfile).toContain("CMD node /app/runtime-health.cjs check");
+		expect(runtimeValidator).toContain('check_file "/app/runtime-health.cjs"');
 	});
 
-	it("runs the reviewed PostgreSQL list-cache migration before schema synchronization", () => {
-		const migration = postgresSchemaSync.indexOf(
-			"prisma/pre-sync/postgresql-v2.24-list-cache-identity.sql",
-		);
-		const schemaSync = postgresSchemaSync.indexOf('"db", "push"');
+	it("builds the native actor and does not ship or retain the independent legacy I/O helpers", () => {
+		expect(apiPackage.scripts.build).toContain("src/schema-startup.ts");
+		expect(runtimeValidator).toContain("for provider in sqlite postgresql");
+		expect(runtimeValidator).toContain('"$API_DIR/providers/$provider" "$provider"');
+		expect(runtimeValidator).toContain("validate-provider-runtime.cjs");
+		for (const file of ["read-base-path.cjs", "sync-postgresql-schema.cjs"]) {
+			expect(dockerfile).not.toContain(`docker/${file}`);
+			expect(runtimeValidator).not.toContain(file);
+			expect(existsSync(resolve(process.cwd(), `../../docker/${file}`))).toBe(false);
+		}
+	});
 
-		expect(startupScript).toContain('if [ "$DB_PROVIDER" = "postgresql" ]; then');
-		expect(startupScript).toContain("node /app/api/sync-postgresql-schema.cjs");
-		expect(migration).toBeGreaterThan(-1);
-		expect(schemaSync).toBeGreaterThan(migration);
-		expect(postgresSchemaSync).not.toContain("--accept-data-loss");
+	it("does not invoke a destination schema engine or permit destructive CLI overrides", () => {
+		expect(startupScript).not.toMatch(/prisma\s+(?:db\s+(?:push|execute)|migrate)/);
+		expect(startupScript).not.toContain("--accept-data-loss");
+		expect(startupScript).not.toContain("sync-postgresql-schema.cjs");
+		expect(startupScript).not.toContain("read-base-path.cjs");
+	});
+
+	it("validates the fixed provider package as the effective user", () => {
+		expect(startupScript).toContain('API_RUNTIME_DIR="/app/api/providers/$DB_PROVIDER"');
+		expect(startupScript).toContain("readonly API_RUNTIME_DIR");
+		expect(startupScript).toContain(
+			'run_as_user node /app/api/validate-provider-runtime.cjs "$API_RUNTIME_DIR" "$DB_PROVIDER"',
+		);
+	});
+
+	it("rejects an unsupported URL scheme instead of treating it as SQLite", () => {
+		expect(startupScript).toContain('case "$DATABASE_URL" in');
+		expect(startupScript).toContain('file:*) DB_PROVIDER="sqlite"');
+		expect(startupScript).toContain(
+			"ERROR: Unsupported database provider; services were not started",
+		);
 	});
 
 	it.each([
@@ -78,60 +102,25 @@ describe("Docker schema synchronization contract", () => {
 		expect(firstIndexCreation).toBeGreaterThan(advisoryLock);
 	});
 
-	it("retries PostgreSQL schema reconciliation after concurrent DDL conflicts", () => {
-		const migration = postgresSchemaSync.indexOf(
-			"prisma/pre-sync/postgresql-v2.24-list-cache-identity.sql",
+	it("generates provider packages during image build, never mutates runtime application code", () => {
+		expect(dockerfile).toContain("node /tmp/provider-build/prepare-provider-runtimes.cjs");
+		expect(dockerfile).toContain("COPY --from=builder --chown=root:root /app/deploy-api ./api");
+		expect(startupScript).not.toMatch(
+			/prisma\s+generate|patch-prisma-provider-bundles|chown[^\n]*\/app\/api|sed[^\n]*schema\.prisma/,
 		);
-		const retryLimit = postgresSchemaSync.indexOf("maxSchemaPushAttempts = 5");
-		const schemaSync = postgresSchemaSync.indexOf('"db", "push"');
-
-		expect(retryLimit).toBeGreaterThan(-1);
-		expect(migration).toBeGreaterThan(-1);
-		expect(schemaSync).toBeGreaterThan(migration);
-		expect(postgresSchemaSync).toContain("attempt <= maxSchemaPushAttempts");
-		expect(postgresSchemaSync).not.toContain("--accept-data-loss");
 	});
 
-	it("hands the runtime schema to a remapped PUID before synchronization", () => {
-		const ownershipHandoff = startupScript.indexOf(
-			// biome-ignore lint/suspicious/noTemplateCurlyInString: This must match the literal shell expansion in the startup script.
-			'chown "${PUID}:${PGID}" /app/api/prisma/schema.prisma',
-		);
-		const schemaSync = startupScript.indexOf("prisma db push --schema prisma/schema.prisma");
-
-		expect(ownershipHandoff).toBeGreaterThan(-1);
-		expect(schemaSync).toBeGreaterThan(ownershipHandoff);
-	});
-
-	it("restores schema ownership before regenerating for a provider switch", () => {
-		const providerSwitch = startupScript.indexOf('echo "  - Schema updated successfully"');
-		const ownershipHandoff = startupScript.indexOf(
-			// biome-ignore lint/suspicious/noTemplateCurlyInString: This must match the literal shell expansion in the startup script.
-			'chown "${PUID}:${PGID}" /app/api/prisma/schema.prisma',
-			providerSwitch,
-		);
-		const clientGeneration = startupScript.indexOf(
-			"run_as_user ./node_modules/.bin/prisma generate --schema prisma/schema.prisma",
-			providerSwitch,
-		);
-
-		expect(providerSwitch).toBeGreaterThan(-1);
-		expect(ownershipHandoff).toBeGreaterThan(providerSwitch);
-		expect(clientGeneration).toBeGreaterThan(ownershipHandoff);
-	});
-
-	it("keeps an actionable fail-closed message for destructive changes", () => {
+	it("keeps an actionable fail-closed message for unsupported destructive transitions", () => {
 		expect(startupScript).toContain(
 			"Destructive schema changes are intentionally rejected at startup",
 		);
 		expect(startupScript).toContain("consult the release notes for an explicit upgrade path");
 	});
 
-	it("reports an unknown migration outcome without claiming rollback", () => {
-		expect(startupScript).toContain(
-			"The migration outcome may be unknown; the next startup will reconcile it safely",
-		);
+	it("does not blindly retry an unknown migration outcome or claim rollback", () => {
+		expect(startupScript).toContain("An unacknowledged commit is unknown; do not assume rollback");
 		expect(startupScript).not.toContain("Existing constraints were preserved");
+		expect(startupScript).not.toContain("maxSchemaPushAttempts");
 	});
 
 	it("does not echo any portion of DATABASE_URL on synchronization failure", () => {

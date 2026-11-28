@@ -154,6 +154,7 @@
 		--z-modal-backdrop: 1300;
 		--z-modal: 1400;
 		--z-popover: 1500;
+		--z-command-palette: 1600;
 		--z-toast: 2000;
 		--z-tooltip: 2100;
 
@@ -2746,7 +2747,7 @@
 	}
 
 	/* *arr Suite - Button styling to match Sonarr (medium: 6px 16px) */
-	[data-theme="arr"] button,
+	[data-theme="arr"] button:not([data-discover-poster]),
 	[data-theme="arr"] [role="button"] {
 		border-radius: 4px;
 		font-weight: 400;
@@ -3464,7 +3465,7 @@
 
 	/* Paragraph and body text - 12px */
 	[data-theme="qbittorrent"] p,
-	[data-theme="qbittorrent"] span,
+	[data-theme="qbittorrent"] span:not([data-discover-poster-badge]),
 	[data-theme="qbittorrent"] label {
 		font-size: 12px !important;
 	}
@@ -3481,7 +3482,8 @@
 	}
 
 	/* Card content padding - qBittorrent style (10px 12px) */
-	[data-theme="qbittorrent"] [class*="bg-card"] > div {
+	[data-theme="qbittorrent"] [class*="bg-card"] > div,
+	[data-theme="qbittorrent"] [data-discover-poster] [class*="bg-card"] > span {
 		padding: 10px 12px !important;
 	}
 
@@ -3703,7 +3705,7 @@
 
 	/* ---- BUTTONS: TOOLBAR BUTTON STYLE ---- */
 	/* Exclude stat card buttons (which have p children) from compact toolbar styling */
-	[data-theme="qbittorrent"] button:not(:has(p)),
+	[data-theme="qbittorrent"] button:not(:has(p)):not([data-discover-poster]),
 	[data-theme="qbittorrent"] [role="button"]:not(:has(p)) {
 		border-radius: 0 !important;
 		font-size: 11px !important;
@@ -3800,7 +3802,7 @@
 	/* ---- BADGES: qBittorrent STYLE (minimal, no backgrounds) ---- */
 	[data-theme="qbittorrent"] [class*="badge"],
 	[data-theme="qbittorrent"] span[class*="rounded-full"][class*="text-xs"],
-	[data-theme="qbittorrent"] span[class*="rounded"][class*="px-"],
+	[data-theme="qbittorrent"] span[class*="rounded"][class*="px-"]:not([data-discover-poster-badge]),
 	[data-theme="qbittorrent"] span[class*="badge"] {
 		padding: 1px 4px !important;
 		font-size: 10px !important;

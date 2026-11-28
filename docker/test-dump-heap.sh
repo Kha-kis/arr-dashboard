@@ -20,6 +20,7 @@ WORK=/tmp/test-dump-heap-$$
 CTR="${WORK##*/}-ctr"
 CONFIG_DIR="$WORK/config"
 COOKIE="$WORK/cookies.txt"
+TOOLS_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
 PASS=0
 FAIL=0
@@ -40,14 +41,25 @@ bad() { echo "  FAIL: $*" >&2; FAIL=$((FAIL + 1)); }
 
 # --- helpers (BusyBox-portable /proc walk, no pgrep) ---
 inner_pid() {
-    docker exec "$CTR" sh -c 'for p in /proc/[0-9]*; do c=$(tr "\0" " " < "$p/cmdline" 2>/dev/null); case "$c" in *"/app/api/dist/index.js"*) echo "${p##*/}";; esac; done' 2>/dev/null | head -1
+    docker exec "$CTR" sh -c 'for p in /proc/[0-9]*; do [ "$(cat "$p/comm" 2>/dev/null)" = node ] || continue; c=$(tr "\0" " " < "$p/cmdline" 2>/dev/null); case "$c" in *"/app/api/providers/sqlite/dist/index.js"*) echo "${p##*/}";; esac; done' 2>/dev/null | head -1
 }
 launcher_pid() {
-    docker exec "$CTR" sh -c 'for p in /proc/[0-9]*; do c=$(tr "\0" " " < "$p/cmdline" 2>/dev/null); case "$c" in *"/app/api/dist/launcher.js"*) echo "${p##*/}";; esac; done' 2>/dev/null | head -1
+    docker exec "$CTR" sh -c 'for p in /proc/[0-9]*; do [ "$(cat "$p/comm" 2>/dev/null)" = node ] || continue; c=$(tr "\0" " " < "$p/cmdline" 2>/dev/null); case "$c" in *"/app/api/providers/sqlite/dist/launcher.js"*) echo "${p##*/}";; esac; done' 2>/dev/null | head -1
 }
 select_pid() {
     # returns the SELECTED_PID printed by dump-heap --select-only, or empty
     docker exec "$CTR" dump-heap --select-only 2>&1 | sed -n 's/.*SELECTED_PID=\([0-9][0-9]*\).*/\1/p' | head -1
+}
+
+prepare_mock_manifest() {
+    # Original image validation first; only the controlled test entrypoint is
+    # rebound. The normal startup validator still runs on the fixture overlay.
+    docker run --rm --network none --user "$(id -u):$(id -g)" \
+        -v "$TOOLS_DIR/test-provider-manifest.cjs":/fixture-tools/test-provider-manifest.cjs:ro \
+        -v "$TOOLS_DIR/validate-provider-runtime.cjs":/fixture-tools/validate-provider-runtime.cjs:ro \
+        -v "$WORK":/fixture \
+        "$IMAGE" node /fixture-tools/test-provider-manifest.cjs \
+        /app/api/providers/sqlite sqlite "/fixture/$1" "$2" "/fixture/$3"
 }
 
 start_real() {
@@ -175,10 +187,12 @@ cat > "$MOCK_LAUNCHER" <<'EOF'
 console.log("[mock-launcher] idling without spawning index.js");
 setInterval(() => {}, 1000);
 EOF
+prepare_mock_manifest launcher-provider.json dist/launcher.js mock-launcher.js
 docker run -d --name "$CTR" \
     -v "$CONFIG_DIR":/config \
     -e PUID=1000 -e PGID=1000 \
-    -v "$MOCK_LAUNCHER":/app/api/dist/launcher.js:ro \
+    -v "$MOCK_LAUNCHER":/app/api/providers/sqlite/dist/launcher.js:ro \
+    -v "$WORK/launcher-provider.json":/app/api/providers/sqlite/runtime-provider.json:ro \
     "$IMAGE" >/dev/null
 sleep 5
 out=$(docker exec "$CTR" dump-heap --select-only 2>&1 || true)
@@ -208,16 +222,18 @@ cat > "$MOCK_INDEX" <<'EOF'
 console.log("[mock-index] idling");
 setInterval(() => {}, 1000);
 EOF
+prepare_mock_manifest index-provider.json dist/index.js mock-index.js
 docker run -d --name "$CTR" \
     -v "$CONFIG_DIR":/config \
     -e PUID=1000 -e PGID=1000 \
-    -v "$MOCK_INDEX":/app/api/dist/index.js:ro \
+    -v "$MOCK_INDEX":/app/api/providers/sqlite/dist/index.js:ro \
+    -v "$WORK/index-provider.json":/app/api/providers/sqlite/runtime-provider.json:ro \
     "$IMAGE" >/dev/null
 sleep 5
 # Spawn a second matching index.js process so two exist.
-docker exec -d "$CTR" node /app/api/dist/index.js >/dev/null 2>&1 || true
+docker exec -d "$CTR" node /app/api/providers/sqlite/dist/index.js >/dev/null 2>&1 || true
 sleep 2
-count=$(docker exec "$CTR" sh -c 'n=0; for p in /proc/[0-9]*; do c=$(tr "\0" " " < "$p/cmdline" 2>/dev/null); case "$c" in *"/app/api/dist/index.js"*) n=$((n+1));; esac; done; echo $n' 2>/dev/null)
+count=$(docker exec "$CTR" sh -c 'n=0; for p in /proc/[0-9]*; do [ "$(cat "$p/comm" 2>/dev/null)" = node ] || continue; c=$(tr "\0" " " < "$p/cmdline" 2>/dev/null); case "$c" in *"/app/api/providers/sqlite/dist/index.js"*) n=$((n+1));; esac; done; echo $n' 2>/dev/null)
 echo "  matching index.js processes: $count"
 out=$(docker exec "$CTR" dump-heap --select-only 2>&1 || true)
 if echo "$out" | grep -q "refusing to choose one arbitrarily"; then

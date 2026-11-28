@@ -161,7 +161,7 @@ export async function registerQualityProfileRoutes(
 			if (!(error instanceof CacheCorruptionError)) throw error;
 		}
 
-		// If cache miss, stale, or corrupted (auto-deleted), fetch fresh data
+		// If cache miss, stale, or unreadable, fetch fresh data
 		if (!profiles || !(await cacheManager.isFresh(serviceType, "QUALITY_PROFILES"))) {
 			app.log.info({ serviceType }, "Fetching quality profiles from GitHub");
 			const { fetcher } = await getServices(request.currentUser!.id);

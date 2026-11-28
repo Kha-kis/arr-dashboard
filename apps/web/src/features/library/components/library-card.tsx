@@ -26,6 +26,7 @@ import {
 import { memo } from "react";
 import { ServiceBadge, StatusBadge } from "../../../components/layout";
 import { Button } from "../../../components/ui";
+import type { LibrarySeedingSummary } from "../../../lib/api-client/qui";
 import {
 	getLinuxInstanceName,
 	getLinuxIsoName,
@@ -36,9 +37,9 @@ import { RATING_COLOR, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { safeOpenUrl } from "../../../lib/utils/url-validation";
 import { formatBytes, formatRuntime } from "../lib/library-utils";
 import { LibraryBadge } from "./library-badge";
+import type { SeriesProgressByProvider } from "./library-content";
 import { PosterImage } from "./poster-image";
 import { TorrentStateBadge } from "./torrent-state-badge";
-import type { SeriesProgressByProvider } from "./library-content";
 
 function formatRelativeTime(isoDate: string): string {
 	const diff = Date.now() - new Date(isoDate).getTime();
@@ -89,7 +90,7 @@ interface LibraryCardProps {
 	/** TMDB vote average from Seerr enrichment (0-10 scale) */
 	tmdbRating?: number | null;
 	/** Number of open issues in Seerr for this media */
-	openIssueCount?: number;
+	openIssueCount?: number | null;
 	/** TMDB poster path from Seerr enrichment (e.g. "/xyz123.jpg") */
 	posterPath?: string | null;
 	/** Plex watch count (number of play events) */
@@ -117,7 +118,7 @@ interface LibraryCardProps {
 	 * Sourced from `LibraryItem.torrentState`/`torrentRatio` (cached column
 	 * stamped by the server) — no per-card polling.
 	 */
-	quiState?: { state: string; ratio: number } | null;
+	quiState?: { state: string; ratio: number | null } | null;
 	/**
 	 * Per-item tracker summary from qui's inode-correlated multi-hash
 	 * lookup. Lets the card render small brand-icon strip showing which
@@ -132,6 +133,8 @@ interface LibraryCardProps {
 	seedingSummary?: {
 		trackerCount: number;
 		topHosts: string[];
+		complete: boolean;
+		episodeInventory?: LibrarySeedingSummary["episodeInventory"];
 	} | null;
 	/**
 	 * qui's tracker-meta map (hostname → {iconUrl, name}). Same map the
@@ -139,6 +142,37 @@ interface LibraryCardProps {
 	 * for the `topHosts` returned in seedingSummary.
 	 */
 	trackerIcons?: Record<string, { iconUrl?: string; name?: string }>;
+}
+
+function getSeedingSummaryDisplay(
+	summary: NonNullable<LibraryCardProps["seedingSummary"]>,
+	isSeries: boolean,
+) {
+	const inventory = isSeries ? summary.episodeInventory : undefined;
+	const observedAt = inventory?.observedAt ? Date.parse(inventory.observedAt) : Number.NaN;
+	const knownCheckTime =
+		inventory?.status !== "unknown" && Number.isFinite(observedAt) && observedAt <= Date.now();
+	const complete =
+		summary.complete && (!inventory || (inventory.status === "fresh" && knownCheckTime));
+	const count = complete
+		? `Seeding at ${summary.trackerCount} tracker${summary.trackerCount === 1 ? "" : "s"}`
+		: `At least ${summary.trackerCount} trackers observed`;
+	if (!inventory) return { title: count, check: null };
+	if (!knownCheckTime) {
+		return {
+			title: `${count}. Episode file check time unavailable.`,
+			check: { label: "Episode file check time unavailable.", observedAt: null, checkedAt: null },
+		};
+	}
+	const checkedAt = new Date(observedAt).toLocaleString();
+	const label =
+		inventory.status === "stale"
+			? "Episode files out of date; last checked"
+			: "Episode files last checked";
+	return {
+		title: `${count}. ${label} ${checkedAt}.`,
+		check: { label, observedAt: inventory.observedAt, checkedAt },
+	};
 }
 
 function SeriesProgressDisplay({
@@ -173,6 +207,37 @@ function SeriesProgressDisplay({
 			</div>
 		);
 	}
+	if (progress.status === "mapped" || progress.status === "mapped-last-known") {
+		const observedAt = Date.parse(progress.observedAt);
+		const lastKnown = progress.status === "mapped-last-known";
+		return (
+			<div className="flex items-baseline gap-2 text-[10px] text-muted-foreground">
+				<span className="font-medium w-14 shrink-0">{provider}</span>
+				<div className="min-w-0 wrap-break-word">
+					<div>
+						{lastKnown && "Last known: "}
+						{progress.watched}/{progress.total} matched episodes watched ({progress.percent}%)
+					</div>
+					<div>
+						{Number.isFinite(observedAt) ? (
+							<>
+								Observed{" "}
+								<time dateTime={progress.observedAt}>{new Date(observedAt).toLocaleString()}</time>
+							</>
+						) : (
+							"Observation time unavailable"
+						)}
+					</div>
+					{lastKnown && progress.currentWatchedLowerBound !== null && (
+						<div>
+							At least {progress.currentWatchedLowerBound} episodes confirmed watched in the latest
+							publication
+						</div>
+					)}
+				</div>
+			</div>
+		);
+	}
 	if (progress.status === "partial") {
 		return (
 			<div className="flex items-center gap-2 text-[10px] text-muted-foreground">
@@ -184,7 +249,14 @@ function SeriesProgressDisplay({
 	return (
 		<div className="flex items-center gap-2 text-[10px] text-muted-foreground">
 			<span className="font-medium w-14 shrink-0">{provider}</span>
-			<span>Watch status unknown</span>
+			{provider === "Jellyfin" && progress.reason === "no-verified-match" ? (
+				<div className="min-w-0 wrap-break-word">
+					<div>No verified Jellyfin match</div>
+					<div>Check that the series is in Jellyfin and verify its TMDB match.</div>
+				</div>
+			) : (
+				<span>Watch status unknown</span>
+			)}
 		</div>
 	);
 }
@@ -244,6 +316,9 @@ export const LibraryCard = memo(function LibraryCard({
 	trackerIcons,
 }: LibraryCardProps) {
 	const [incognitoMode] = useIncognitoMode();
+	const seedingDisplay = seedingSummary
+		? getSeedingSummaryDisplay(seedingSummary, item.type === "series")
+		: null;
 	const monitored = item.monitored ?? false;
 	const hasFile = item.hasFile ?? false;
 	const sizeLabel = formatBytes(item.sizeOnDisk);
@@ -307,12 +382,14 @@ export const LibraryCard = memo(function LibraryCard({
 	const monitoredStatus: "success" | "warning" = monitored ? "success" : "warning";
 
 	const statusBadges: Array<{
+		kind: "file-availability" | "missing-count" | "provider-status";
 		tone: "green" | "blue" | "red" | "yellow";
 		label: React.ReactNode;
 	}> = [];
 
 	if (item.type === "movie") {
 		statusBadges.push({
+			kind: "file-availability",
 			tone: hasFile ? "green" : "blue",
 			label: hasFile ? "File present" : "Awaiting file",
 		});
@@ -320,11 +397,13 @@ export const LibraryCard = memo(function LibraryCard({
 
 	if (item.type === "series") {
 		statusBadges.push({
+			kind: "file-availability",
 			tone: hasFile ? "green" : "blue",
 			label: hasFile ? "Files on disk" : "Awaiting import",
 		});
 		if (missingEpisodeTotals > 0) {
 			statusBadges.push({
+				kind: "missing-count",
 				tone: "red",
 				label: `${missingEpisodeTotals} missing`,
 			});
@@ -334,11 +413,13 @@ export const LibraryCard = memo(function LibraryCard({
 	if (item.type === "artist") {
 		const missingTracks = item.statistics?.missingTrackCount ?? 0;
 		statusBadges.push({
+			kind: "file-availability",
 			tone: hasFile ? "green" : "blue",
 			label: hasFile ? "Tracks on disk" : "Awaiting tracks",
 		});
 		if (missingTracks > 0) {
 			statusBadges.push({
+				kind: "missing-count",
 				tone: "red",
 				label: `${missingTracks} missing`,
 			});
@@ -349,11 +430,13 @@ export const LibraryCard = memo(function LibraryCard({
 		const missingBooks =
 			(item.statistics?.totalBookCount ?? 0) - (item.statistics?.bookFileCount ?? 0);
 		statusBadges.push({
+			kind: "file-availability",
 			tone: hasFile ? "green" : "blue",
 			label: hasFile ? "Books on disk" : "Awaiting books",
 		});
 		if (missingBooks > 0) {
 			statusBadges.push({
+				kind: "missing-count",
 				tone: "red",
 				label: `${missingBooks} missing`,
 			});
@@ -361,7 +444,7 @@ export const LibraryCard = memo(function LibraryCard({
 	}
 
 	if (item.status) {
-		statusBadges.push({ tone: "blue", label: item.status });
+		statusBadges.push({ kind: "provider-status", tone: "blue", label: item.status });
 	}
 
 	const metadata: Array<{ label: string; value: React.ReactNode }> = [
@@ -523,6 +606,7 @@ export const LibraryCard = memo(function LibraryCard({
 							tmdbPosterPath={posterPath}
 							arrPosterUrl={item.poster}
 							size="w185"
+							loading="lazy"
 							alt={item.title}
 							placeholder={item.type === "movie" ? "Poster" : "Artwork"}
 						/>
@@ -532,14 +616,14 @@ export const LibraryCard = memo(function LibraryCard({
 				<div className="flex-1 min-w-0 space-y-2">
 					<div>
 						<div className="flex flex-wrap items-baseline gap-2">
-							<h3
-								className="text-base font-semibold text-foreground hover:text-primary cursor-pointer transition-colors"
-								onClick={() => onExpandDetails?.(item)}
-								role="button"
-								tabIndex={0}
-								onKeyDown={(e) => e.key === "Enter" && onExpandDetails?.(item)}
-							>
-								{incognitoMode ? getLinuxIsoName(item.title) : item.title}
+							<h3 className="text-base font-semibold text-foreground">
+								<button
+									type="button"
+									className="text-left hover:text-primary cursor-pointer transition-colors"
+									onClick={() => onExpandDetails?.(item)}
+								>
+									{incognitoMode ? getLinuxIsoName(item.title) : item.title}
+								</button>
 							</h3>
 							{item.year && item.type === "movie" ? (
 								<span className="text-xs text-muted-foreground">{item.year}</span>
@@ -621,8 +705,8 @@ export const LibraryCard = memo(function LibraryCard({
 							 */}
 							{seedingSummary && seedingSummary.trackerCount > 0 && (
 								<span
-									className="inline-flex items-center gap-0.5 rounded-md border border-border/40 bg-card/50 px-1 py-0.5"
-									title={`Seeding at ${seedingSummary.trackerCount} tracker${seedingSummary.trackerCount === 1 ? "" : "s"}`}
+									className="inline-flex min-w-0 max-w-full flex-wrap items-center gap-0.5 rounded-md border border-border/40 bg-card/50 px-1 py-0.5"
+									title={seedingDisplay?.title}
 								>
 									{seedingSummary.topHosts.slice(0, 4).map((host) => {
 										const meta = trackerIcons?.[host];
@@ -658,6 +742,20 @@ export const LibraryCard = memo(function LibraryCard({
 									{seedingSummary.trackerCount > 4 && (
 										<span className="px-0.5 text-[9px] font-mono text-muted-foreground">
 											+{seedingSummary.trackerCount - 4}
+										</span>
+									)}
+									{seedingDisplay?.check && (
+										<span className="min-w-0 max-w-full break-words text-[10px] leading-tight text-muted-foreground">
+											{seedingDisplay.check.label}
+											{seedingDisplay.check.observedAt && (
+												<>
+													{" "}
+													<time dateTime={seedingDisplay.check.observedAt}>
+														{seedingDisplay.check.checkedAt}
+													</time>
+													.
+												</>
+											)}
 										</span>
 									)}
 								</span>
@@ -764,6 +862,7 @@ export const LibraryCard = memo(function LibraryCard({
 							</p>
 							{item.overview.length > 120 && onExpandDetails ? (
 								<button
+									type="button"
 									onClick={() => onExpandDetails(item)}
 									className="mt-1 text-xs text-primary hover:text-primary-hover transition-colors"
 								>
@@ -774,8 +873,8 @@ export const LibraryCard = memo(function LibraryCard({
 					) : null}
 
 					<div className="flex flex-wrap gap-2">
-						{statusBadges.map((badge, index) => (
-							<LibraryBadge key={`${item.id}-badge-${index}`} tone={badge.tone}>
+						{statusBadges.map((badge) => (
+							<LibraryBadge key={badge.kind} tone={badge.tone}>
 								{badge.label}
 							</LibraryBadge>
 						))}

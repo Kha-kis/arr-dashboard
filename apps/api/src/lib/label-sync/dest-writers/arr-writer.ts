@@ -8,6 +8,7 @@
 
 import { ArrError } from "arr-sdk";
 import type { ArrClient } from "../../arr/client-factory.js";
+import { acquireArrItemWriteLock } from "../../arr/item-write-lock.js";
 import type { ServiceType } from "../../prisma.js";
 import type {
 	DestWriteResult,
@@ -98,14 +99,9 @@ function createWriter(config: ArrWriterConfig): DestWriter {
 			let labelsApplied = 0;
 			let failures = 0;
 			for (const item of matched) {
-				const existingTags = Array.isArray(item.tags) ? item.tags : [];
-				if (existingTags.includes(tagId)) {
-					labelsApplied++; // idempotent — already applied
-					continue;
-				}
-
-				const mergedTags = [...existingTags, tagId];
+				let releaseTarget: (() => void) | undefined;
 				try {
+					releaseTarget = await acquireArrItemWriteLock(destInstance, item.id);
 					// biome-ignore lint/suspicious/noExplicitAny: SDK union typing requires runtime accessor
 					const resource = (arrClient as any)[config.itemsAccessor];
 					// Radarr/Sonarr PUT endpoints require the full resource —
@@ -114,10 +110,26 @@ function createWriter(config: ArrWriterConfig): DestWriter {
 					// current item so the update preserves every field the *arr
 					// expects.
 					const fullItem = await resource.getById(item.id);
+					if (
+						!fullItem ||
+						fullItem.id !== item.id ||
+						fullItem.tmdbId !== item.tmdbId ||
+						!Array.isArray(fullItem.tags) ||
+						!fullItem.tags.every(
+							(tag: unknown) => typeof tag === "number" && Number.isInteger(tag) && tag > 0,
+						)
+					) {
+						throw new Error("Current *arr item identity or tag evidence is inconsistent");
+					}
+					const existingTags: number[] = fullItem.tags;
+					if (existingTags.includes(tagId)) {
+						labelsApplied++; // idempotent — observed on the current resource
+						continue;
+					}
 					await resource.update(item.id, {
 						...fullItem,
 						id: item.id,
-						tags: mergedTags,
+						tags: [...existingTags, tagId],
 					});
 					labelsApplied++;
 				} catch (err) {
@@ -127,6 +139,8 @@ function createWriter(config: ArrWriterConfig): DestWriter {
 						"Failed to update *arr item tags",
 					);
 					failures++;
+				} finally {
+					releaseTarget?.();
 				}
 			}
 

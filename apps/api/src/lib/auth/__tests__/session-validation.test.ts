@@ -10,6 +10,7 @@
 
 import type { FastifyRequest } from "fastify";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Prisma } from "../../prisma.js";
 import { SessionService } from "../session.js";
 
 const COOKIE_NAME = "arr_session";
@@ -26,7 +27,7 @@ function createEnv() {
 
 /**
  * In-memory Prisma stub matching the surface SessionService touches.
- * Stores sessions by hashed id and supports findUnique / create / delete /
+ * Stores sessions by hashed id and supports the bound principal join / create / delete /
  * deleteMany / update / count.
  */
 function createPrismaStub() {
@@ -52,6 +53,21 @@ function createPrismaStub() {
 
 	const prisma = {
 		_sessions: sessions,
+		$queryRaw: vi.fn(async (_query: TemplateStringsArray, id: string) => {
+			const row = sessions.get(id);
+			if (!row) return [];
+			const { user, ...session } = row;
+			return [
+				{
+					...session,
+					principalId: user.id,
+					principalUsername: user.username,
+					principalMustChangePassword: user.mustChangePassword,
+					principalCreatedAt: user.createdAt,
+					principalUpdatedAt: user.updatedAt,
+				},
+			];
+		}),
 		session: {
 			create: vi.fn(async ({ data }: any) => {
 				const row = {
@@ -143,19 +159,19 @@ describe("SessionService.validateRequest", () => {
 	it("returns null when no session cookie is present", async () => {
 		const req = makeRequest(undefined, { valid: false, value: null });
 		await expect(service.validateRequest(req)).resolves.toBeNull();
-		expect(prisma.session.findUnique).not.toHaveBeenCalled();
+		expect(prisma.$queryRaw).not.toHaveBeenCalled();
 	});
 
 	it("returns null when the cookie signature is invalid (tampered)", async () => {
 		const req = makeRequest("tampered.cookie", { valid: false, value: null });
 		await expect(service.validateRequest(req)).resolves.toBeNull();
-		expect(prisma.session.findUnique).not.toHaveBeenCalled();
+		expect(prisma.$queryRaw).not.toHaveBeenCalled();
 	});
 
 	it("returns null when the session token is unknown to the database", async () => {
 		const req = makeRequest("signed-cookie", { valid: true, value: "unknown-token" });
 		await expect(service.validateRequest(req)).resolves.toBeNull();
-		expect(prisma.session.findUnique).toHaveBeenCalledTimes(1);
+		expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
 	});
 
 	it("returns null AND best-effort deletes the row when the session is expired", async () => {
@@ -322,5 +338,103 @@ describe("SessionService.validateRequest", () => {
 		expect(callArg.where.id.not).not.toBe(a.token);
 		expect(typeof callArg.where.id.not).toBe("string");
 		expect(callArg.where.id.not.length).toBe(64); // sha256 hex length
+	});
+});
+
+describe("SessionService access metadata coalescing", () => {
+	let prisma: ReturnType<typeof createPrismaStub>;
+	let service: SessionService;
+
+	beforeEach(() => {
+		prisma = createPrismaStub();
+		service = new SessionService(prisma as any, createEnv());
+	});
+
+	it("coalesces overlapping observations into one trailing monotonic write", async () => {
+		const current = await service.createSession("user-1");
+		let releaseFirst!: () => void;
+		const firstWrite = new Promise<void>((resolve) => {
+			releaseFirst = resolve;
+		});
+		const attempts: any[] = [];
+		const update = prisma.session.update.getMockImplementation()!;
+		prisma.session.update.mockImplementation(async (args: any) => {
+			attempts.push(args);
+			if (attempts.length === 1) await firstWrite;
+			return update(args);
+		});
+		const request = makeRequest("signed-cookie", { valid: true, value: current.token });
+		const baseline = Date.now();
+		vi.useFakeTimers({ toFake: ["Date"] });
+		try {
+			vi.setSystemTime(baseline);
+			await service.validateRequest(request);
+			await vi.waitFor(() => expect(attempts).toHaveLength(1));
+			for (let i = 1; i <= 10; i++) {
+				vi.setSystemTime(baseline + i * 1000);
+				await service.validateRequest(request);
+			}
+			expect(attempts).toHaveLength(1);
+			releaseFirst();
+			await service.drainValidations();
+			expect(attempts).toHaveLength(2);
+			expect(attempts[0].data.lastAccessedAt.getTime()).toBe(baseline);
+			expect(attempts[1].data.lastAccessedAt.getTime()).toBe(baseline + 10_000);
+			expect(attempts[1].where.lastAccessedAt.lt).toEqual(attempts[1].data.lastAccessedAt);
+			expect(attempts[1].select).toEqual({ id: true });
+		} finally {
+			releaseFirst();
+			await service.drainValidations();
+			vi.useRealTimers();
+		}
+	});
+
+	it("drains a failed in-flight write and does not replay its coalesced observation", async () => {
+		const current = await service.createSession("user-1");
+		let rejectFirst!: (error: Error) => void;
+		const firstWrite = new Promise<void>((_resolve, reject) => {
+			rejectFirst = reject;
+		});
+		prisma.session.update.mockImplementation(async () => {
+			await firstWrite;
+			throw new Error("unexpected metadata update completion");
+		});
+		const request = makeRequest("signed-cookie", { valid: true, value: current.token });
+		await service.validateRequest(request);
+		await vi.waitFor(() => expect(prisma.session.update).toHaveBeenCalledTimes(1));
+		await service.validateRequest(request);
+		let drained = false;
+		const drain = service.drainValidations().then(() => {
+			drained = true;
+		});
+		await Promise.resolve();
+		expect(drained).toBe(false);
+		rejectFirst(new Error("synthetic metadata storage failure"));
+		await drain;
+		expect(drained).toBe(true);
+		expect(prisma.session.update).toHaveBeenCalledTimes(1);
+	});
+
+	it("treats only a typed not-found result as a settled no-match", async () => {
+		const current = await service.createSession("user-1");
+		const missing = new Prisma.PrismaClientKnownRequestError("Synthetic metadata no-match", {
+			code: "P2025",
+			clientVersion: "test",
+		});
+		let rejectFirst!: (error: Error) => void;
+		const firstWrite = new Promise<void>((_resolve, reject) => {
+			rejectFirst = reject;
+		});
+		prisma.session.update.mockImplementationOnce(async () => {
+			await firstWrite;
+			throw missing;
+		});
+		const request = makeRequest("signed-cookie", { valid: true, value: current.token });
+		await service.validateRequest(request);
+		await vi.waitFor(() => expect(prisma.session.update).toHaveBeenCalledTimes(1));
+		await service.validateRequest(request);
+		rejectFirst(missing);
+		await service.drainValidations();
+		expect(prisma.session.update).toHaveBeenCalledTimes(1);
 	});
 });

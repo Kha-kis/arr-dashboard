@@ -6,10 +6,11 @@
  */
 
 import type { FastifyInstance } from "fastify";
-import type { ServiceInstance } from "../prisma.js";
+import { withIsolatedRuntimePrismaReadClient } from "../backup/restore-runtime-client.js";
 import { AppValidationError, InstanceNotFoundError } from "../errors.js";
+import type { ServiceInstance } from "../prisma.js";
 import { getErrorMessage } from "../utils/error-message.js";
-import { type JellyfinClient, createJellyfinClient } from "./jellyfin-client.js";
+import { createJellyfinClient, type JellyfinClient } from "./jellyfin-client.js";
 
 // ============================================================================
 // Types
@@ -78,10 +79,12 @@ export async function executeOnJellyfinInstances<T>(
 	userId: string,
 	operation: (client: JellyfinClient, instance: ServiceInstance) => Promise<T>,
 ): Promise<JellyfinMultiInstanceResponse<T>> {
-	const instances = await app.prisma.serviceInstance.findMany({
-		where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
-		orderBy: { label: "asc" },
-	});
+	const instances = await withIsolatedRuntimePrismaReadClient(app.prisma, (prisma) =>
+		prisma.serviceInstance.findMany({
+			where: { userId, service: { in: ["JELLYFIN", "EMBY"] }, enabled: true },
+			orderBy: { label: "asc" },
+		}),
+	);
 
 	const results = await Promise.all(
 		instances.map(async (instance): Promise<JellyfinInstanceOperationResult<T>> => {

@@ -21,14 +21,15 @@ export function useRequestedUnwatchedInsights(params?: {
 	limit?: number;
 	enabled?: boolean;
 }) {
+	const { enabled = true, ...queryParams } = params ?? {};
 	return useQuery<RequestedUnwatchedResponse>({
-		queryKey: ["library", "insights", "requested-unwatched", params],
+		queryKey: ["library", "insights", "requested-unwatched", params ? queryParams : undefined],
 		queryFn: () =>
 			fetchRequestedUnwatched({
 				minAgeDays: params?.minAgeDays,
 				limit: params?.limit,
 			}),
-		enabled: params?.enabled ?? true,
+		enabled,
 		staleTime: 5 * 60 * 1000,
 	});
 }

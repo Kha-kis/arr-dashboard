@@ -159,7 +159,7 @@ describe("radarrDestWriter — issue #384 regression", () => {
 	});
 
 	it("skips items already carrying the tag (idempotent)", async () => {
-		const movieGetById = vi.fn();
+		const movieGetById = vi.fn().mockResolvedValue(fullMovie(100, [7]));
 		const movieUpdate = vi.fn();
 		const arrClient = {
 			tag: {
@@ -179,7 +179,7 @@ describe("radarrDestWriter — issue #384 regression", () => {
 		const result = await radarrDestWriter.applyLabels(makeOpts({ arrClientFactory }));
 
 		expect(result.labelsApplied).toBe(1);
-		expect(movieGetById).not.toHaveBeenCalled();
+		expect(movieGetById).toHaveBeenCalledWith(100);
 		expect(movieUpdate).not.toHaveBeenCalled();
 	});
 
@@ -211,6 +211,75 @@ describe("radarrDestWriter — issue #384 regression", () => {
 		expect(result.matchesFound).toBe(3);
 		expect(result.labelsApplied).toBe(0);
 		expect(result.failures).toBe(3);
+	});
+});
+
+describe.each([
+	{
+		name: "Radarr",
+		writer: radarrDestWriter,
+		accessor: "movie",
+		mediaType: "movie" as const,
+		full: fullMovie,
+	},
+	{
+		name: "Sonarr",
+		writer: sonarrDestWriter,
+		accessor: "series",
+		mediaType: "series" as const,
+		full: fullSeries,
+	},
+])("$name current resource identity and tag evidence", ({ writer, accessor, mediaType, full }) => {
+	function fixture(listTags: number[], live: unknown) {
+		const getById = vi.fn().mockResolvedValue(live),
+			update = vi.fn().mockResolvedValue({});
+		const arrClientFactory = {
+			create: vi.fn().mockReturnValue({
+				tag: { getAll: vi.fn().mockResolvedValue([{ id: 7, label: "kids" }]) },
+				[accessor]: { getAll: vi.fn().mockResolvedValue([full(100, listTags)]), getById, update },
+			}),
+		} as unknown as DestWriterOpts["arrClientFactory"];
+		return {
+			getById,
+			update,
+			execute: () =>
+				writer.applyLabels(makeOpts({ arrClientFactory, candidates: [makeMatch(100, mediaType)] })),
+		};
+	}
+	it("merges from the full live resource rather than stale list tags", async () => {
+		const f = fixture([3], full(100, [3, 8]));
+		expect(await f.execute()).toEqual({ matchesFound: 1, labelsApplied: 1, failures: 0 });
+		expect(f.getById).toHaveBeenCalledWith(100);
+		expect(f.update).toHaveBeenCalledWith(100, { ...full(100, [3, 8]), tags: [3, 8, 7] });
+	});
+	it("observes fresh already-applied state with no PUT even if the list lacks the tag", async () => {
+		const f = fixture([3], full(100, [3, 7]));
+		expect(await f.execute()).toEqual({ matchesFound: 1, labelsApplied: 1, failures: 0 });
+		expect(f.getById).toHaveBeenCalledWith(100);
+		expect(f.update).not.toHaveBeenCalled();
+	});
+	it("does not trust stale already-applied list tags when the fresh resource needs the tag", async () => {
+		const f = fixture([3, 7], full(100, [3]));
+		expect(await f.execute()).toEqual({ matchesFound: 1, labelsApplied: 1, failures: 0 });
+		expect(f.getById).toHaveBeenCalledWith(100);
+		expect(f.update).toHaveBeenCalledWith(100, { ...full(100, [3]), tags: [3, 7] });
+	});
+	it.each([
+		{ name: "changed native ID", change: { id: 200 } },
+		{ name: "changed TMDB identity", change: { tmdbId: 200 } },
+		{ name: "missing tag evidence", change: { tags: undefined } },
+		{ name: "malformed tag evidence", change: { tags: [3, "8"] } },
+	])("fails closed without PUT for $name", async ({ change }) => {
+		const f = fixture([3], { ...full(100, [3]), ...change });
+		expect(await f.execute()).toEqual({ matchesFound: 1, labelsApplied: 0, failures: 1 });
+		expect(f.getById).toHaveBeenCalledWith(100);
+		expect(f.update).not.toHaveBeenCalled();
+	});
+	it("does not claim list-based already-applied success when the current GET fails", async () => {
+		const f = fixture([7], full(100, [7]));
+		f.getById.mockRejectedValue(new Error("Synthetic unavailable"));
+		expect(await f.execute()).toEqual({ matchesFound: 1, labelsApplied: 0, failures: 1 });
+		expect(f.update).not.toHaveBeenCalled();
 	});
 });
 
@@ -259,5 +328,48 @@ describe("sonarrDestWriter — issue #384 regression", () => {
 				rootFolderPath: "/tv",
 			}),
 		);
+	});
+});
+
+describe("participating ARR item writers", () => {
+	it("conserves concurrent Label Sync additions through equivalent endpoint instances and same-title peers", async () => {
+		let current = fullMovie(100, [1]);
+		const peer = { ...fullMovie(200, [9]), title: current.title };
+		const beforePeer = structuredClone(peer);
+		const update = vi.fn(async (_id: number, value: typeof current) => {
+			current = structuredClone(value);
+			return current;
+		});
+		const client = {
+			tag: {
+				getAll: async () => [
+					{ id: 2, label: "alpha" },
+					{ id: 3, label: "beta" },
+				],
+			},
+			movie: {
+				getAll: async () => [structuredClone(current), structuredClone(peer)],
+				getById: async () => structuredClone(current),
+				update,
+			},
+		};
+		const options = (tag: string, id: string, baseUrl: string) =>
+			makeOpts({
+				rule: makeRule({ id, destTagName: tag }),
+				destInstance: { ...makeOpts({}).destInstance, id, baseUrl },
+				arrClientFactory: { create: () => client } as unknown as DestWriterOpts["arrClientFactory"],
+			});
+		const results = await Promise.all([
+			radarrDestWriter.applyLabels(options("alpha", "one", "HTTP://labels-concurrent.invalid:80/")),
+			radarrDestWriter.applyLabels(options("beta", "two", "http://labels-concurrent.invalid")),
+		]);
+		expect(results).toEqual([
+			{ matchesFound: 1, labelsApplied: 1, failures: 0 },
+			{ matchesFound: 1, labelsApplied: 1, failures: 0 },
+		]);
+		expect(current.tags).toEqual([1, 2, 3]);
+		expect({ ...current, tags: [] }).toEqual({ ...fullMovie(100), tags: [] });
+		expect(peer).toEqual(beforePeer);
+		expect(update).toHaveBeenCalledTimes(2);
 	});
 });

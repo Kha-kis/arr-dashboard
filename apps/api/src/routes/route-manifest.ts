@@ -24,7 +24,7 @@ import { registerAutoTagRoutes } from "./auto-tag.js";
 import { registerAutoTagWebhookRoutes } from "./auto-tag-webhook.js";
 import { registerBackupRoutes } from "./backup.js";
 import { registerDashboardRoutes } from "./dashboard.js";
-import { registerHealthRoutes } from "./health.js";
+import { registerHealthRoutes, registerLiveRoutes } from "./health.js";
 import { registerHuntingRoutes } from "./hunting.js";
 import { registerJellyfinRoutes } from "./jellyfin/index.js";
 import { registerLabelSyncRoutes } from "./label-sync.js";
@@ -98,7 +98,14 @@ export const PUBLIC_ROUTE_GROUPS: readonly RouteGroup[] = [
 		prefix: "/health",
 		register: registerHealthRoutes,
 		maturity: "stable",
-		summary: "Liveness/readiness probes for orchestrators",
+		summary: "Database readiness probe for operators",
+	},
+	{
+		path: "/live",
+		prefix: "/live",
+		register: registerLiveRoutes,
+		maturity: "stable",
+		summary: "Process liveness probe for orchestrators",
 	},
 	{
 		path: "/auth",
@@ -210,7 +217,7 @@ export const PROTECTED_ROUTE_GROUPS: readonly RouteGroup[] = [
 		prefix: "/api",
 		register: registerManualImportRoutes,
 		maturity: "stable",
-		summary: "Manual import candidates and submission",
+		summary: "Manual import candidates, tracked submission and cached progress",
 	},
 
 	// --- ARR automation (dashboard-driven) ---
@@ -287,7 +294,7 @@ export const PROTECTED_ROUTE_GROUPS: readonly RouteGroup[] = [
 		register: registerQuiRoutes,
 		maturity: "experimental",
 		summary:
-			"Federated peer integration with autobrr/qui (qBittorrent UI) — read-only torrent state, trackers, cross-seed siblings; powers the Torrent Health panel on library item detail pages.",
+			"Federated qUI torrent state and explicitly audited operator actions, including durable holds for ambiguous action outcomes.",
 	},
 
 	// --- External integrations (Seerr / TRaSH Guides) ---

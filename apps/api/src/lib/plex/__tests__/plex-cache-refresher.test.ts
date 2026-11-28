@@ -12,6 +12,7 @@ import {
 	isPersonalMediaSection,
 } from "../plex-cache-refresher.js";
 import type { PlexClient } from "../plex-client.js";
+import { logPlexCollectionRejection } from "../plex-collection-diagnostics.js";
 
 type ReceiptTestSection = {
 	key: string;
@@ -263,6 +264,255 @@ describe("collectPlexCacheLiveEvidence", () => {
 					: vi.fn().mockResolvedValue(input.onDeck ?? []),
 		} as unknown as PlexClient;
 	}
+
+	describe("inner collection diagnostic", () => {
+		const canary = "https://private.invalid/Private-Title?token=secret instance-id SQL";
+		const preliminaryCalls =
+			"accounts sections inventory history on-deck sections inventory verify-history on-deck verify-history";
+		function providerCalls(client: PlexClient): string {
+			return (
+				[
+					["accounts", client.getAccounts],
+					["sections", client.getLibrarySections],
+					["inventory", client.getLibraryItemsWithCoverage],
+					["history", client.getHistory],
+					["on-deck", client.getOnDeck],
+					["verify-history", client.verifyHistorySnapshot],
+				] as const
+			)
+				.flatMap(([name, method]) =>
+					vi.mocked(method).mock.invocationCallOrder.map((order) => ({ name, order })),
+				)
+				.sort((left, right) => left.order - right.order)
+				.map(({ name }) => name)
+				.join(" ");
+		}
+		const cases = [
+			{
+				stage: "history-verification",
+				calls: "accounts inventory history on-deck sections inventory verify-history",
+				configure(client: PlexClient) {
+					vi.mocked(client.verifyHistorySnapshot)
+						.mockResolvedValueOnce(undefined)
+						.mockResolvedValueOnce(undefined)
+						.mockRejectedValueOnce(new Error(canary));
+				},
+			},
+			{
+				stage: "positive-history-verification",
+				calls:
+					"accounts inventory history on-deck sections inventory verify-history on-deck verify-history",
+				configure(client: PlexClient) {
+					vi.mocked(client.verifyHistorySnapshot)
+						.mockResolvedValueOnce(undefined)
+						.mockResolvedValueOnce(undefined)
+						.mockResolvedValueOnce(undefined)
+						.mockRejectedValueOnce(new Error(canary));
+				},
+			},
+			{
+				stage: "section-verification",
+				calls: "accounts inventory history on-deck sections",
+				configure(client: PlexClient) {
+					const read = vi.mocked(client.getLibrarySections);
+					const original = read.getMockImplementation()!;
+					read
+						.mockImplementationOnce(original)
+						.mockImplementationOnce(original)
+						.mockRejectedValueOnce(new Error(canary));
+				},
+			},
+			{
+				stage: "inventory-verification",
+				calls: "accounts inventory history on-deck sections inventory",
+				configure(client: PlexClient) {
+					const read = vi.mocked(client.getLibraryItemsWithCoverage);
+					const original = read.getMockImplementation()!;
+					read
+						.mockImplementationOnce(original)
+						.mockImplementationOnce(original)
+						.mockImplementationOnce(original)
+						.mockRejectedValueOnce(new Error(canary));
+				},
+			},
+			{
+				stage: "on-deck-verification",
+				calls: "accounts inventory history on-deck sections inventory verify-history on-deck",
+				configure(client: PlexClient) {
+					vi.mocked(client.getOnDeck)
+						.mockResolvedValueOnce([])
+						.mockResolvedValueOnce([])
+						.mockResolvedValueOnce([])
+						.mockRejectedValueOnce(new Error(canary));
+				},
+			},
+		];
+		// Dropping the diagnostic at either unpublished return loses the actual
+		// failure behind eligible metadata gaps; retries or authority changes fail
+		// the independent literal call sequence and result assertions below.
+		it.each(cases)("keeps $stage on the same terminal rejection event", async (testCase) => {
+			const client = positiveObservationClient({});
+			testCase.configure(client);
+			const captured = pinoCapture();
+			const result = await collectSettledPlexCacheLiveEvidence(client, canary, captured.log);
+			expect(result).toMatchObject({ kind: "unpublished", complete: false, errors: 1 });
+			expect(result.block?.reasons).toEqual(
+				testCase.stage === "positive-history-verification"
+					? ["currentItemsWithoutTmdbMetadata", "verification-exception"]
+					: ["currentItemsWithoutTmdbMetadata"],
+			);
+			expect(result.receipt).toMatchObject({ evidence: "unknown" });
+			for (const field of ["snapshot", "observation", "targetLedger", "completedAt", "innerStage"])
+				expect(result).not.toHaveProperty(field);
+			expect(providerCalls(client)).toBe(`${preliminaryCalls} ${testCase.calls}`);
+			expect(client.getActivities).toHaveBeenCalledTimes(4);
+			expect(client.getLibrarySettlementSections).toHaveBeenCalledTimes(4);
+			const events = captured
+				.serialized()
+				.trim()
+				.split("\n")
+				.map((line) => JSON.parse(line));
+			expect(
+				events.filter((event) => event.category === "plex-canonical-collection-rejected"),
+			).toEqual([
+				expect.objectContaining({
+					stage: "terminal-collection",
+					reason: "collection-incomplete",
+					innerStage: testCase.stage,
+					innerFailure: "unexpected-failure",
+				}),
+			]);
+			expect(captured.serialized()).not.toContain(canary);
+		});
+
+		it.each([
+			["coverage-blocker", "coverage-incomplete"],
+			["policy-blocker", "noUserAccounts"],
+		] as const)("distinguishes a hard %s from verification failures", async (failure, reason) => {
+			const client = positiveObservationClient({});
+			if (failure === "coverage-blocker") {
+				const read = vi.mocked(client.getLibraryItemsWithCoverage);
+				const original = read.getMockImplementation()!;
+				read
+					.mockImplementationOnce(original)
+					.mockImplementationOnce(original)
+					.mockResolvedValueOnce({
+						items: [],
+						expectedRawCount: 1,
+						pagesAttempted: 1,
+						pagesCompleted: 0,
+						rawObserved: 0,
+						reason: "page-failure",
+					});
+			} else {
+				vi.mocked(client.getAccounts)
+					.mockResolvedValueOnce([{ id: 1, name: "Alice" }])
+					.mockResolvedValueOnce([]);
+			}
+			const captured = pinoCapture();
+			const result = await collectSettledPlexCacheLiveEvidence(client, canary, captured.log);
+			expect(result).toMatchObject({ kind: "unpublished", complete: false, errors: 1 });
+			expect(result.block?.reasons).toContain(reason);
+			expect(providerCalls(client)).toBe(`${preliminaryCalls} accounts inventory history on-deck`);
+			const events = captured
+				.serialized()
+				.trim()
+				.split("\n")
+				.map((line) => JSON.parse(line));
+			expect(
+				events.filter((event) => event.category === "plex-canonical-collection-rejected"),
+			).toEqual([
+				expect.objectContaining({
+					stage: "terminal-collection",
+					reason: "collection-incomplete",
+					innerStage: "publication-policy",
+					innerFailure: failure,
+				}),
+			]);
+			expect(captured.serialized()).not.toContain(canary);
+		});
+
+		it("retains an unexpected initial collection failure without inventing a provider cause", async () => {
+			const client = positiveObservationClient({});
+			vi.mocked(client.getLibrarySections).mockRejectedValueOnce(new Error(canary));
+			const captured = pinoCapture();
+			const result = await collectSettledPlexCacheLiveEvidence(client, canary, captured.log);
+			expect(result).toMatchObject({ kind: "unpublished", errors: 1, block: { reasons: [] } });
+			expect(providerCalls(client)).toBe("accounts sections");
+			expect(captured.serialized()).toContain('"innerStage":"initial-collection"');
+			expect(captured.serialized()).toContain('"innerFailure":"unexpected-failure"');
+			expect(captured.serialized()).not.toContain(canary);
+		});
+
+		it.each([false, true])(
+			"preserves allowed-positive and watch-only churn controls (%s)",
+			async (churn) => {
+				const client = positiveObservationClient({});
+				if (churn)
+					vi.mocked(client.verifyHistorySnapshot).mockRejectedValue(
+						new Error("Plex history changed before its complete snapshot could be verified"),
+					);
+				const captured = pinoCapture();
+				const result = await collectSettledPlexCacheLiveEvidence(client, canary, captured.log);
+				expect(result).toMatchObject({
+					kind: "positive-observation",
+					complete: false,
+					errors: 0,
+					completedAt: expect.any(Date),
+					...(churn ? { unsettledWatch: true } : {}),
+				});
+				expect(result).not.toHaveProperty("snapshot");
+				expect(providerCalls(client)).toBe(
+					churn
+						? "accounts sections inventory history on-deck sections inventory verify-history on-deck accounts inventory history on-deck sections inventory verify-history on-deck"
+						: `${preliminaryCalls} accounts inventory history on-deck sections inventory verify-history on-deck verify-history`,
+				);
+				expect(client.getActivities).toHaveBeenCalledTimes(5);
+				expect(client.getLibrarySettlementSections).toHaveBeenCalledTimes(5);
+				expect(captured.serialized()).not.toContain("plex-canonical-collection-rejected");
+			},
+		);
+
+		it("omits the new event for unsafe bindings and survives a throwing diagnostic logger", async () => {
+			for (const mode of ["unsafe-binding", "throwing"] as const) {
+				const client = positiveObservationClient({});
+				cases[1]!.configure(client);
+				const captured = pinoCapture();
+				let diagnosticAttempts = 0;
+				const diagnosticLogger =
+					mode === "unsafe-binding"
+						? captured.log.child({ instanceId: canary })
+						: {
+								warn: () => {
+									diagnosticAttempts++;
+									throw new Error(canary);
+								},
+							};
+				// Existing aggregate logs use a safe logger; only the optional
+				// rejection logger is unsafe or throws in this fixture.
+				const logger = Object.assign(Object.create(captured.log), {
+					bindings: () => (mode === "unsafe-binding" ? { instanceId: canary } : {}),
+					warn: (event: { category?: string }, message: string) => {
+						if (event.category === "plex-canonical-collection-rejected")
+							diagnosticLogger.warn(event, message);
+						else captured.log.warn(event, message);
+					},
+				}) as FastifyBaseLogger;
+				const result = await collectSettledPlexCacheLiveEvidence(client, canary, logger);
+				expect(result).toMatchObject({ kind: "unpublished", errors: 1 });
+				expect(diagnosticAttempts).toBe(mode === "throwing" ? 1 : 0);
+				expect(captured.serialized()).not.toContain("plex-canonical-collection-rejected");
+				expect(captured.serialized()).not.toContain(canary);
+			}
+			expect(() =>
+				logPlexCollectionRejection(undefined, {
+					category: "plex-canonical-collection-rejected",
+					stage: "terminal-collection",
+					reason: "collection-incomplete",
+				}),
+			).not.toThrow();
+		});
+	});
 
 	it("returns a settled positive observation without a snapshot for mapped rows beside an unmappable item", async () => {
 		// Removing the positive-only branch, returning the rows under `snapshot`, or
@@ -726,6 +976,37 @@ describe("collectPlexCacheLiveEvidence", () => {
 		},
 	);
 
+	it("rejects TMDB candidate drift when playback also changes between collection passes", async () => {
+		const client = receiptCollectionClient({
+			sections: [{ key: "shows", title: "Shows", type: "show" }],
+			itemsBySection: { shows: [] },
+		});
+		let read = 0;
+		client.getLibraryItemsWithCoverage = vi.fn(async () => {
+			const finalPass = read++ >= 2;
+			return completeCoverage([
+				{
+					ratingKey: "show-ambiguous",
+					title: "Ambiguous Series",
+					type: "show",
+					Guid: finalPass
+						? [{ id: "tmdb://84" }, { id: "tmdb://126" }]
+						: [{ id: "tmdb://42" }, { id: "tmdb://84" }],
+				},
+				{
+					ratingKey: "show-unique",
+					title: "Unique Series",
+					type: "show",
+					Guid: [{ id: "tmdb://42" }],
+					viewCount: finalPass ? 1 : 0,
+				},
+			]);
+		});
+
+		const result = await collectSettledPlexCacheLiveEvidence(client, "inst-1", silentLog);
+		expect(result.kind).toBe("unpublished");
+	});
+
 	it("isolates account lookup failure to watch attribution", async () => {
 		const client = positiveObservationClient({});
 		client.getAccounts = vi.fn().mockRejectedValue(new Error("accounts unavailable"));
@@ -993,7 +1274,7 @@ describe("collectPlexCacheLiveEvidence", () => {
 
 		expect(result).toMatchObject({ kind: "positive-observation", complete: false });
 		expect(result.errorMessages).toContain(
-			"Plex cache incomplete: 1 current library item(s) without TMDB metadata",
+			"Plex cache incomplete: 1 current library item(s) without a unique usable TMDB mapping",
 		);
 		if (result.kind !== "positive-observation") throw new Error("Expected positive observation");
 		expect(result.observation.rows).toEqual([
@@ -2244,6 +2525,223 @@ describe("collectPlexCacheLiveEvidence", () => {
 		]);
 	});
 
+	it("does not map a current series with conflicting TMDB identities", async () => {
+		const result = await collectPlexCacheLiveEvidence(
+			receiptCollectionClient({
+				sections: [{ key: "2", title: "Shows", type: "show" }],
+				itemsBySection: {
+					2: [
+						{
+							ratingKey: "show-ambiguous",
+							title: "Example Series",
+							type: "show",
+							Guid: [{ id: "tmdb://42" }, { id: "tmdb://84" }, { id: "tvdb://123" }],
+						},
+					],
+				},
+			}),
+			"inst-1",
+			silentLog,
+		);
+
+		expect(result).toMatchObject({ complete: false, upserted: 0 });
+		if (result.kind !== "positive-observation") throw new Error("Expected positive observation");
+		expect(result.observation.rows).toEqual([]);
+		expect(result.errorMessages).toContain(
+			"Plex cache incomplete: 1 current library item(s) without a unique usable TMDB mapping",
+		);
+	});
+
+	it("retains ambiguous TMDB candidates beside a uniquely mapped show", async () => {
+		const result = await collectPlexCacheLiveEvidence(
+			receiptCollectionClient({
+				sections: [{ key: "2", title: "Shows", type: "show" }],
+				itemsBySection: {
+					2: [
+						{
+							ratingKey: "show-ambiguous",
+							title: "Ambiguous Series",
+							type: "show",
+							Guid: [{ id: "tmdb://42" }, { id: "tmdb://84" }],
+						},
+						{
+							ratingKey: "show-unique",
+							title: "Unique Series",
+							type: "show",
+							Guid: [{ id: "tmdb://42" }],
+						},
+					],
+				},
+			}),
+			"inst-1",
+			silentLog,
+		);
+
+		expect(result).toMatchObject({ kind: "positive-observation", complete: false });
+		if (result.kind !== "positive-observation") throw new Error("Expected positive observation");
+		expect(result.observation.observedTargets).toEqual([
+			{ sectionId: "2", mediaType: "series", tmdbId: 42, ratingKey: "show-unique" },
+		]);
+		expect(
+			(result.observation as unknown as { ambiguousTmdbCandidates: unknown[] })
+				.ambiguousTmdbCandidates,
+		).toEqual([
+			{ mediaType: "series", tmdbId: 42 },
+			{ mediaType: "series", tmdbId: 84 },
+		]);
+	});
+
+	it("retains TMDB candidates from a keyless item before skipping its mapping", async () => {
+		const result = await collectPlexCacheLiveEvidence(
+			receiptCollectionClient({
+				sections: [{ key: "2", title: "Shows", type: "show" }],
+				itemsBySection: {
+					2: [
+						{
+							ratingKey: "",
+							title: "Keyless Series",
+							type: "show",
+							Guid: [{ id: "tmdb://42" }, { id: "tmdb://84" }],
+						},
+						{
+							ratingKey: "show-unique",
+							title: "Unique Series",
+							type: "show",
+							Guid: [{ id: "tmdb://42" }],
+						},
+					],
+				},
+			}),
+			"inst-1",
+			silentLog,
+		);
+
+		expect(result.kind).toBe("positive-observation");
+		if (result.kind !== "positive-observation") throw new Error("Expected positive observation");
+		expect(
+			(result.observation as unknown as { ambiguousTmdbCandidates: unknown[] })
+				.ambiguousTmdbCandidates,
+		).toEqual([
+			{ mediaType: "series", tmdbId: 42 },
+			{ mediaType: "series", tmdbId: 84 },
+		]);
+		expect(result.observation.observedTargets).toEqual([
+			{ sectionId: "2", mediaType: "series", tmdbId: 42, ratingKey: "show-unique" },
+		]);
+	});
+
+	it("keeps movie ambiguity separate from a same-ID series candidate", async () => {
+		const result = await collectPlexCacheLiveEvidence(
+			receiptCollectionClient({
+				sections: [
+					{ key: "1", title: "Movies", type: "movie" },
+					{ key: "2", title: "Shows", type: "show" },
+				],
+				itemsBySection: {
+					1: [
+						{
+							ratingKey: "movie-ambiguous",
+							title: "Ambiguous Movie",
+							type: "movie",
+							Guid: [{ id: "tmdb://42" }, { id: "tmdb://84" }],
+						},
+					],
+					2: [
+						{
+							ratingKey: "show-42",
+							title: "Series 42",
+							type: "show",
+							Guid: [{ id: "tmdb://42" }],
+						},
+					],
+				},
+			}),
+			"inst-1",
+			silentLog,
+		);
+
+		expect(result.kind).toBe("positive-observation");
+		if (result.kind !== "positive-observation") throw new Error("Expected positive observation");
+		expect(
+			(result.observation as unknown as { ambiguousTmdbCandidates: unknown[] })
+				.ambiguousTmdbCandidates,
+		).toEqual([
+			{ mediaType: "movie", tmdbId: 42 },
+			{ mediaType: "movie", tmdbId: 84 },
+		]);
+		expect(result.observation.observedTargets).toEqual([
+			{ sectionId: "2", mediaType: "series", tmdbId: 42, ratingKey: "show-42" },
+		]);
+	});
+
+	it("omits conflicting optional TVDB identities while retaining a unique TMDB mapping", async () => {
+		const result = await collectPlexCacheLiveEvidence(
+			receiptCollectionClient({
+				sections: [{ key: "2", title: "Shows", type: "show" }],
+				itemsBySection: {
+					2: [
+						{
+							ratingKey: "show-tvdb-ambiguous",
+							title: "Example Series",
+							type: "show",
+							Guid: [{ id: "tmdb://42" }, { id: "tvdb://123" }, { id: "tvdb://456" }],
+						},
+					],
+				},
+			}),
+			"inst-1",
+			silentLog,
+		);
+
+		expect(result).toMatchObject({ kind: "authoritative-snapshot", complete: true });
+		if (result.kind !== "authoritative-snapshot")
+			throw new Error("Expected authoritative snapshot");
+		expect(result.snapshot.rows).toEqual([
+			expect.objectContaining({ ratingKey: "show-tvdb-ambiguous", tmdbId: 42 }),
+		]);
+		expect(result.inventoryTargets).toEqual([
+			{ sectionId: "2", mediaType: "series", tmdbId: 42, ratingKey: "show-tvdb-ambiguous" },
+		]);
+	});
+
+	it("deduplicates equivalent external GUIDs before evaluating uniqueness", async () => {
+		const result = await collectPlexCacheLiveEvidence(
+			receiptCollectionClient({
+				sections: [{ key: "2", title: "Shows", type: "show" }],
+				itemsBySection: {
+					2: [
+						{
+							ratingKey: "show-duplicates",
+							title: "Example Series",
+							type: "show",
+							Guid: [
+								{ id: "tmdb://42" },
+								{ id: " TMDB://42 " },
+								{ id: "tvdb://123" },
+								{ id: "TVDB://123" },
+							],
+						},
+					],
+				},
+			}),
+			"inst-1",
+			silentLog,
+		);
+
+		expect(result).toMatchObject({ kind: "authoritative-snapshot", complete: true });
+		if (result.kind !== "authoritative-snapshot")
+			throw new Error("Expected authoritative snapshot");
+		expect(result.inventoryTargets).toEqual([
+			{
+				sectionId: "2",
+				mediaType: "series",
+				tmdbId: 42,
+				tvdbId: 123,
+				ratingKey: "show-duplicates",
+			},
+		]);
+	});
+
 	it("fails closed when stale relevant history belongs to an unknown account", async () => {
 		const mockClient = {
 			getAccounts: vi.fn().mockResolvedValue([{ id: 1, name: "Alice" }]),
@@ -2422,7 +2920,7 @@ describe("collectPlexCacheLiveEvidence", () => {
 
 		expect(result).toMatchObject({ complete: false, upserted: 0 });
 		expect(result.errorMessages).toContain(
-			"Plex cache incomplete: 1 current library item(s) without TMDB metadata",
+			"Plex cache incomplete: 1 current library item(s) without a unique usable TMDB mapping",
 		);
 		expect(transaction).not.toHaveBeenCalled();
 		expect(silentLog.warn).toHaveBeenCalledWith(
@@ -2884,7 +3382,7 @@ describe("collectPlexCacheLiveEvidence", () => {
 
 			expect(result).toMatchObject({ complete: false });
 			expect(result.errorMessages).toContain(
-				"Plex cache incomplete: 1 current library item(s) without TMDB metadata",
+				"Plex cache incomplete: 1 current library item(s) without a unique usable TMDB mapping",
 			);
 		});
 
@@ -2959,7 +3457,7 @@ describe("collectPlexCacheLiveEvidence", () => {
 
 			expect(result).toMatchObject({ complete: false });
 			expect(result.errorMessages).toContain(
-				"Plex cache incomplete: 1 current library item(s) without TMDB metadata",
+				"Plex cache incomplete: 1 current library item(s) without a unique usable TMDB mapping",
 			);
 		});
 	});
@@ -3141,4 +3639,211 @@ describe("collectPlexCacheLiveEvidence", () => {
 			expect(result.snapshot?.rows[0]).toEqual(expect.objectContaining({ tmdbId: 42 }));
 		});
 	});
+});
+
+it("keeps a corroborated blank episode show key as positive-only display evidence", async () => {
+	const client = receiptCollectionClient({
+		sections: [{ key: "7", title: "Shows", type: "show" }],
+		itemsBySection: {
+			"7": [{ ratingKey: "140", title: "Show", type: "show", Guid: [{ id: "tmdb://42" }] }],
+		},
+		history: [
+			{
+				historyKey: "/status/sessions/history/1",
+				ratingKey: "142",
+				grandparentRatingKey: "140",
+				grandparentKeyFallback: true,
+				librarySectionID: "7",
+				type: "episode",
+				title: "Episode",
+				viewedAt: 1_700_000_000,
+				accountID: 1,
+			},
+		],
+	});
+	const result = await collectPlexCacheLiveEvidence(client, "inst-1", silentLog);
+	expect(result.kind).toBe("positive-observation");
+	if (result.kind !== "positive-observation") return;
+	expect(result.observation.rows).toEqual([
+		expect.objectContaining({
+			ratingKey: "140",
+			mediaType: "series",
+			watchCount: 1,
+			watchedByUsers: '["Alice"]',
+		}),
+	]);
+	expect(
+		result.receipt.domains.find((domain) => domain.domain === "watch-attribution"),
+	).toMatchObject({
+		evidence: "positive-only",
+		valueSemantics: "lower-bound",
+	});
+	expect(result.observation.partialReasons).toContainEqual({
+		code: "historyItemsWithoutUsableMediaKey",
+		count: 1,
+	});
+	expect(result.observation.observedTargets).toEqual([
+		expect.objectContaining({ sectionId: "7", mediaType: "series", ratingKey: "140" }),
+	]);
+	expect(evaluateProviderCoverageReceipt(result.receipt)).toMatchObject({
+		valid: true,
+		complete: false,
+	});
+});
+
+it.each([
+	["different section", "8", "show", "140", 1],
+	["missing section", undefined, "show", "140", 1],
+	["movie ID", "7", "movie", "140", 1],
+	["removed show", "7", "show", "999", 1],
+	["unknown account", "7", "show", "140", 99],
+] as const)(
+	"does not attribute a canonical fallback with %s",
+	async (_reason, sectionId, type, currentRatingKey, accountID) => {
+		const client = receiptCollectionClient({
+			sections: [{ key: "7", title: "Library", type }],
+			itemsBySection: {
+				"7": [
+					{
+						ratingKey: currentRatingKey,
+						title: "Current",
+						type,
+						Guid: [{ id: "tmdb://42" }],
+					},
+				],
+			},
+			history: [
+				{
+					historyKey: "/status/sessions/history/1",
+					ratingKey: "142",
+					grandparentRatingKey: "140",
+					grandparentKeyFallback: true,
+					...(sectionId ? { librarySectionID: sectionId } : {}),
+					type: "episode",
+					title: "Episode",
+					viewedAt: 1_700_000_000,
+					accountID,
+				},
+			],
+		});
+		const result = await collectPlexCacheLiveEvidence(client, "inst-1", silentLog);
+		expect(result.kind).toBe("positive-observation");
+		if (result.kind !== "positive-observation") return;
+		expect(result.observation.rows).toEqual([
+			expect.objectContaining({
+				watchCount: 0,
+				watchedByUsers: "[]",
+			}),
+		]);
+		expect(
+			result.receipt.domains.find((domain) => domain.domain === "watch-attribution"),
+		).toMatchObject({
+			evidence: "unknown",
+			valueSemantics: "unknown",
+		});
+	},
+);
+
+it("withholds fallback attribution when the current show inventory changes on reread", async () => {
+	const show = { ratingKey: "140", title: "Show", type: "show", Guid: [{ id: "tmdb://42" }] };
+	const client = receiptCollectionClient({
+		sections: [{ key: "7", title: "Shows", type: "show" }],
+		itemsBySection: { "7": [show] },
+		history: [
+			{
+				historyKey: "/status/sessions/history/1",
+				ratingKey: "142",
+				grandparentRatingKey: "140",
+				grandparentKeyFallback: true,
+				librarySectionID: "7",
+				type: "episode",
+				title: "Episode",
+				viewedAt: 1_700_000_000,
+				accountID: 1,
+			},
+		],
+	});
+	vi.mocked(client.getLibraryItemsWithCoverage)
+		.mockResolvedValueOnce(completeCoverage([show]))
+		.mockResolvedValueOnce(completeCoverage([{ ...show, ratingKey: "143" }]));
+	const result = await collectPlexCacheLiveEvidence(client, "inst-1", silentLog);
+	expect(result.kind).toBe("unpublished");
+});
+
+it("grants the same positive-only replacement path before and after blank-key recovery", async () => {
+	const makeClient = (grandparentRatingKey: string, recovered: boolean) =>
+		receiptCollectionClient({
+			sections: [{ key: "7", title: "Shows", type: "show" }],
+			itemsBySection: {
+				"7": [{ ratingKey: "140", title: "Show", type: "show", Guid: [{ id: "tmdb://42" }] }],
+			},
+			history: [
+				{
+					historyKey: "/status/sessions/history/1",
+					ratingKey: "142",
+					grandparentRatingKey,
+					...(recovered ? { grandparentKeyFallback: true } : {}),
+					librarySectionID: "7",
+					type: "episode",
+					title: "Episode",
+					viewedAt: 1_700_000_000,
+					accountID: 1,
+				},
+			],
+		});
+	const baseline = await collectSettledPlexCacheLiveEvidence(
+		makeClient("", false),
+		"inst-1",
+		silentLog,
+	);
+	const candidate = await collectSettledPlexCacheLiveEvidence(
+		makeClient("140", true),
+		"inst-1",
+		silentLog,
+	);
+	expect(baseline.kind).toBe("positive-observation");
+	expect(candidate.kind).toBe("positive-observation");
+	if (baseline.kind !== "positive-observation" || candidate.kind !== "positive-observation") return;
+	expect(baseline.observation.partialReasons).toEqual(candidate.observation.partialReasons);
+	expect(baseline.observation.observedTargets).toEqual(candidate.observation.observedTargets);
+	expect(baseline.receipt.evidence).toBe("positive-only");
+	expect(candidate.receipt.evidence).toBe("positive-only");
+	expect(baseline.observation.rows).toEqual([
+		expect.objectContaining({ ratingKey: "140", watchCount: 0, watchedByUsers: "[]" }),
+	]);
+	expect(candidate.observation.rows).toEqual([
+		expect.objectContaining({ ratingKey: "140", watchCount: 1, watchedByUsers: '["Alice"]' }),
+	]);
+});
+
+it("keeps known Personal Media history outside the new blank-key fallback", async () => {
+	const client = receiptCollectionClient({
+		sections: [
+			{ key: "7", title: "Shows", type: "show" },
+			{ key: "personal", title: "Personal", type: "show", agent: "tv.plex.agents.none" },
+		],
+		itemsBySection: {
+			"7": [{ ratingKey: "140", title: "Show", type: "show", Guid: [{ id: "tmdb://42" }] }],
+			personal: [{ ratingKey: "personal-show", title: "Personal", type: "show", Guid: [] }],
+		},
+		history: [
+			{
+				historyKey: "/status/sessions/history/1",
+				ratingKey: "142",
+				grandparentRatingKey: "140",
+				grandparentKeyFallback: true,
+				librarySectionID: "personal",
+				type: "episode",
+				title: "Episode",
+				viewedAt: 1_700_000_000,
+				accountID: 1,
+			},
+		],
+	});
+	const result = await collectPlexCacheLiveEvidence(client, "inst-1", silentLog);
+	expect(result.kind).toBe("authoritative-snapshot");
+	if (result.kind !== "authoritative-snapshot") return;
+	expect(result.snapshot.rows).toEqual([
+		expect.objectContaining({ ratingKey: "140", watchCount: 0, watchedByUsers: "[]" }),
+	]);
 });

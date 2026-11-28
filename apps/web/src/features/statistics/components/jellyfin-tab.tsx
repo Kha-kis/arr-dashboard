@@ -2,18 +2,7 @@
 
 import { Activity, TrendingUp } from "lucide-react";
 import { useState } from "react";
-import {
-	useJellyfinBandwidthAnalytics,
-	useJellyfinBandwidthForecast,
-	useJellyfinCodecAnalytics,
-	useJellyfinDeviceAnalytics,
-	useJellyfinPopularMedia,
-	useJellyfinQualityScore,
-	useJellyfinTopMedia,
-	useJellyfinTranscodeAnalytics,
-	useJellyfinUserAnalytics,
-	useJellyfinWatchHistory,
-} from "../../../hooks/api/useJellyfin";
+import { useMediaAnalyticsReport } from "../../../hooks/api/useMediaAnalyticsReport";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { BandwidthChart } from "./bandwidth-chart";
 import { CodecChart } from "./codec-chart";
@@ -31,23 +20,12 @@ export const JellyfinTab = () => {
 	const [timeRange, setTimeRange] = useState<number>(30);
 	const { gradient } = useThemeGradient();
 
-	// Session-snapshot analytics — Jellyfin/Emby instances write to the same
-	// SessionSnapshot table as Plex (see session-snapshot-scheduler.ts), so
-	// the analytics endpoints share aggregation logic with the Plex routes.
-	const transcodeQuery = useJellyfinTranscodeAnalytics(timeRange);
-	const bandwidthQuery = useJellyfinBandwidthAnalytics(timeRange);
-	const userAnalyticsQuery = useJellyfinUserAnalytics(timeRange);
-	const watchHistoryQuery = useJellyfinWatchHistory(timeRange, 20);
-	const codecQuery = useJellyfinCodecAnalytics(timeRange);
-	const deviceQuery = useJellyfinDeviceAnalytics(timeRange);
-	const qualityQuery = useJellyfinQualityScore(timeRange);
-	const forecastQuery = useJellyfinBandwidthForecast(timeRange);
-	const topMoviesQuery = useJellyfinTopMedia("movie", timeRange);
-	const topShowsQuery = useJellyfinTopMedia("series", timeRange);
-	const topMusicQuery = useJellyfinTopMedia("music", timeRange);
-	const popularMoviesQuery = useJellyfinPopularMedia("movie", timeRange);
-	const popularShowsQuery = useJellyfinPopularMedia("series", timeRange);
-	const popularMusicQuery = useJellyfinPopularMedia("music", timeRange);
+	const reportQuery = useMediaAnalyticsReport("jellyfin", timeRange);
+	const report = reportQuery.data;
+	const isUnavailable = reportQuery.isError && !report;
+	const canRetry =
+		reportQuery.isError ||
+		(reportQuery.isFetching && reportQuery.errorUpdatedAt > reportQuery.dataUpdatedAt);
 
 	return (
 		<div className="space-y-6 animate-in fade-in duration-300">
@@ -84,50 +62,79 @@ export const JellyfinTab = () => {
 				</p>
 			</div>
 
+			{report && (reportQuery.isFetching || reportQuery.isError) && (
+				<p
+					role="status"
+					className="rounded-xl border border-border/30 bg-card/30 p-4 text-xs text-muted-foreground"
+				>
+					{reportQuery.isFetching
+						? "Showing last-known Statistics report while updating."
+						: "Showing last-known Statistics report; refresh failed."}
+				</p>
+			)}
+			{!report && canRetry && (
+				<p
+					role="alert"
+					className="rounded-xl border border-border/30 bg-card/30 p-4 text-xs text-muted-foreground"
+				>
+					Statistics report unavailable.
+				</p>
+			)}
+			{canRetry && (
+				<button
+					type="button"
+					onClick={() => void reportQuery.refetch()}
+					disabled={reportQuery.isFetching}
+					className="rounded-lg border border-border/50 px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted/30 disabled:cursor-wait disabled:opacity-50"
+				>
+					Retry report
+				</button>
+			)}
+
 			{/* Top Media Leaderboards (replaces Tautulli home-stats) */}
 			<TopMediaChart
-				data={topMoviesQuery.data}
-				isLoading={topMoviesQuery.isLoading}
-				isError={topMoviesQuery.isError}
+				data={report?.topMedia.movie}
+				isLoading={reportQuery.isLoading}
+				isError={isUnavailable}
 				mediaType="movie"
 				service="jellyfin"
 			/>
 			<TopMediaChart
-				data={topShowsQuery.data}
-				isLoading={topShowsQuery.isLoading}
-				isError={topShowsQuery.isError}
+				data={report?.topMedia.series}
+				isLoading={reportQuery.isLoading}
+				isError={isUnavailable}
 				mediaType="series"
 				service="jellyfin"
 			/>
 			<TopMediaChart
-				data={topMusicQuery.data}
-				isLoading={topMusicQuery.isLoading}
-				isError={topMusicQuery.isError}
+				data={report?.topMedia.music}
+				isLoading={reportQuery.isLoading}
+				isError={isUnavailable}
 				mediaType="music"
 				service="jellyfin"
 			/>
 
 			{/* Popular Media (sorted by distinct watcher count) */}
 			<TopMediaChart
-				data={popularMoviesQuery.data}
-				isLoading={popularMoviesQuery.isLoading}
-				isError={popularMoviesQuery.isError}
+				data={report?.popularMedia.movie}
+				isLoading={reportQuery.isLoading}
+				isError={isUnavailable}
 				mediaType="movie"
 				metric="popularity"
 				service="jellyfin"
 			/>
 			<TopMediaChart
-				data={popularShowsQuery.data}
-				isLoading={popularShowsQuery.isLoading}
-				isError={popularShowsQuery.isError}
+				data={report?.popularMedia.series}
+				isLoading={reportQuery.isLoading}
+				isError={isUnavailable}
 				mediaType="series"
 				metric="popularity"
 				service="jellyfin"
 			/>
 			<TopMediaChart
-				data={popularMusicQuery.data}
-				isLoading={popularMusicQuery.isLoading}
-				isError={popularMusicQuery.isError}
+				data={report?.popularMedia.music}
+				isLoading={reportQuery.isLoading}
+				isError={isUnavailable}
 				mediaType="music"
 				metric="popularity"
 				service="jellyfin"
@@ -135,59 +142,59 @@ export const JellyfinTab = () => {
 
 			{/* Session Snapshot Analytics */}
 			<TranscodeChart
-				data={transcodeQuery.data}
-				isLoading={transcodeQuery.isLoading}
-				isError={transcodeQuery.isError}
+				data={report?.transcode}
+				isLoading={reportQuery.isLoading}
+				isError={isUnavailable}
 				service="jellyfin"
 			/>
 			<BandwidthChart
-				data={bandwidthQuery.data}
-				isLoading={bandwidthQuery.isLoading}
-				isError={bandwidthQuery.isError}
+				data={report?.bandwidth}
+				isLoading={reportQuery.isLoading}
+				isError={isUnavailable}
 				service="jellyfin"
 			/>
 
 			{/* Tier 1: User Analytics + Watch History */}
 			<UserAnalyticsChart
-				data={userAnalyticsQuery.data}
-				isLoading={userAnalyticsQuery.isLoading}
-				isError={userAnalyticsQuery.isError}
+				data={report?.userAnalytics}
+				isLoading={reportQuery.isLoading}
+				isError={isUnavailable}
 				service="jellyfin"
 			/>
 			<WatchHistoryWidget
-				data={watchHistoryQuery.data}
-				isLoading={watchHistoryQuery.isLoading}
-				isError={watchHistoryQuery.isError}
+				data={report?.watchHistory}
+				isLoading={reportQuery.isLoading}
+				isError={isUnavailable}
 				service="jellyfin"
 			/>
 
 			{/* Tier 1/2: Codec + Device Analytics */}
 			<div className="grid gap-6 md:grid-cols-2">
 				<CodecChart
-					data={codecQuery.data}
-					isLoading={codecQuery.isLoading}
-					isError={codecQuery.isError}
+					data={report?.codec}
+					isLoading={reportQuery.isLoading}
+					isError={isUnavailable}
 					service="jellyfin"
 				/>
 				<DeviceChart
-					data={deviceQuery.data}
-					isLoading={deviceQuery.isLoading}
-					isError={deviceQuery.isError}
+					data={report?.devices}
+					isLoading={reportQuery.isLoading}
+					isError={isUnavailable}
 					service="jellyfin"
 				/>
 			</div>
 
 			{/* Tier 3: Quality Score + Forecast */}
 			<QualityScoreChart
-				data={qualityQuery.data}
-				isLoading={qualityQuery.isLoading}
-				isError={qualityQuery.isError}
+				data={report?.qualityScore}
+				isLoading={reportQuery.isLoading}
+				isError={isUnavailable}
 				service="jellyfin"
 			/>
 			<ForecastChart
-				data={forecastQuery.data}
-				isLoading={forecastQuery.isLoading}
-				isError={forecastQuery.isError}
+				data={report?.forecast}
+				isLoading={reportQuery.isLoading}
+				isError={isUnavailable}
 				service="jellyfin"
 			/>
 		</div>

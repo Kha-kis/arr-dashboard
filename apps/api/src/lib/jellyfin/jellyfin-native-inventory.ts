@@ -25,6 +25,169 @@ type NativeLibraryReader = Pick<
 	"getNativeMediaFolders" | "getNativeLibraryItemsWithCoverage"
 >;
 
+type NativeLibraryJobReader = Pick<
+	JellyfinClient,
+	"getNativeMediaFolders" | "readNativeInventoryPage"
+>;
+
+export interface JellyfinNativeLibraryJobScope {
+	libraryId: string;
+	collectionType: string;
+	scopeKey: string;
+}
+
+export function createJellyfinNativeLibraryJobAdapter(
+	client: NativeLibraryJobReader,
+	options?: { requireStableIdentifiers?: boolean },
+): NativeInventoryJobAdapter<JellyfinNativeLibraryJobScope>;
+export function createJellyfinNativeLibraryJobAdapter(
+	client: Pick<NativeLibraryJobReader, "readNativeInventoryPage">,
+	options: {
+		requireStableIdentifiers?: boolean;
+		discoverScopes: NativeInventoryJobAdapter<JellyfinNativeLibraryJobScope>["discoverScopes"];
+	},
+): NativeInventoryJobAdapter<JellyfinNativeLibraryJobScope>;
+export function createJellyfinNativeLibraryJobAdapter(
+	client: Pick<NativeLibraryJobReader, "readNativeInventoryPage"> &
+		Partial<Pick<NativeLibraryJobReader, "getNativeMediaFolders">>,
+	options?: {
+		requireStableIdentifiers?: boolean;
+		discoverScopes?: NativeInventoryJobAdapter<JellyfinNativeLibraryJobScope>["discoverScopes"];
+	},
+): NativeInventoryJobAdapter<JellyfinNativeLibraryJobScope> {
+	return {
+		domain: "library" as const,
+		async discoverScopes(deadlineAt: number): Promise<
+			| { status: "ready"; catalogIdentity: string; scopes: JellyfinNativeLibraryJobScope[] }
+			| {
+					status: "unavailable";
+					reason: "deadline-exceeded" | "provider-unavailable" | "coverage-incomplete";
+			  }
+		> {
+			if (options?.discoverScopes) return await options.discoverScopes(deadlineAt);
+			if (!client.getNativeMediaFolders)
+				return { status: "unavailable", reason: "provider-unavailable" };
+			const remainingMs = deadlineAt - Date.now();
+			if (remainingMs <= 0) return { status: "unavailable", reason: "deadline-exceeded" };
+			let libraries: JellyfinLibrary[];
+			try {
+				libraries = await client.getNativeMediaFolders({ timeoutMs: remainingMs });
+			} catch {
+				return { status: "unavailable", reason: "provider-unavailable" };
+			}
+			const ids = new Set<string>();
+			const scopes: JellyfinNativeLibraryJobScope[] = [];
+			for (const library of libraries) {
+				if (!validIdentity(library.id) || ids.has(library.id)) {
+					return { status: "unavailable", reason: "coverage-incomplete" };
+				}
+				ids.add(library.id);
+				if (library.collectionType === "playlists") continue;
+				scopes.push({
+					libraryId: library.id,
+					collectionType: library.collectionType,
+					scopeKey: `library:${library.id}`,
+				});
+			}
+			scopes.sort((a, b) => a.scopeKey.localeCompare(b.scopeKey));
+			return { status: "ready", catalogIdentity: scopeIdentity(scopes), scopes };
+		},
+		async readPage(
+			scope: JellyfinNativeLibraryJobScope,
+			startIndex: number,
+			limit: number,
+			deadlineAt: number,
+		): Promise<
+			| {
+					status: "page";
+					domain: "library";
+					scopeKey: string;
+					startIndex: number;
+					totalRecordCount: number;
+					rawNativeIds: string[];
+					comparisonKeys: Array<string | null>;
+					rows: NativeInventoryRow[];
+			  }
+			| {
+					status: "unavailable";
+					reason: "deadline-exceeded" | "provider-unavailable" | "coverage-incomplete";
+			  }
+		> {
+			if (!validIdentity(scope.libraryId) || scope.scopeKey !== `library:${scope.libraryId}`) {
+				return { status: "unavailable", reason: "coverage-incomplete" };
+			}
+			let page: Awaited<ReturnType<JellyfinClient["readNativeInventoryPage"]>>;
+			try {
+				page = await client.readNativeInventoryPage({
+					domain: "library",
+					libraryId: scope.libraryId,
+					includeItemTypes:
+						scope.collectionType === "movies"
+							? "Movie"
+							: scope.collectionType === "tvshows"
+								? "Series"
+								: "Movie,Series",
+					startIndex,
+					limit,
+					deadlineAt,
+				});
+			} catch {
+				return { status: "unavailable", reason: "provider-unavailable" };
+			}
+			if (page.status === "unavailable") return page;
+			if (page.domain !== "library" || page.startIndex !== startIndex) {
+				return { status: "unavailable", reason: "coverage-incomplete" };
+			}
+			const rawNativeIds: string[] = [];
+			const comparisonKeys: Array<string | null> = [];
+			const rows: NativeInventoryRow[] = [];
+			const ids = new Set<string>();
+			for (const item of page.items) {
+				if (!validIdentity(item.id) || ids.has(item.id)) {
+					return { status: "unavailable", reason: "coverage-incomplete" };
+				}
+				ids.add(item.id);
+				rawNativeIds.push(item.id);
+				if (item.type === "BoxSet") {
+					comparisonKeys.push(null);
+					continue;
+				}
+				if (!expectedItemType(scope.collectionType, item.type)) {
+					return { status: "unavailable", reason: "coverage-incomplete" };
+				}
+				comparisonKeys.push(
+					JSON.stringify([
+						item.type,
+						options?.requireStableIdentifiers ? (item.externalIds?.tmdb ?? []) : [],
+					]),
+				);
+				rows.push({
+					nativeId: item.id,
+					mediaType: item.type === "Movie" ? "movie" : "series",
+					libraryIds: [scope.libraryId],
+					parentNativeId: null,
+					seasonNumber: null,
+					episodeNumber: null,
+					title: typeof item.name === "string" ? item.name : "",
+					...(hasNativeInventoryExternalIds(item.externalIds)
+						? { externalIds: item.externalIds }
+						: {}),
+				});
+			}
+			return {
+				status: "page",
+				domain: "library",
+				scopeKey: scope.scopeKey,
+				startIndex: page.startIndex,
+				totalRecordCount: page.totalRecordCount,
+				rawNativeIds,
+				comparisonKeys,
+				rows,
+			};
+		},
+	};
+}
+
 interface JellyfinNativeLibraryScope {
 	libraryId: string;
 	collectionType: string;
@@ -254,3 +417,4 @@ export async function collectJellyfinNativeLibraryInventory(
 		};
 	}
 }
+import type { NativeInventoryJobAdapter } from "../provider-observation/native-inventory-job-runner.js";

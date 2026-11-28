@@ -51,15 +51,38 @@
  *   - Lidarr per-track correlation. Same pattern, separate session.
  */
 
+import { randomUUID } from "node:crypto";
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import type { ArrClientFactory } from "../arr/client-factory.js";
+import { createArrServiceFingerprint } from "../arr/service-fingerprint.js";
+import { withIsolatedRuntimePrismaTransaction } from "../backup/restore-runtime-client.js";
 import type { ServiceInstance } from "../prisma.js";
 import { createQuiClient } from "../qui/client-factory.js";
 import { withQuiObservationTopologyGuard } from "../qui/observation-topology-guard.js";
+import {
+	assertQuiTopologyGenerationCurrent,
+	captureQuiTopologyGeneration,
+} from "../qui/topology-generation.js";
+import { withSqliteTransactionWriteIntent } from "../sqlite-transaction-intent.js";
 import { getErrorMessage } from "../utils/error-message.js";
+import {
+	cachedSonarrSeriesFileEvidence,
+	createEpisodeFileInventoryReceipt,
+	createEpisodeFileObservationReceipt,
+	currentSonarrSeriesFileEvidence,
+	episodeFileIdentitiesFromSonarr,
+	hasCompleteEpisodeFileInventory,
+	readEpisodeFileInventorySource,
+} from "./episode-file-coverage.js";
 import { buildFileIdIndex, matchLibraryByFileId } from "./infohash-backfill-by-inode.js";
+import { CURRENT_INODE_SOURCE } from "./inode-correlation-upgrade.js";
+
+const BACKFILL_MISS_RETRY_MS = 30 * 60_000;
 
 export interface EpisodeFileSyncResult {
+	/** Internal cache-row identities for bounded scheduler repair admission. */
+	attemptedSeriesIds?: string[];
+	failedSeriesIds?: string[];
 	usersScanned: number;
 	seriesScanned: number;
 	filesUpserted: number;
@@ -73,6 +96,8 @@ export interface EpisodeFileSyncArgs {
 	log?: FastifyBaseLogger;
 	/** Cap on series fetched per sweep. Each series = one Sonarr API call. */
 	seriesCap: number;
+	/** Retry only these cache rows, re-resolved against current enabled instances. */
+	retrySeriesIds?: readonly string[];
 }
 
 /**
@@ -91,8 +116,11 @@ export async function runEpisodeFileSync({
 	app,
 	log,
 	seriesCap,
+	retrySeriesIds,
 }: EpisodeFileSyncArgs): Promise<EpisodeFileSyncResult> {
 	const startedAt = Date.now();
+	const attemptedSeriesIds: string[] = [];
+	const failedSeriesIds: string[] = [];
 	const result: EpisodeFileSyncResult = {
 		usersScanned: 0,
 		seriesScanned: 0,
@@ -100,50 +128,160 @@ export async function runEpisodeFileSync({
 		filesDeleted: 0,
 		errors: 0,
 		durationMs: 0,
+		attemptedSeriesIds,
+		failedSeriesIds,
 	};
 
 	const sonarrInstances = await app.prisma.serviceInstance.findMany({
 		where: { service: "SONARR", enabled: true },
 	});
 
-	const seenUserIds = new Set<string>();
+	const select = {
+		id: true,
+		instanceId: true,
+		arrItemId: true,
+		title: true,
+		data: true,
+		cachedAt: true,
+	} as const;
+	// Hints authorize no writes: look up current rows and current enabled
+	// connections before constructing clients or entering the normal fences.
+	const retrySeries =
+		retrySeriesIds !== undefined
+			? await app.prisma.libraryCache.findMany({
+					where: {
+						id: { in: [...new Set(retrySeriesIds)].slice(0, seriesCap) },
+						instanceId: { in: sonarrInstances.map((instance) => instance.id) },
+						itemType: "series",
+						hasFile: true,
+					},
+					select,
+					take: seriesCap,
+				})
+			: undefined;
 
+	const seenUserIds = new Set(sonarrInstances.map((instance) => instance.userId));
+	const availableClients: Array<{
+		sonarrInstance: (typeof sonarrInstances)[number];
+		client: ReturnType<typeof app.arrClientFactory.create>;
+	}> = [];
 	for (const sonarrInstance of sonarrInstances) {
-		if (result.seriesScanned >= seriesCap) break;
-		seenUserIds.add(sonarrInstance.userId);
-
-		// Build a Sonarr client for this instance. arr-sdk's client factory
-		// decrypts the API key on demand and returns a typed Sonarr client
-		// with an `episodefile.getAll({ seriesId })` method.
-		let client: ReturnType<typeof app.arrClientFactory.create>;
+		const selectedRetrySeries = retrySeries?.filter(
+			(series) => series.instanceId === sonarrInstance.id,
+		);
+		if (selectedRetrySeries?.length === 0) continue;
 		try {
-			client = app.arrClientFactory.create(sonarrInstance);
+			availableClients.push({
+				sonarrInstance,
+				client: app.arrClientFactory.create(sonarrInstance),
+			});
 		} catch (err) {
 			result.errors++;
+			for (const series of selectedRetrySeries ?? []) {
+				attemptedSeriesIds.push(series.id);
+				failedSeriesIds.push(series.id);
+			}
+			await app.prisma.libraryCache.updateMany({
+				where: {
+					instanceId: sonarrInstance.id,
+					itemType: "series",
+					...(selectedRetrySeries
+						? { id: { in: selectedRetrySeries.map((series) => series.id) } }
+						: {}),
+				},
+				data: { episodeFileInventoryReceipt: null },
+			});
 			log?.warn(
 				{ err: getErrorMessage(err), sonarrInstanceId: sonarrInstance.id },
 				"episode-file-sync: failed to build Sonarr client; skipping instance",
 			);
-			continue;
 		}
+	}
 
-		// We only fetch episode files for series that *arr says have at
-		// least one on-disk file. A series with `hasFile = false` has
-		// nothing to correlate; skipping it saves an API call.
-		const seriesRows = await app.prisma.libraryCache.findMany({
-			where: {
-				instanceId: sonarrInstance.id,
-				itemType: "series",
-				hasFile: true,
-			},
-			select: { arrItemId: true, title: true },
-			orderBy: { cachedAt: "asc" },
-			take: seriesCap - result.seriesScanned,
-		});
+	// Reserve a fair bounded share for each healthy Sonarr connection, then
+	// use any unused slots for the globally oldest attempts. With cap < the
+	// connection count, the global oldest-attempt query rotates across them.
+	const orderBy = [
+		{ episodeFileInventoryAttemptedAt: "asc" as const },
+		{ cachedAt: "asc" as const },
+		{ id: "asc" as const },
+	];
+	const quota = availableClients.length > 0 ? Math.floor(seriesCap / availableClients.length) : 0;
+	const selectedSeries =
+		retrySeries ??
+		(quota > 0
+			? await Promise.all(
+					availableClients.map(({ sonarrInstance }) =>
+						app.prisma.libraryCache.findMany({
+							where: { instanceId: sonarrInstance.id, itemType: "series", hasFile: true },
+							select,
+							orderBy,
+							take: quota,
+						}),
+					),
+				)
+			: []
+		).flat();
+	const remaining = Math.max(0, seriesCap - selectedSeries.length);
+	if (retrySeries === undefined && remaining > 0 && availableClients.length > 0) {
+		const selectedIds = selectedSeries.map((series) => series.id);
+		selectedSeries.push(
+			...(await app.prisma.libraryCache.findMany({
+				where: {
+					instanceId: { in: availableClients.map(({ sonarrInstance }) => sonarrInstance.id) },
+					itemType: "series",
+					hasFile: true,
+					...(selectedIds.length > 0 ? { id: { notIn: selectedIds } } : {}),
+				},
+				select,
+				orderBy,
+				take: remaining,
+			})),
+		);
+	}
+
+	for (const { sonarrInstance, client } of availableClients) {
+		const seriesRows = selectedSeries.filter((series) => series.instanceId === sonarrInstance.id);
 
 		for (const series of seriesRows) {
-			if (result.seriesScanned >= seriesCap) break;
 			result.seriesScanned++;
+			attemptedSeriesIds.push(series.id);
+			const attemptToken = randomUUID();
+			// Revoke the previous complete-list receipt before touching any file
+			// rows. A crash, malformed provider row, or partial write then leaves
+			// only positive lower-bound evidence, never a false exact list.
+			try {
+				const invalidated = await withSqliteTransactionWriteIntent(() =>
+					withIsolatedRuntimePrismaTransaction(app.prisma, (tx) =>
+						tx.libraryCache.updateMany({
+							where: {
+								id: series.id,
+								instanceId: sonarrInstance.id,
+								itemType: "series",
+								cachedAt: series.cachedAt,
+							},
+							data: {
+								episodeFileInventoryReceipt: null,
+								episodeFileInventoryAttemptedAt: new Date(),
+								episodeFileInventoryAttemptToken: attemptToken,
+							},
+						}),
+					),
+				);
+				if (invalidated.count !== 1) {
+					result.errors++;
+					failedSeriesIds.push(series.id);
+					continue;
+				}
+			} catch (err) {
+				result.errors++;
+				failedSeriesIds.push(series.id);
+				log?.warn(
+					{ err: getErrorMessage(err), sonarrInstanceId: sonarrInstance.id },
+					"episode-file-sync: failed to invalidate series coverage receipt",
+				);
+				continue;
+			}
 
 			// Mirror the SDK's optional-everything + nullable-name shape so
 			// the assignment from `episodeFile.getAll(...)` type-checks
@@ -159,6 +297,7 @@ export async function runEpisodeFileSync({
 				quality?: { quality?: { name?: string | null } } | null;
 				releaseGroup?: string | null;
 			}>;
+			let stableReceipt: string;
 			try {
 				// arr-sdk's property is `client.episodeFile` (camelCase, single F).
 				// We narrow from the union ArrClient to SonarrClient via the
@@ -170,10 +309,84 @@ export async function runEpisodeFileSync({
 				// safer than the `any` we had before, which silently masked
 				// the property-name typo `episodefile` vs `episodeFile`.
 				const sonarrClient = client as import("arr-sdk").SonarrClient;
-				episodeFiles =
+				const firstSeries = await sonarrClient.series.getById(series.arrItemId);
+				const firstFiles =
 					(await sonarrClient.episodeFile.getAll({ seriesId: series.arrItemId })) ?? [];
+				const secondSeries = await sonarrClient.series.getById(series.arrItemId);
+				const secondFiles =
+					(await sonarrClient.episodeFile.getAll({ seriesId: series.arrItemId })) ?? [];
+				// One observation clock after both settled provider reads. Preserve
+				// v2 only for genuinely absent historical source provenance.
+				const observedAt = new Date();
+				let sourceFingerprint: string | null = null;
+				try {
+					sourceFingerprint = createArrServiceFingerprint(sonarrInstance);
+				} catch {
+					/* validated below */
+				}
+				const source = readEpisodeFileInventorySource(series.data, sourceFingerprint);
+				if (source.status === "invalid") throw new Error("series source provenance is not current");
+				const makeReceipt = (
+					identities: NonNullable<ReturnType<typeof episodeFileIdentitiesFromSonarr>>,
+					evidence: NonNullable<ReturnType<typeof currentSonarrSeriesFileEvidence>>,
+				) =>
+					source.status === "legacy"
+						? createEpisodeFileInventoryReceipt(series.cachedAt, identities, evidence)
+						: createEpisodeFileObservationReceipt(
+								series.cachedAt,
+								identities,
+								evidence,
+								series.data,
+								sourceFingerprint,
+								observedAt,
+							);
+				const cachedEvidence = cachedSonarrSeriesFileEvidence(series.data);
+				const firstEvidence = currentSonarrSeriesFileEvidence(firstSeries, series.arrItemId);
+				const secondEvidence = currentSonarrSeriesFileEvidence(secondSeries, series.arrItemId);
+				const firstIdentities = episodeFileIdentitiesFromSonarr(firstFiles, series.arrItemId);
+				const secondIdentities = episodeFileIdentitiesFromSonarr(secondFiles, series.arrItemId);
+				const firstReceipt =
+					firstIdentities && firstEvidence ? makeReceipt(firstIdentities, firstEvidence) : null;
+				const secondReceipt =
+					secondIdentities && secondEvidence ? makeReceipt(secondIdentities, secondEvidence) : null;
+				if (
+					!cachedEvidence ||
+					!firstEvidence ||
+					!secondEvidence ||
+					firstEvidence.episodeWithFileCount !== cachedEvidence.episodeWithFileCount ||
+					secondEvidence.episodeWithFileCount !== cachedEvidence.episodeWithFileCount ||
+					firstEvidence.sizeOnDisk !== cachedEvidence.sizeOnDisk ||
+					secondEvidence.sizeOnDisk !== cachedEvidence.sizeOnDisk ||
+					!firstReceipt ||
+					firstReceipt !== secondReceipt ||
+					!secondIdentities
+				) {
+					result.errors++;
+					failedSeriesIds.push(series.id);
+					log?.warn(
+						{
+							cachedEpisodeCount: cachedEvidence?.episodeWithFileCount,
+							firstEpisodeCount: firstEvidence?.episodeWithFileCount,
+							secondEpisodeCount: secondEvidence?.episodeWithFileCount,
+							firstFileCount: firstFiles.length,
+							secondFileCount: secondFiles.length,
+							cachedSizeMatchesLive:
+								!!cachedEvidence &&
+								!!firstEvidence &&
+								!!secondEvidence &&
+								cachedEvidence.sizeOnDisk === firstEvidence.sizeOnDisk &&
+								cachedEvidence.sizeOnDisk === secondEvidence.sizeOnDisk,
+							fileSizeMatchesLive: !!firstReceipt && !!secondReceipt,
+						},
+						"episode-file-sync: live series and file-list evidence did not settle",
+					);
+					continue;
+				}
+				episodeFiles = secondFiles;
+				stableReceipt = secondReceipt;
 			} catch (err) {
 				result.errors++;
+				failedSeriesIds.push(series.id);
 				log?.warn(
 					{
 						err: getErrorMessage(err),
@@ -185,127 +398,154 @@ export async function runEpisodeFileSync({
 				);
 				continue;
 			}
+			// The provider shape was checked by episodeFileIdentitiesFromSonarr.
+			// Claim this exact attempt before writing any rows; all writes and
+			// receipt publication must commit or roll back together.
+			try {
+				const counts = await withSqliteTransactionWriteIntent(() =>
+					withIsolatedRuntimePrismaTransaction(
+						app.prisma,
+						async (tx) => {
+							const claimed = await tx.libraryCache.updateMany({
+								where: {
+									id: series.id,
+									instanceId: sonarrInstance.id,
+									itemType: "series",
+									cachedAt: series.cachedAt,
+									episodeFileInventoryReceipt: null,
+									episodeFileInventoryAttemptToken: attemptToken,
+								},
+								data: {
+									episodeFileInventoryReceipt: stableReceipt,
+									episodeFileInventoryAttemptToken: null,
+								},
+							});
+							if (claimed.count !== 1) throw new Error("series attempt was superseded");
+							const existingRows = await tx.episodeFileCache.findMany({
+								where: { instanceId: sonarrInstance.id, arrSeriesId: series.arrItemId },
+								select: { arrEpisodeFileId: true, path: true, size: true },
+							});
+							const existingById = new Map(existingRows.map((row) => [row.arrEpisodeFileId, row]));
+							const seenFileIds: number[] = [];
+							for (const ef of episodeFiles) {
+								if (
+									typeof ef.id !== "number" ||
+									typeof ef.seasonNumber !== "number" ||
+									typeof ef.size !== "number" ||
+									!ef.path ||
+									!ef.relativePath
+								) {
+									throw new Error("validated provider file lost required fields");
+								}
+								seenFileIds.push(ef.id);
+								const previous = existingById.get(ef.id);
+								const fileChanged =
+									previous !== undefined &&
+									(previous.path !== ef.path || previous.size !== BigInt(ef.size));
+								await tx.episodeFileCache.upsert({
+									where: {
+										instanceId_arrEpisodeFileId: {
+											instanceId: sonarrInstance.id,
+											arrEpisodeFileId: ef.id,
+										},
+									},
+									update: {
+										arrSeriesId: series.arrItemId,
+										seasonNumber: ef.seasonNumber,
+										relativePath: ef.relativePath,
+										path: ef.path,
+										size: BigInt(ef.size),
+										qualityName: ef.quality?.quality?.name ?? null,
+										releaseGroup: ef.releaseGroup ?? null,
+										...(fileChanged
+											? {
+													infoHash: null,
+													infoHashSource: null,
+													inodeBackfillRetryAfter: null,
+													torrentState: null,
+													torrentRatio: null,
+													torrentSyncedAt: null,
+												}
+											: {}),
+									},
+									create: {
+										instanceId: sonarrInstance.id,
+										arrEpisodeFileId: ef.id,
+										arrSeriesId: series.arrItemId,
+										seasonNumber: ef.seasonNumber,
+										relativePath: ef.relativePath,
+										path: ef.path,
+										size: BigInt(ef.size),
+										qualityName: ef.quality?.quality?.name ?? null,
+										releaseGroup: ef.releaseGroup ?? null,
+									},
+								});
+							}
 
-			// Upsert each EpisodeFile into the cache. Skip rows missing the
-			// essential fields (path + id + size) — Sonarr occasionally
-			// returns partial records during a rescan window.
-			const seenFileIds: number[] = [];
-			for (const ef of episodeFiles) {
-				if (
-					typeof ef.id !== "number" ||
-					typeof ef.seasonNumber !== "number" ||
-					typeof ef.size !== "number" ||
-					!ef.path ||
-					!ef.relativePath
-				) {
-					continue;
-				}
-				seenFileIds.push(ef.id);
-				try {
-					await app.prisma.episodeFileCache.upsert({
-						where: {
-							instanceId_arrEpisodeFileId: {
-								instanceId: sonarrInstance.id,
-								arrEpisodeFileId: ef.id,
-							},
+							// Reap rows whose EpisodeFile id no longer appears in Sonarr's
+							// latest response. This catches the upgrade-replaces-old-file
+							// case (Sonarr swaps file id 123 for file id 456 on a quality
+							// upgrade; row 123 must go) and manual deletions.
+							//
+							// Two correctness traps the naive `notIn` approach hits:
+							//   1. SQLite (via Prisma) has a parameter-count limit on
+							//      `IN/NOT IN` clauses. A series with thousands of
+							//      episodes (long-running soaps, kids' content) overflows
+							//      it. We saw this crash live on the first production run.
+							//   2. A single failed delete was bringing down the whole
+							//      sync — error propagated out, no try/catch, sync aborted
+							//      partway with no resumption signal.
+							//
+							// Re-read deletion targets after a source-snapshot CAS, then delete
+							// and publish the receipt in one transaction. If another worker has
+							// refreshed this series or any row write fails, neither the delete
+							// nor the exactness claim commits.
+							const seenSet = new Set(seenFileIds);
+							const currentRows = await tx.episodeFileCache.findMany({
+								where: { instanceId: sonarrInstance.id, arrSeriesId: series.arrItemId },
+								select: { arrEpisodeFileId: true, path: true, size: true },
+							});
+							const staleIds = currentRows
+								.map((row) => row.arrEpisodeFileId)
+								.filter((id) => !seenSet.has(id));
+							let deleted = 0;
+							// Chunk to stay below even older SQLite parameter caps.
+							const CHUNK = 500;
+							for (let i = 0; i < staleIds.length; i += CHUNK) {
+								const batch = staleIds.slice(i, i + CHUNK);
+								const result = await tx.episodeFileCache.deleteMany({
+									where: {
+										instanceId: sonarrInstance.id,
+										arrSeriesId: series.arrItemId,
+										arrEpisodeFileId: { in: batch },
+									},
+								});
+								if (result.count !== batch.length)
+									throw new Error("series stale-row delete was incomplete");
+								deleted += result.count;
+							}
+							const retainedRows = await tx.episodeFileCache.findMany({
+								where: { instanceId: sonarrInstance.id, arrSeriesId: series.arrItemId },
+								select: { arrEpisodeFileId: true, path: true, size: true },
+							});
+							if (!hasCompleteEpisodeFileInventory(stableReceipt, series.cachedAt, retainedRows)) {
+								throw new Error("series file rows do not match verified provider receipt");
+							}
+							return { upserted: episodeFiles.length, deleted };
 						},
-						update: {
-							arrSeriesId: series.arrItemId,
-							seasonNumber: ef.seasonNumber,
-							relativePath: ef.relativePath,
-							path: ef.path,
-							size: BigInt(ef.size),
-							qualityName: ef.quality?.quality?.name ?? null,
-							releaseGroup: ef.releaseGroup ?? null,
-						},
-						create: {
-							instanceId: sonarrInstance.id,
-							arrEpisodeFileId: ef.id,
-							arrSeriesId: series.arrItemId,
-							seasonNumber: ef.seasonNumber,
-							relativePath: ef.relativePath,
-							path: ef.path,
-							size: BigInt(ef.size),
-							qualityName: ef.quality?.quality?.name ?? null,
-							releaseGroup: ef.releaseGroup ?? null,
-						},
-					});
-					result.filesUpserted++;
-				} catch (err) {
-					result.errors++;
-					log?.warn(
-						{
-							err: getErrorMessage(err),
-							arrEpisodeFileId: ef.id,
-							seriesId: series.arrItemId,
-						},
-						"episode-file-sync: upsert failed",
-					);
-				}
+						{ timeout: 30_000 },
+					),
+				);
+				result.filesUpserted += counts.upserted;
+				result.filesDeleted += counts.deleted;
+			} catch (err) {
+				result.errors++;
+				failedSeriesIds.push(series.id);
+				log?.warn(
+					{ err: getErrorMessage(err), sonarrInstanceId: sonarrInstance.id },
+					"episode-file-sync: series receipt transaction failed",
+				);
 			}
-
-			// Reap rows whose EpisodeFile id no longer appears in Sonarr's
-			// latest response. This catches the upgrade-replaces-old-file
-			// case (Sonarr swaps file id 123 for file id 456 on a quality
-			// upgrade; row 123 must go) and manual deletions.
-			//
-			// Two correctness traps the naive `notIn` approach hits:
-			//   1. SQLite (via Prisma) has a parameter-count limit on
-			//      `IN/NOT IN` clauses. A series with thousands of
-			//      episodes (long-running soaps, kids' content) overflows
-			//      it. We saw this crash live on the first production run.
-			//   2. A single failed delete was bringing down the whole
-			//      sync — error propagated out, no try/catch, sync aborted
-			//      partway with no resumption signal.
-			//
-			// Fix: fetch existing ids for this series, compute the diff in
-			// JS, batch-delete by exact `in` clause (which can be safely
-			// chunked, unlike `notIn`). Wrap in try/catch so a single
-			// series' deletion failure doesn't poison the rest of the sweep.
-			if (seenFileIds.length > 0) {
-				try {
-					const existingRows = await app.prisma.episodeFileCache.findMany({
-						where: {
-							instanceId: sonarrInstance.id,
-							arrSeriesId: series.arrItemId,
-						},
-						select: { arrEpisodeFileId: true },
-					});
-					const seenSet = new Set(seenFileIds);
-					const staleIds = existingRows
-						.map((r) => r.arrEpisodeFileId)
-						.filter((id) => !seenSet.has(id));
-
-					// Chunk to stay well under SQLite's parameter cap (default
-					// 32K but historically as low as 999; 500 is conservative).
-					const CHUNK = 500;
-					for (let i = 0; i < staleIds.length; i += CHUNK) {
-						const batch = staleIds.slice(i, i + CHUNK);
-						const deleted = await app.prisma.episodeFileCache.deleteMany({
-							where: {
-								instanceId: sonarrInstance.id,
-								arrSeriesId: series.arrItemId,
-								arrEpisodeFileId: { in: batch },
-							},
-						});
-						result.filesDeleted += deleted.count;
-					}
-				} catch (err) {
-					result.errors++;
-					log?.warn(
-						{
-							err: getErrorMessage(err),
-							sonarrInstanceId: sonarrInstance.id,
-							seriesId: series.arrItemId,
-						},
-						"episode-file-sync: stale-row reap failed for this series; continuing",
-					);
-				}
-			}
-			// If seenFileIds is empty — Sonarr returned no episode files for
-			// this series — we DON'T delete existing rows. That branch is
-			// indistinguishable from "API error returned empty" without
-			// further signal, and over-pruning would lose correlation work.
 		}
 	}
 
@@ -338,6 +578,8 @@ export interface EpisodeBackfillSweepArgs {
 	app: FastifyInstance;
 	log?: FastifyBaseLogger;
 	batchSize: number;
+	/** Periodic recovery considers only previously deferred rows, not new backlog. */
+	dueOnly?: boolean;
 }
 
 /**
@@ -358,6 +600,7 @@ export async function runEpisodeBackfillSweep({
 	app,
 	log,
 	batchSize,
+	dueOnly = false,
 }: EpisodeBackfillSweepArgs): Promise<EpisodeBackfillSweepResult> {
 	const startedAt = Date.now();
 	const result: EpisodeBackfillSweepResult = {
@@ -386,9 +629,11 @@ export async function runEpisodeBackfillSweep({
 		// Only FS-enabled qui instances participate. FS-disabled
 		// instances would need a heuristic ladder we haven't built for
 		// episodes — see module-level doc.
-		const fsEnabledInstances = await app.prisma.serviceInstance.findMany({
-			where: { service: "QUI", userId, enabled: true, hasLocalFilesystemAccess: true },
+		const quiInstances = await app.prisma.serviceInstance.findMany({
+			where: { service: "QUI", userId, enabled: true },
 		});
+		const topologyGeneration = captureQuiTopologyGeneration(quiInstances);
+		const fsEnabledInstances = quiInstances.filter((instance) => instance.hasLocalFilesystemAccess);
 		if (fsEnabledInstances.length === 0) continue;
 
 		const inodeIndices: Array<{
@@ -398,7 +643,7 @@ export async function runEpisodeBackfillSweep({
 		for (const qi of fsEnabledInstances) {
 			try {
 				const client = createQuiClient(app, qi);
-				const index = await buildFileIdIndex(client, qi, log);
+				const index = await buildFileIdIndex(client, qi, log, app.prisma);
 				inodeIndices.push({ instanceId: qi.id, index });
 			} catch (err) {
 				result.errors++;
@@ -411,14 +656,18 @@ export async function runEpisodeBackfillSweep({
 		if (inodeIndices.length === 0) continue;
 
 		const remaining = batchSize - result.rowsScanned;
+		const now = new Date();
 		const rows = await app.prisma.episodeFileCache.findMany({
 			where: {
 				infoHash: null,
 				instance: { userId, service: "SONARR" },
+				...(dueOnly
+					? { inodeBackfillRetryAfter: { lte: now } }
+					: { OR: [{ inodeBackfillRetryAfter: null }, { inodeBackfillRetryAfter: { lte: now } }] }),
 			},
-			orderBy: { cachedAt: "asc" },
+			orderBy: [{ inodeBackfillRetryAfter: "asc" }, { cachedAt: "asc" }],
 			take: remaining,
-			select: { id: true, path: true, arrSeriesId: true, relativePath: true },
+			select: { id: true, path: true, size: true, arrSeriesId: true, relativePath: true },
 		});
 
 		for (const row of rows) {
@@ -433,22 +682,52 @@ export async function runEpisodeBackfillSweep({
 			}
 			if (!match) {
 				result.rowsMissed++;
+				try {
+					await withQuiObservationTopologyGuard(userId, async () => {
+						await assertQuiTopologyGenerationCurrent(app.prisma, userId, topologyGeneration);
+						await app.prisma.episodeFileCache.updateMany({
+							where: {
+								id: row.id,
+								path: row.path,
+								size: row.size,
+								infoHash: null,
+								instance: { userId, service: "SONARR" },
+							},
+							data: { inodeBackfillRetryAfter: new Date(Date.now() + BACKFILL_MISS_RETRY_MS) },
+						});
+					});
+				} catch (err) {
+					result.errors++;
+					log?.warn(
+						{ err: getErrorMessage(err), userId, cacheRowId: row.id },
+						"episode-backfill: failed to defer unmatched row",
+					);
+				}
 				continue;
 			}
 			try {
-				await withQuiObservationTopologyGuard(userId, () =>
-					app.prisma.episodeFileCache.update({
-						where: { id: row.id },
+				const persisted = await withQuiObservationTopologyGuard(userId, async () => {
+					await assertQuiTopologyGenerationCurrent(app.prisma, userId, topologyGeneration);
+					return app.prisma.episodeFileCache.updateMany({
+						where: {
+							id: row.id,
+							path: row.path,
+							size: row.size,
+							infoHash: null,
+							instance: { userId, service: "SONARR" },
+						},
 						data: {
 							infoHash: match.hash,
-							infoHashSource: match.source,
+							infoHashSource: CURRENT_INODE_SOURCE,
+							inodeBackfillRetryAfter: null,
 							torrentState: null,
 							torrentRatio: null,
 							torrentSyncedAt: null,
 						},
-					}),
-				);
-				result.rowsHashed++;
+					});
+				});
+				if (persisted.count === 1) result.rowsHashed++;
+				else result.rowsMissed++;
 			} catch (err) {
 				result.errors++;
 				log?.warn(

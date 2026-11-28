@@ -26,6 +26,7 @@ describe.sequential("connection warmer restore exclusion", () => {
 		});
 		const systemGet = vi.fn(() => systemGetBlocked);
 		const app = {
+			restoreRuntime: { runIndependentOperation: async (work: () => Promise<unknown>) => work() },
 			prisma: {
 				serviceInstance: {
 					findMany: vi.fn().mockResolvedValue([

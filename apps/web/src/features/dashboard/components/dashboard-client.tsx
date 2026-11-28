@@ -34,6 +34,8 @@ import {
 	Typography,
 } from "../../../components/ui";
 import { useDashboardStatisticsQuery } from "../../../hooks/api/useDashboard";
+import { DashboardStatisticsNotice } from "../../../components/presentational/dashboard-statistics-notice";
+import { resolveDashboardStatisticsState } from "../../../lib/dashboard-statistics-state";
 import { useJellyfinNowPlaying } from "../../../hooks/api/useJellyfin";
 import { useNowPlaying } from "../../../hooks/api/usePlex";
 import { useTautulliActivity } from "../../../hooks/api/useTautulli";
@@ -44,7 +46,9 @@ import { POLLING_REALTIME, POLLING_STANDARD } from "../../../lib/polling-interva
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
 
-const ManualImportModal = lazy(() => import("../../manual-import/components/manual-import-modal"));
+const ManualImportReview = lazy(
+	() => import("../../manual-import/components/manual-import-review"),
+);
 
 import { useQueueGrouping } from "../hooks";
 import { useDashboardData } from "../hooks/useDashboardData";
@@ -58,6 +62,7 @@ import { NowPlayingWidget } from "./now-playing-widget";
 import { OnDeckWidget } from "./on-deck-widget";
 import { PlexServerInfoWidget } from "./plex-server-info-widget";
 import { QueueTable } from "./queue-table";
+import { QueueSearchFeedback } from "./queue-search-feedback";
 import { RecentlyAddedWidget } from "./recently-added-widget";
 import { SeerrRequestsWidget } from "./seerr-requests-widget";
 import { WatchHistorySection } from "./watch-history-section";
@@ -103,7 +108,7 @@ const ServiceStatCard = ({
 	themeGradient,
 }: {
 	service: keyof typeof SERVICE_CONFIG | "queue";
-	value: number;
+	value: number | string;
 	description: string;
 	subtitle?: string;
 	detail?: string;
@@ -129,7 +134,7 @@ const ServiceStatCard = ({
 					};
 
 	const Icon = config.icon;
-	const hasItems = isQueue && value > 0;
+	const hasItems = isQueue && typeof value === "number" && value > 0;
 
 	return (
 		<motion.button
@@ -302,17 +307,17 @@ const DashboardSkeleton = () => (
 		<div className="space-y-4">
 			<PremiumSkeleton variant="line" className="h-8 w-48" />
 			<PremiumSkeleton variant="line" className="h-10 w-64" />
-			<PremiumSkeleton variant="line" className="h-4 w-96" />
+			<PremiumSkeleton variant="line" className="h-4 w-96 max-w-full" />
 		</div>
 
 		{/* Stats skeleton */}
 		<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-			{Array.from({ length: 4 }).map((_, i) => (
+			{[0, 50, 100, 150].map((delay) => (
 				<PremiumSkeleton
-					key={i}
+					key={delay}
 					variant="card"
 					className="h-40"
-					style={{ animationDelay: `${i * 50}ms` }}
+					style={{ animationDelay: `${delay}ms` }}
 				/>
 			))}
 		</div>
@@ -330,7 +335,8 @@ export const DashboardClient = () => {
 
 	// Statistics data
 	const statsQuery = useDashboardStatisticsQuery();
-	const stats = statsQuery.data;
+	const statsState = resolveDashboardStatisticsState(statsQuery.data, statsQuery.error, Date.now());
+	const stats = statsState.data;
 
 	// Data hooks
 	const {
@@ -340,11 +346,17 @@ export const DashboardClient = () => {
 		services,
 		enabledServices,
 		servicesRefetch,
+		servicesError,
+		servicesHasData,
+		servicesFetching,
 		groupedByService,
 		queueAggregated,
 		queueInstances,
 		totalQueueItems,
 		queueLoading,
+		queueHasData,
+		queueFetching,
+		queueAvailability = "unknown",
 		queueRefetch,
 		instanceOptions,
 		statusOptions,
@@ -461,7 +473,9 @@ export const DashboardClient = () => {
 		handleQueueChangeCategory,
 		queueActionsPending,
 		queueActionsError,
-		openManualImport,
+		queueSearchWarning,
+		clearQueueSearchWarning,
+		openManualImports,
 		prefetchManualImport,
 		manualImportContext,
 		handleManualImportOpenChange,
@@ -470,15 +484,12 @@ export const DashboardClient = () => {
 		clearQueueMessage,
 	} = useDashboardQueue(queueRefetch);
 
-	// Manual import handler - extracts first item and opens modal (memoized)
+	// Preserve the full selection; each source gets its own retained review.
 	const handleManualImport = useCallback(
 		(items: QueueItem[]) => {
-			const [first] = items;
-			if (first) {
-				openManualImport(first);
-			}
+			openManualImports(items);
 		},
-		[openManualImport],
+		[openManualImports],
 	);
 
 	// Refresh handler with animation
@@ -513,6 +524,30 @@ export const DashboardClient = () => {
 
 	// Calculate total enabled instances
 	const totalInstances = enabledServices.length;
+	const queueReadCopy = {
+		loading: ["Loading queue", "Waiting for the queue read."],
+		available: [
+			"Queue reads available",
+			"Counts describe returned items, not a complete queue inventory.",
+		],
+		partial: [
+			"Partial queue reads",
+			"Some instances could not be read. Only returned items are shown; other queue items may be missing.",
+		],
+		unknown: [
+			"Queue coverage unknown",
+			"Read success could not be verified for every instance. Returned items are shown without verified coverage.",
+		],
+		unavailable: [
+			"Queue unavailable",
+			"Queue reads could not be verified. No current queue total is available.",
+		],
+		"last-known": [
+			"Last-known queue",
+			"The latest queue refresh failed. Retained items and counts are from the previous observation, including any empty result.",
+		],
+	}[queueAvailability];
+	const queueCountKnown = queueHasData && queueAvailability !== "unavailable";
 
 	return (
 		<>
@@ -540,13 +575,17 @@ export const DashboardClient = () => {
 							</span>
 						</h1>
 						<p className="text-muted-foreground max-w-xl">
-							Your media server command center. {totalInstances} active instance
-							{totalInstances !== 1 ? "s" : ""}
-							{totalInstances === 0 && services.length > 0 ? ` (${services.length} disabled)` : ""}
+							Your media server command center.{" "}
+							{servicesError
+								? servicesHasData
+									? `${totalInstances} last-known active instances`
+									: "Service configuration unavailable"
+								: `${totalInstances} active instance${totalInstances !== 1 ? "s" : ""}${totalInstances === 0 && services.length > 0 ? ` (${services.length} disabled)` : ""}`}
 							{totalQueueItems > 0 && (
 								<span className="font-medium" style={{ color: themeGradient.from }}>
 									{" "}
-									with {totalQueueItems} items in queue
+									with {totalQueueItems}{" "}
+									{queueAvailability === "last-known" ? "last-known" : "returned"} queue items
 								</span>
 							)}
 						</p>
@@ -579,6 +618,40 @@ export const DashboardClient = () => {
 				</div>
 			</header>
 
+			{servicesError && (
+				<div
+					role="status"
+					aria-label="Service configuration status"
+					className="rounded-xl border border-border p-4 space-y-2"
+				>
+					<p>
+						{servicesHasData
+							? "Last-known configuration: the latest service read failed."
+							: "Service configuration unavailable. Configured instances could not be read."}
+					</p>
+					<Button
+						variant="secondary"
+						disabled={servicesFetching}
+						onClick={() => void servicesRefetch()}
+					>
+						Retry service read
+					</Button>
+				</div>
+			)}
+			<div
+				role="status"
+				aria-label="Queue read status"
+				className="rounded-xl border border-border p-4 space-y-2"
+			>
+				<p className="font-medium">{queueReadCopy[0]}</p>
+				<p className="text-sm text-muted-foreground">{queueReadCopy[1]}</p>
+				{queueAvailability !== "available" && queueAvailability !== "loading" && (
+					<Button variant="secondary" disabled={queueFetching} onClick={() => void queueRefetch()}>
+						Retry queue read
+					</Button>
+				)}
+			</div>
+
 			{/* Needs Attention — curated subset of /pulse. Rendered above other
 			    widgets so actionable critical/warning items are the first
 			    thing an operator sees on load. This is the single canonical
@@ -595,7 +668,7 @@ export const DashboardClient = () => {
 			<DashboardTabs
 				activeTab={activeTab}
 				onTabChange={setActiveTab}
-				queueCount={totalQueueItems}
+				queueCount={queueAvailability === "available" ? totalQueueItems : 0}
 				hasMediaServer={hasMediaServer}
 				sessionCount={sessionCount}
 				themeGradient={themeGradient}
@@ -606,6 +679,7 @@ export const DashboardClient = () => {
 				{/* Overview Tab */}
 				{activeTab === "overview" && (
 					<div className="flex flex-col gap-10 animate-in fade-in duration-300">
+						<DashboardStatisticsNotice state={statsState} />
 						{/* Service Stats Grid — enriched with real statistics */}
 						<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
 							{(Object.keys(SERVICE_CONFIG) as (keyof typeof SERVICE_CONFIG)[])
@@ -697,6 +771,9 @@ export const DashboardClient = () => {
 										};
 										description = fallbacks[key];
 									}
+									if (stats?.[key]?.instances.some((entry) => entry.error)) {
+										warningLine = "Statistics unavailable for one or more instances";
+									}
 
 									return (
 										<ServiceStatCard
@@ -721,8 +798,14 @@ export const DashboardClient = () => {
 								})}
 							<ServiceStatCard
 								service="queue"
-								value={totalQueueItems}
-								description="Items across all queues"
+								value={queueCountKnown ? totalQueueItems : "—"}
+								description={
+									queueAvailability === "last-known"
+										? "Last-known returned queue items"
+										: queueCountKnown
+											? "Returned queue items"
+											: "Queue count unavailable"
+								}
 								onClick={() => setActiveTab("queue")}
 								isQueue
 								animationDelay={100 + Object.keys(groupedByService).length * 50}
@@ -795,7 +878,13 @@ export const DashboardClient = () => {
 										</div>
 										<div className="text-left">
 											<h2 className="text-lg font-semibold">Configured Instances</h2>
-											{!instancesExpanded && enabledServices.length > 0 ? (
+											{servicesError ? (
+												<p className="text-sm text-muted-foreground">
+													{servicesHasData
+														? `${services.length} last-known configured instances`
+														: "Configuration unavailable"}
+												</p>
+											) : !instancesExpanded && enabledServices.length > 0 ? (
 												<p className="text-sm text-muted-foreground">
 													{enabledServices.length} active service
 													{enabledServices.length !== 1 ? "s" : ""} across{" "}
@@ -829,7 +918,12 @@ export const DashboardClient = () => {
 								{instancesExpanded && (
 									<div className="border-t border-border/50">
 										<div className="p-6">
-											{enabledServices.length === 0 ? (
+											{servicesError && enabledServices.length === 0 ? (
+												<p className="text-sm text-muted-foreground">
+													Service configuration could not be refreshed. Retry the service read to
+													verify configured instances.
+												</p>
+											) : enabledServices.length === 0 ? (
 												<div className="text-center py-12">
 													<div
 														className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full"
@@ -902,8 +996,9 @@ export const DashboardClient = () => {
 									<div>
 										<h2 className="text-lg font-semibold">Active Queue</h2>
 										<p className="text-sm text-muted-foreground">
-											Monitoring {queueInstances.length} instance
-											{queueInstances.length === 1 ? "" : "s"}
+											{queueAvailability === "available"
+												? `Queue reads returned for ${queueInstances.length} instance${queueInstances.length === 1 ? "" : "s"}`
+												: queueReadCopy[0]}
 										</p>
 									</div>
 								</div>
@@ -921,8 +1016,9 @@ export const DashboardClient = () => {
 									)}
 
 									<Typography variant="caption" className="text-muted-foreground">
-										Showing {paginatedRows.length} of {allSummaryRows.length} cards (
-										{filteredItems.length} items)
+										{queueCountKnown
+											? `Showing ${paginatedRows.length} of ${allSummaryRows.length} returned cards (${filteredItems.length} ${queueAvailability === "last-known" ? "last-known" : "returned"} items)`
+											: "Current queue count unavailable"}
 									</Typography>
 								</div>
 							</div>
@@ -945,6 +1041,10 @@ export const DashboardClient = () => {
 									onReset={resetFilters}
 								/>
 
+								<QueueSearchFeedback
+									warning={queueSearchWarning}
+									onDismiss={clearQueueSearchWarning}
+								/>
 								{queueMessage && (
 									<Alert variant="success" dismissible onDismiss={clearQueueMessage}>
 										<AlertDescription>{queueMessage.message}</AlertDescription>
@@ -1020,11 +1120,8 @@ export const DashboardClient = () => {
 
 			{manualImportContext.open && (
 				<Suspense fallback={null}>
-					<ManualImportModal
-						instanceId={manualImportContext.instanceId}
-						instanceName={manualImportContext.instanceName}
-						service={manualImportContext.service}
-						downloadId={manualImportContext.downloadId}
+					<ManualImportReview
+						sources={manualImportContext.sources}
 						open={manualImportContext.open}
 						onOpenChange={handleManualImportOpenChange}
 						onCompleted={handleManualImportCompleted}

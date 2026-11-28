@@ -25,7 +25,7 @@ function source(id: string, overrides: Record<string, unknown> = {}) {
 	};
 }
 
-function historyItem(title = "Synthetic Movie") {
+function historyItem(title = "Synthetic Movie", date = 1_757_000_000) {
 	return {
 		row_id: 1,
 		rating_key: "rating-1",
@@ -35,7 +35,7 @@ function historyItem(title = "Synthetic Movie") {
 		grandparent_title: "",
 		media_type: "movie",
 		user: "synthetic-viewer",
-		date: 1_757_000_000,
+		date,
 		group_count: 1,
 	};
 }
@@ -130,6 +130,69 @@ describe("Tautulli history availability through the real instance helper", () =>
 		expect(requests).toHaveLength(2);
 		expect(requests[0]?.searchParams.get("include_activity")).toBeNull();
 		expect(requests[1]?.searchParams.get("include_activity")).toBe("0");
+	});
+
+	it("returns a nonzero-offset page without skipping twice or overstating loaded rows", async () => {
+		const rows = [historyItem("First", 300), historyItem("Second", 200), historyItem("Third", 100)];
+		clients
+			.get("one")!
+			.getHistory.mockImplementation(
+				async ({ start = 0, length = 25 }: { start?: number; length?: number }) => ({
+					data: rows.slice(start, start + length),
+					recordsFiltered: 400,
+					recordsTotal: 400,
+				}),
+			);
+
+		const response = await app.inject({ method: "GET", url: "/?length=2&start=1" });
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toMatchObject({
+			history: [{ title: "Second" }, { title: "Third" }],
+			totalCount: 3,
+			availability: { status: "complete", configuredSources: 1, availableSources: 1 },
+		});
+	});
+
+	it("globally pages interleaved histories from two sources and counts loaded rows", async () => {
+		sources.push(source("two"));
+		clients.set("two", client());
+		const firstRows = [
+			historyItem("First-A", 500),
+			historyItem("Second-A", 300),
+			historyItem("Third-A", 100),
+		];
+		const secondRows = [historyItem("First-B", 400), historyItem("Second-B", 200)];
+		for (const [id, rows] of [
+			["one", firstRows],
+			["two", secondRows],
+		] as const) {
+			clients
+				.get(id)!
+				.getHistory.mockImplementation(
+					async ({ start = 0, length = 25 }: { start?: number; length?: number }) => ({
+						data: rows.slice(start, start + length),
+						recordsFiltered: rows.length,
+						recordsTotal: rows.length,
+					}),
+				);
+		}
+
+		const response = await app.inject({ method: "GET", url: "/?length=2&start=2" });
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toMatchObject({
+			history: [{ title: "Second-A" }, { title: "Second-B" }],
+			totalCount: 5,
+			availability: { status: "complete", configuredSources: 2, availableSources: 2 },
+		});
+	});
+
+	it("rejects an offset beyond the bounded merge window before provider I/O", async () => {
+		const response = await app.inject({ method: "GET", url: "/?length=100&start=401" });
+
+		expect(response.statusCode).toBe(400);
+		expect(clients.get("one")!.getHistory).not.toHaveBeenCalled();
 	});
 
 	it.each(["HTTP", "schema"])("returns generic 503 for an upstream %s failure", async (failure) => {

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Validates that the runtime container has all files needed for Prisma operations.
+# Validates both immutable provider packages and their native startup assets.
 # Run inside the built Docker image to catch missing-file regressions (e.g. #130).
 #
 # Usage:
@@ -31,39 +31,40 @@ check_dir() {
 
 echo "=== Runtime file validation ==="
 echo ""
-echo "Checking Prisma files..."
-check_file "$API_DIR/prisma/schema.prisma"
-check_file "$API_DIR/prisma.config.ts"
-check_file "$API_DIR/tsconfig.json"
+echo "Checking shared runtime dependencies..."
 check_dir  "$API_DIR/node_modules/@prisma/client"
-# Note: .prisma/client is generated on-demand by `prisma generate` at runtime
-# (e.g. during SQLite→PostgreSQL provider switch). It does not need to exist
-# in the image — tsup bundles the build-time generated client into dist/.
+check_file "$API_DIR/validate-provider-runtime.cjs"
 
 echo ""
-echo "Checking tsconfig.json does not reference missing files..."
-if grep -q 'tsconfig.base.json' "$API_DIR/tsconfig.json" 2>/dev/null; then
-    echo "FAIL: tsconfig.json still extends ../../tsconfig.base.json (not available in container)"
-    ERRORS=$((ERRORS + 1))
-else
-    echo "  OK: tsconfig.json is standalone (no monorepo extends)"
-fi
+echo "Checking manifest-bound provider packages..."
+for provider in sqlite postgresql; do
+    if ! node "$API_DIR/validate-provider-runtime.cjs" "$API_DIR/providers/$provider" "$provider"; then
+        echo "FAIL: $provider runtime package validation"
+        ERRORS=$((ERRORS + 1))
+    else
+        echo "  OK: $provider runtime package"
+    fi
+    if grep -q 'tsconfig.base.json' "$API_DIR/providers/$provider/tsconfig.json" 2>/dev/null; then
+        echo "FAIL: provider tsconfig references an absent monorepo file"
+        ERRORS=$((ERRORS + 1))
+    fi
+done
 
 echo ""
 echo "Checking startup scripts..."
 check_file "/app/start.sh"
-check_file "$API_DIR/read-base-path.cjs"
+check_file "/app/runtime-health.cjs"
 
 echo ""
 echo "Checking core runtime files..."
-check_dir  "$API_DIR/dist"
 check_file "$API_DIR/package.json"
+check_file "$API_DIR/version.json"
 
 echo ""
 if [ "$ERRORS" -gt 0 ]; then
-    echo "FAILED: $ERRORS missing file(s) detected"
+    echo "FAILED: $ERRORS runtime validation error(s) detected"
     exit 1
 else
-    echo "PASSED: all runtime files present"
+    echo "PASSED: both provider packages and shared runtime files validated"
     exit 0
 fi

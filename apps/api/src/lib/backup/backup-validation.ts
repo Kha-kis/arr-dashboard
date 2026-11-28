@@ -11,16 +11,51 @@ import {
 	parseLabelSyncMutationAttempt,
 } from "../label-sync/jellyfin-mutation-state.js";
 import type { EncryptedBackupEnvelope } from "./backup-crypto.js";
+import {
+	NOTIFICATION_OUTBOX_PAYLOAD_FIELDS,
+	validatePortableNotificationOutbox,
+} from "./backup-notification-outbox.js";
+import {
+	PORTABLE_SAFETY_PAYLOAD_FIELDS,
+	validatePortableSafetyState,
+} from "./backup-portability.js";
+import { GRAB_SAFETY_PAYLOAD_FIELDS, validatePortableGrabSafety } from "./backup-search-grab.js";
 
-export const BACKUP_VERSION = "1.2";
+export const NOTIFICATION_OUTBOX_BACKUP_VERSION = "1.6";
+export const BACKUP_VERSION = NOTIFICATION_OUTBOX_BACKUP_VERSION;
+export const GRAB_SAFETY_BACKUP_VERSION = "1.5";
+export const HELD_EVIDENCE_BACKUP_VERSION = "1.4";
+export const SAFETY_BACKUP_VERSION = "1.3";
+export const CONFIG_BACKUP_VERSION = "1.2";
 export const LEGACY_BACKUP_VERSION = "1.0";
 export const PRE_CONFIG_BACKUP_VERSION = "1.1";
 
 const SUPPORTED_BACKUP_VERSIONS = new Set([
 	LEGACY_BACKUP_VERSION,
 	PRE_CONFIG_BACKUP_VERSION,
+	CONFIG_BACKUP_VERSION,
+	SAFETY_BACKUP_VERSION,
+	HELD_EVIDENCE_BACKUP_VERSION,
+	GRAB_SAFETY_BACKUP_VERSION,
 	BACKUP_VERSION,
 ]);
+
+/** Completeness is an explicit historical contract, not just the current writer. */
+export function hasCompleteSafetyCoverage(version: string): boolean {
+	return (
+		version === SAFETY_BACKUP_VERSION ||
+		version === HELD_EVIDENCE_BACKUP_VERSION ||
+		hasCompleteGrabCoverage(version)
+	);
+}
+
+export function hasCompleteGrabCoverage(version: string): boolean {
+	return version === GRAB_SAFETY_BACKUP_VERSION || version === NOTIFICATION_OUTBOX_BACKUP_VERSION;
+}
+
+export function hasCompleteNotificationOutboxCoverage(version: string): boolean {
+	return version === NOTIFICATION_OUTBOX_BACKUP_VERSION;
+}
 
 /** Durable configuration collections added to the v1.2 backup contract. */
 export const DURABLE_CONFIG_PAYLOAD_FIELDS = [
@@ -610,6 +645,8 @@ export function validateBackup(backup: unknown): asserts backup is BackupData {
 		"huntSearchHistory",
 		// Durable configuration (required in v1.2, optional for legacy files)
 		...DURABLE_CONFIG_PAYLOAD_FIELDS,
+		...PORTABLE_SAFETY_PAYLOAD_FIELDS,
+		...GRAB_SAFETY_PAYLOAD_FIELDS,
 	];
 
 	for (const field of optionalArrayFields) {
@@ -619,27 +656,61 @@ export function validateBackup(backup: unknown): asserts backup is BackupData {
 	}
 
 	if (dataRecord.labelSyncMutationAttempts !== undefined) {
-		validateLabelSyncMutationAttempts(
+		const attempts = validateLabelSyncMutationAttempts(
 			dataRecord.labelSyncMutationAttempts,
 			dataRecord.users,
 			dataRecord.labelSyncRule,
 			dataRecord.serviceInstances,
 		);
-	}
-
-	if (b.version === BACKUP_VERSION) {
-		for (const field of COMPLETE_V1_2_PAYLOAD_FIELDS) {
-			if (!Array.isArray(dataRecord[field])) {
-				throw new Error(
-					`Invalid backup format: ${field} is required for version ${BACKUP_VERSION}`,
-				);
+		for (const [index, attempt] of attempts.entries()) {
+			if (
+				hasCompleteGrabCoverage(b.version) || b.version === HELD_EVIDENCE_BACKUP_VERSION
+					? (dataRecord.labelSyncMutationAttempts as CoordinationRecord[])[index]!
+							.restoreEvidence === undefined
+					: attempt.status === "restored-held" ||
+						attempt.status === "reconciled" ||
+						attempt.restoreEvidence != null
+			) {
+				throw new Error("Invalid label sync mutation attempt backup format evidence");
 			}
 		}
 	}
 
+	if (b.version === CONFIG_BACKUP_VERSION || hasCompleteSafetyCoverage(b.version)) {
+		for (const field of COMPLETE_V1_2_PAYLOAD_FIELDS) {
+			if (!Array.isArray(dataRecord[field])) {
+				throw new Error(`Invalid backup format: ${field} is required for version ${b.version}`);
+			}
+		}
+	}
+	if (hasCompleteGrabCoverage(b.version)) {
+		for (const field of GRAB_SAFETY_PAYLOAD_FIELDS)
+			if (!Array.isArray(dataRecord[field]))
+				throw new Error(`Invalid backup format: ${field} is required for version ${b.version}`);
+	}
+	if (hasCompleteNotificationOutboxCoverage(b.version)) {
+		for (const field of NOTIFICATION_OUTBOX_PAYLOAD_FIELDS)
+			if (!Array.isArray(dataRecord[field]))
+				throw new Error(`Invalid backup format: ${field} is required for version ${b.version}`);
+	}
+	if (hasCompleteSafetyCoverage(b.version)) {
+		for (const field of PORTABLE_SAFETY_PAYLOAD_FIELDS) {
+			if (!Array.isArray(dataRecord[field])) {
+				throw new Error(`Invalid backup format: ${field} is required for version ${b.version}`);
+			}
+		}
+		validatePortableSafetyState(b.data);
+	}
+
+	validatePortableGrabSafety(b.data);
+	validatePortableNotificationOutbox(b.data);
 	validateSingletonCollections(dataRecord);
 
-	if (b.version === BACKUP_VERSION || b.version === PRE_CONFIG_BACKUP_VERSION) {
+	if (
+		hasCompleteSafetyCoverage(b.version) ||
+		b.version === CONFIG_BACKUP_VERSION ||
+		b.version === PRE_CONFIG_BACKUP_VERSION
+	) {
 		validateCoordinationEvidence(dataRecord);
 	}
 

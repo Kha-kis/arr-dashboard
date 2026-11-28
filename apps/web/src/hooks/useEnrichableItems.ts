@@ -51,8 +51,14 @@ export function useEnrichableItems<M extends string = "movie", S extends string 
 		const types: (M | S)[] = [];
 
 		for (const item of items) {
-			if ((item.service === "sonarr" || item.service === "radarr") && item.remoteIds?.tmdbId) {
-				tmdbIds.push(item.remoteIds.tmdbId);
+			const tmdbId = item.remoteIds?.tmdbId;
+			if (
+				(item.service === "sonarr" || item.service === "radarr") &&
+				typeof tmdbId === "number" &&
+				Number.isSafeInteger(tmdbId) &&
+				tmdbId > 0
+			) {
+				tmdbIds.push(tmdbId);
 				types.push(item.type === "movie" ? typeMapping.movie : typeMapping.series);
 			}
 		}

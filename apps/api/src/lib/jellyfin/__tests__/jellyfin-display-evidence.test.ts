@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	isArithmeticAuthoritativeProviderObservationStatus,
 	readOwnedJellyfinEpisodeDisplaySources,
+	readOwnedJellyfinLibraryAndEpisodeDisplaySources,
 	readOwnedJellyfinLibraryDisplaySources,
 } from "../jellyfin-display-evidence.js";
 import type {
@@ -476,6 +477,58 @@ describe("positive-only episode detail display", () => {
 			expect(result.sources[0]?.rows).toEqual([positive]);
 			expect(result.providerStatus?.sources[0]?.status.evidence).toBe("positive-only");
 			expect(isArithmeticAuthoritativeProviderObservationStatus(result.providerStatus)).toBe(false);
+		},
+	);
+});
+
+describe("paired Jellyfin display fallback", () => {
+	const instance = instances[0]!;
+	const library = observation(instance.id, instance.service);
+	const episodes = episodeObservation(instance.id, instance.service);
+
+	it.each(["legacy", "recovered transaction", "failed transactions"] as const)(
+		"preserves independent watch and progress outcomes for %s",
+		async (scenario) => {
+			const read = async (operation: (tx: unknown) => Promise<unknown>) =>
+				operation({
+					serviceInstance: { findFirst: async () => instance },
+					cacheRefreshStatus: { findUnique: async () => null },
+				});
+			const transaction = vi.fn(read);
+			if (scenario === "recovered transaction") {
+				transaction.mockRejectedValueOnce(new Error("pairing transaction failed"));
+			}
+			if (scenario === "failed transactions") {
+				transaction.mockRejectedValue(new Error("episode transaction failed"));
+			}
+			repositoryMock.read.mockImplementation(async ({ cacheType }) =>
+				cacheType === "jellyfin" ? library : episodes,
+			);
+
+			const result = await readOwnedJellyfinLibraryAndEpisodeDisplaySources({
+				prisma: { $transaction: transaction } as never,
+				userId: "user-1",
+				instances: [instance],
+				showTmdbIds: [42],
+				now,
+			});
+
+			expect(result.library.sources[0]?.rows).toEqual(library.rows);
+			expect(result.library.providerStatus?.availability).toBe("current");
+			if (scenario === "failed transactions") {
+				expect(result.episodes.sources[0]?.rows).toEqual([]);
+				expect(result.episodes.providerStatus?.availability).toBe("unavailable");
+				expect(repositoryMock.read).toHaveBeenCalledExactlyOnceWith(
+					expect.objectContaining({ cacheType: "jellyfin", userId: "user-1" }),
+				);
+			} else {
+				expect(result.episodes.sources[0]?.rows).toEqual(episodes.rows);
+				expect(result.episodes.providerStatus?.availability).toBe("current");
+				expect(repositoryMock.read).toHaveBeenCalledWith(
+					expect.objectContaining({ cacheType: "jellyfin_episode", userId: "user-1" }),
+				);
+			}
+			expect(transaction).toHaveBeenCalledTimes(scenario === "legacy" ? 1 : 2);
 		},
 	);
 });

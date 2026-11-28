@@ -6,7 +6,7 @@
 
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { logSeerrAction } from "../../lib/seerr/seerr-action-logger.js";
+import { logSeerrAction, seerrActionFailureDetail } from "../../lib/seerr/seerr-action-logger.js";
 import { requireSeerrClient } from "../../lib/seerr/seerr-client.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
@@ -45,10 +45,10 @@ export async function registerIssueRoutes(app: FastifyInstance, _opts: FastifyPl
 		const { instanceId, issueId } = validateRequest(issueIdParams, request.params);
 		const { message } = validateRequest(addCommentBody, request.body);
 		const userId = request.currentUser!.id;
-		const client = await requireSeerrClient(app, userId, instanceId);
+		const client = await requireSeerrClient(app, userId, instanceId, { requireEnabled: true });
 		try {
 			const result = await client.addIssueComment(issueId, message);
-			logSeerrAction(app, request.log, {
+			await logSeerrAction(app, request.log, {
 				instanceId,
 				userId,
 				action: "add_issue_comment",
@@ -57,13 +57,14 @@ export async function registerIssueRoutes(app: FastifyInstance, _opts: FastifyPl
 			});
 			return result;
 		} catch (err) {
-			logSeerrAction(app, request.log, {
+			await logSeerrAction(app, request.log, {
 				instanceId,
 				userId,
 				action: "add_issue_comment",
 				targetType: "issue",
 				targetId: String(issueId),
 				success: false,
+				...seerrActionFailureDetail(err),
 			});
 			throw err;
 		}
@@ -74,10 +75,10 @@ export async function registerIssueRoutes(app: FastifyInstance, _opts: FastifyPl
 		const { instanceId, issueId } = validateRequest(issueIdParams, request.params);
 		const { status } = validateRequest(updateStatusBody, request.body);
 		const userId = request.currentUser!.id;
-		const client = await requireSeerrClient(app, userId, instanceId);
+		const client = await requireSeerrClient(app, userId, instanceId, { requireEnabled: true });
 		try {
 			const result = await client.updateIssueStatus(issueId, status);
-			logSeerrAction(app, request.log, {
+			await logSeerrAction(app, request.log, {
 				instanceId,
 				userId,
 				action: "update_issue_status",
@@ -87,13 +88,14 @@ export async function registerIssueRoutes(app: FastifyInstance, _opts: FastifyPl
 			});
 			return result;
 		} catch (err) {
-			logSeerrAction(app, request.log, {
+			await logSeerrAction(app, request.log, {
 				instanceId,
 				userId,
 				action: "update_issue_status",
 				targetType: "issue",
 				targetId: String(issueId),
 				success: false,
+				...seerrActionFailureDetail(err),
 			});
 			throw err;
 		}

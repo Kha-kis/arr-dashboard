@@ -1,4 +1,4 @@
-import type { CalendarItem } from "@arr/shared";
+import { type CalendarItem, isValidCalendarDate } from "@arr/shared";
 import { toBoolean, toNumber, toStringArray, toStringValue } from "../data/values.js";
 import { normalizeImages } from "../library/image-normalizer.js";
 
@@ -23,22 +23,23 @@ export const formatDateOnly = (date: Date): string =>
  */
 const selectCalendarDates = (item: unknown, service: CalendarService) => {
 	const anyItem = item as UnknownRecord;
+	const validDate = (value: unknown) => (isValidCalendarDate(value) ? value : undefined);
 
 	// Sonarr uses airDate/airDateUtc for episode air dates
 	if (service === "sonarr") {
 		return {
-			local: toStringValue(anyItem.airDate),
-			utc: toStringValue(anyItem.airDateUtc),
+			local: validDate(anyItem.airDate),
+			utc: validDate(anyItem.airDateUtc),
 		};
 	}
 
 	// Radarr uses multiple release date fields
 	if (service === "radarr") {
 		const primary =
-			toStringValue(anyItem.inCinemas) ??
-			toStringValue(anyItem.digitalRelease) ??
-			toStringValue(anyItem.physicalRelease) ??
-			toStringValue(anyItem.releaseDate);
+			validDate(anyItem.inCinemas) ??
+			validDate(anyItem.digitalRelease) ??
+			validDate(anyItem.physicalRelease) ??
+			validDate(anyItem.releaseDate);
 		return {
 			local: primary,
 			utc: primary,
@@ -47,7 +48,7 @@ const selectCalendarDates = (item: unknown, service: CalendarService) => {
 
 	// Lidarr uses releaseDate for album releases
 	if (service === "lidarr") {
-		const releaseDate = toStringValue(anyItem.releaseDate);
+		const releaseDate = validDate(anyItem.releaseDate);
 		return {
 			local: releaseDate,
 			utc: releaseDate,
@@ -55,7 +56,7 @@ const selectCalendarDates = (item: unknown, service: CalendarService) => {
 	}
 
 	// Readarr uses releaseDate for book releases
-	const releaseDate = toStringValue(anyItem.releaseDate);
+	const releaseDate = validDate(anyItem.releaseDate);
 	return {
 		local: releaseDate,
 		utc: releaseDate,
@@ -104,20 +105,37 @@ const extractCalendarTitle = (anyItem: UnknownRecord, service: CalendarService):
  * Supports Sonarr (episodes), Radarr (movies), Lidarr (albums), and Readarr (books)
  */
 export const normalizeCalendarItem = (item: unknown, service: CalendarService): CalendarItem => {
+	const isRecord = (value: unknown): value is UnknownRecord =>
+		value !== null && typeof value === "object" && !Array.isArray(value);
+	if (!isRecord(item)) throw new Error("Calendar item was invalid");
 	const anyItem = item as UnknownRecord;
-	const rawId =
-		anyItem.id ??
-		anyItem.eventId ??
-		anyItem.episodeId ??
-		anyItem.movieId ??
-		anyItem.albumId ??
-		anyItem.bookId ??
-		anyItem.sourceId ??
-		Math.random().toString(36);
-	const normalizedId =
-		typeof rawId === "number" || typeof rawId === "string" ? rawId : Math.random().toString(36);
+	const rawId: unknown = [
+		anyItem.id,
+		anyItem.eventId,
+		anyItem.episodeId,
+		anyItem.movieId,
+		anyItem.albumId,
+		anyItem.bookId,
+		anyItem.sourceId,
+	].find((value: unknown) =>
+		typeof value === "number"
+			? Number.isSafeInteger(value) && value > 0
+			: typeof value === "string" && value.trim().length > 0,
+	);
+	if (typeof rawId !== "string" && typeof rawId !== "number")
+		throw new Error("Calendar item was invalid");
+	const normalizedId = typeof rawId === "string" ? rawId.trim() : rawId;
+	for (const key of ["series", "movie", "artist", "author"]) {
+		if (anyItem[key] != null && !isRecord(anyItem[key]))
+			throw new Error("Calendar item was invalid");
+	}
+	for (const record of [anyItem, anyItem.series, anyItem.movie, anyItem.artist, anyItem.author]) {
+		if (record?.images != null && (!Array.isArray(record.images) || !record.images.every(isRecord)))
+			throw new Error("Calendar item was invalid");
+	}
 
 	const { local: airDate, utc: airDateUtc } = selectCalendarDates(item, service);
+	if (!airDate && !airDateUtc) throw new Error("Calendar item was invalid");
 
 	// Sonarr-specific fields
 	const seriesTitle =

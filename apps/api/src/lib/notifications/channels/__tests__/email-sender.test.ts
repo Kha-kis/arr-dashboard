@@ -120,7 +120,7 @@ describe("emailSender", () => {
 
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(true);
-		expect(result.error).toContain("Connection refused");
+		expect(result.failureCategory).toBe("transport");
 	});
 
 	it("returns retryable on ETIMEDOUT error code", async () => {
@@ -132,7 +132,7 @@ describe("emailSender", () => {
 
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(true);
-		expect(result.error).toContain("Connection timed out");
+		expect(result.failureCategory).toBe("timeout");
 	});
 
 	it("returns non-retryable on unknown error (no error code)", async () => {
@@ -142,7 +142,62 @@ describe("emailSender", () => {
 
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(false);
-		expect(result.error).toContain("Authentication failed");
+		expect(result.failureCategory).toBe("unknown");
+	});
+
+	describe.each([
+		{ code: "ETLS", responseCode: undefined, category: "transport" },
+		{ code: "EENVELOPE", responseCode: 550, category: "rejected" },
+		{ code: "EMESSAGE", responseCode: 552, category: "rejected" },
+		{ code: "EENVELOPE", responseCode: 450, category: "rejected" },
+		{ code: "EENVELOPE", responseCode: undefined, category: "unknown" },
+		{ code: "EMESSAGE", responseCode: "552", category: "unknown" },
+		{ code: "EMESSAGE", responseCode: Number.NaN, category: "unknown" },
+		{ code: "EMESSAGE", responseCode: 552.5, category: "unknown" },
+		{ code: "EENVELOPE", responseCode: 250, category: "unknown" },
+		{ code: "EMESSAGE", responseCode: 600, category: "unknown" },
+		{ code: "UNRECOGNIZED", responseCode: 550, category: "unknown" },
+	])("SMTP $code / $responseCode", ({ code, responseCode, category }) => {
+		const privateText = "synthetic-private-smtp-recipient-and-secret";
+		const messages: Record<string, string> = {
+			transport: "Network delivery failed. Check connectivity, TLS and proxy settings.",
+			rejected: "Provider rejected delivery. Check channel settings and recipient permissions.",
+			unknown: "Delivery was not confirmed. Check channel settings and provider availability.",
+		};
+
+		it("classifies a send failure without changing retry eligibility or exposing SMTP text", async () => {
+			mockSendMail.mockRejectedValue(
+				Object.assign(new Error(privateText), { code, responseCode, response: privateText }),
+			);
+
+			const result = await emailSender.send(baseConfig, makePayload());
+
+			expect(result).toEqual({
+				success: false,
+				retryable: false,
+				failureCategory: category,
+				error: messages[category],
+			});
+			expect(JSON.stringify(result)).not.toContain(privateText);
+		});
+
+		it("classifies a test failure without propagating SMTP text or a raw cause", async () => {
+			mockSendMail.mockRejectedValue(
+				Object.assign(new Error(privateText), { code, responseCode, response: privateText }),
+			);
+
+			let failure: unknown;
+			try {
+				await emailSender.test(baseConfig);
+			} catch (err) {
+				failure = err;
+			}
+
+			expect(failure).toBeInstanceOf(Error);
+			expect(failure).toMatchObject({ category, message: messages[category] });
+			expect(failure).not.toHaveProperty("cause");
+			expect(JSON.stringify(failure)).not.toContain(privateText);
+		});
 	});
 
 	it("pool reuses transport for same config", async () => {

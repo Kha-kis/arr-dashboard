@@ -37,8 +37,31 @@ export type EvidenceFingerprintArrayAccumulator = {
 /**
  * Hashes a canonical JSON array incrementally without retaining its values.
  * Its bytes match `evidenceFingerprint(materializedArray)` exactly.
+ * Only supply fixed record keys when every item is a plain record projected
+ * with the same own enumerable keys in the same order.
  */
-export function createEvidenceFingerprintArrayAccumulator(): EvidenceFingerprintArrayAccumulator {
+export function createEvidenceFingerprintArrayAccumulator(
+	fixedRecordKeys?: readonly string[],
+): EvidenceFingerprintArrayAccumulator {
+	const orderedKeys =
+		fixedRecordKeys && [...fixedRecordKeys].sort((left, right) => left.localeCompare(right));
+	const alreadyOrdered = orderedKeys?.every((key, index) => key === fixedRecordKeys![index]);
+	const canonicalizeItem = orderedKeys
+		? (value: unknown) => {
+				const record = value as Record<string, unknown>;
+				if (
+					alreadyOrdered &&
+					orderedKeys.every((key) => {
+						const field = record[key];
+						return field === null || typeof field !== "object";
+					})
+				)
+					return record;
+				const ordered: Record<string, unknown> = Object.create(null);
+				for (const key of orderedKeys) ordered[key] = canonicalizeEvidence(record[key]);
+				return ordered;
+			}
+		: canonicalizeEvidence;
 	const hash = createHash("sha256");
 	hash.update("[");
 	let count = 0;
@@ -49,7 +72,7 @@ export function createEvidenceFingerprintArrayAccumulator(): EvidenceFingerprint
 			if (result !== undefined) throw new Error("Evidence fingerprint is already finalized");
 			if (count > 0) hash.update(",");
 			// Array stringification turns otherwise omitted values into null.
-			const canonicalArrayValue = JSON.stringify([canonicalizeEvidence(value)]);
+			const canonicalArrayValue = JSON.stringify([canonicalizeItem(value)]);
 			hash.update(canonicalArrayValue.slice(1, -1));
 			count += 1;
 		},

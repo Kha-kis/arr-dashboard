@@ -97,7 +97,7 @@ describe("webhookSender", () => {
 
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(true);
-		expect(result.error).toContain("429");
+		expect(result.failureCategory).toBe("rate-limited");
 	});
 
 	it("returns retryable on 5xx", async () => {
@@ -112,7 +112,7 @@ describe("webhookSender", () => {
 
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(true);
-		expect(result.error).toContain("500");
+		expect(result.failureCategory).toBe("provider-unavailable");
 	});
 
 	it("returns non-retryable on 4xx", async () => {
@@ -127,7 +127,7 @@ describe("webhookSender", () => {
 
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(false);
-		expect(result.error).toContain("400");
+		expect(result.failureCategory).toBe("rejected");
 	});
 
 	it("returns retryable on network error", async () => {
@@ -137,7 +137,7 @@ describe("webhookSender", () => {
 
 		expect(result.success).toBe(false);
 		expect(result.retryable).toBe(true);
-		expect(result.error).toContain("Network connection refused");
+		expect(result.failureCategory).toBe("transport");
 	});
 
 	it("uses configured HTTP method", async () => {

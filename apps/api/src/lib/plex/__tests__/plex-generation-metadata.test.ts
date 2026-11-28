@@ -151,7 +151,29 @@ const validV6AuthoritativeMetadata = JSON.stringify({
 const validV6PositiveMetadata = JSON.stringify({
 	...JSON.parse(validV5PositiveMetadata),
 	version: 6,
+	ambiguousTmdbCandidates: [],
 	coverageReceipt: v6Receipt("positive-only"),
+});
+
+const legacyV6PositiveMetadata = JSON.stringify(
+	Object.fromEntries(
+		Object.entries(JSON.parse(validV6PositiveMetadata)).filter(
+			([key]) => key !== "ambiguousTmdbCandidates",
+		),
+	),
+);
+
+const positiveWithAmbiguousTmdbIds = JSON.stringify({
+	...JSON.parse(legacyV6PositiveMetadata),
+	ambiguousTmdbIds: [42, 84],
+});
+
+const positiveWithMediaQualifiedAmbiguousTmdbCandidates = JSON.stringify({
+	...JSON.parse(validV6PositiveMetadata),
+	ambiguousTmdbCandidates: [
+		{ mediaType: "movie", tmdbId: 42 },
+		{ mediaType: "series", tmdbId: 84 },
+	],
 });
 
 function status(overrides: Record<string, unknown> = {}) {
@@ -170,6 +192,51 @@ function status(overrides: Record<string, unknown> = {}) {
 }
 
 describe("Plex generation metadata", () => {
+	it("treats legacy untyped V6 candidates as ambiguous for both media types", () => {
+		expect(decodePlexGenerationMetadata(positiveWithAmbiguousTmdbIds)).toMatchObject({
+			ok: true,
+			metadata: {
+				version: 6,
+				ambiguousTmdbCandidates: [
+					{ mediaType: "movie", tmdbId: 42 },
+					{ mediaType: "movie", tmdbId: 84 },
+					{ mediaType: "series", tmdbId: 42 },
+					{ mediaType: "series", tmdbId: 84 },
+				],
+			},
+		});
+		expect(decodePlexGenerationMetadata(validV6PositiveMetadata)).toMatchObject({
+			ok: true,
+			metadata: { version: 6, ambiguousTmdbCandidates: [] },
+		});
+		expect(decodePlexGenerationMetadata(legacyV6PositiveMetadata)).toMatchObject({
+			ok: true,
+			metadata: { version: 6, ambiguousTmdbCandidates: null },
+		});
+		for (const ids of [[84, 42], [42, 42], [0], [Number.MAX_SAFE_INTEGER + 1]]) {
+			expect(
+				decodePlexGenerationMetadata(
+					JSON.stringify({ ...JSON.parse(legacyV6PositiveMetadata), ambiguousTmdbIds: ids }),
+				),
+			).toMatchObject({ ok: false, reasonCode: "metadata_invalid" });
+		}
+	});
+
+	it("decodes media-qualified ambiguous TMDB candidates in a positive V6 generation", () => {
+		expect(
+			decodePlexGenerationMetadata(positiveWithMediaQualifiedAmbiguousTmdbCandidates),
+		).toMatchObject({
+			ok: true,
+			metadata: {
+				version: 6,
+				ambiguousTmdbCandidates: [
+					{ mediaType: "movie", tmdbId: 42 },
+					{ mediaType: "series", tmdbId: 84 },
+				],
+			},
+		});
+	});
+
 	it("rejects a partial V4 envelope that does not explain why it is partial", () => {
 		expect(
 			decodePlexGenerationMetadata(JSON.stringify({ ...validV4Metadata, partialReasons: [] })),

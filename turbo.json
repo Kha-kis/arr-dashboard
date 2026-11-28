@@ -16,6 +16,7 @@
     },
     "test": {
       "dependsOn": ["^build"],
+      "env": ["ARR_API_TEST_WORKERS"],
       "outputs": []
     },
     "format": {

@@ -80,6 +80,7 @@ export async function resolveLibraryReferencedItemIds(
 	prisma: PrismaClient,
 	userId: string,
 	hashesByItemId: Map<string, string>,
+	options?: { onUnavailable?: () => void },
 ): Promise<Set<string>> {
 	if (hashesByItemId.size === 0) {
 		return new Set();
@@ -120,6 +121,7 @@ export async function resolveLibraryReferencedItemIds(
 
 		return partitionByReferencedHashes(hashesByItemId, referencedHashes).protectedItemIds;
 	} catch {
+		options?.onUnavailable?.();
 		// Fail-closed: any unexpected DB error → protect every item with a
 		// hash. The caller catches this implicitly via the Set we return.
 		// Logging is the caller's responsibility (it has the full route

@@ -12,7 +12,7 @@
  *     users add/remove torrents; pre-caching would either stale fast or
  *     require a heavy sync job. qui's own sync-manager already caches
  *     reads, so live-fetch is cheap.
- *   - **Single `listAllTorrents` per batch.** qui returns the entire
+ *   - **Single `listTorrentInventory` per batch.** qui returns the
  *     cross-instance torrent set in one call; we join locally. Without
  *     this we'd need 2 qui calls per item (one to find the qBit instance
  *     id, one for siblings), N=batch-size apart.
@@ -94,17 +94,9 @@ export async function runDiscoveryBatch(
 
 	const quiInstance = await pickQuiInstance(app, userId);
 	if (!quiInstance) {
-		// Defense-in-depth — frontend should have gated on availability already.
-		return {
-			items: [],
-			nextCursor: null,
-			scannedThisBatch: 0,
-			foundThisBatch: 0,
-			totalScanned: 0,
-			totalFound: 0,
-			exhausted: true,
-			quiInstanceLabel: "",
-		};
+		throw Object.assign(new Error("Cross-seed discovery is unavailable. Retry the scan."), {
+			statusCode: 503,
+		});
 	}
 
 	const client = createQuiClient(app, quiInstance);
@@ -112,9 +104,9 @@ export async function runDiscoveryBatch(
 	// Build hash → torrent map for THIS batch. We re-fetch every batch so a
 	// long scan reflects torrents added/removed mid-scan. qui's response is
 	// cached internally so this is cheap; we don't need our own cache layer.
-	const torrents = await client.listAllTorrents();
+	const inventory = await client.listTorrentInventory();
 	const torrentByHash = new Map<string, QuiTorrent>();
-	for (const t of torrents) {
+	for (const t of inventory.torrents) {
 		torrentByHash.set(t.hash.toLowerCase(), t);
 	}
 
@@ -207,20 +199,22 @@ export async function runDiscoveryBatch(
 					},
 					siblings,
 				});
-			} catch (err) {
+			} catch {
 				// Per-item failure shouldn't abort the whole batch — log + count.
 				// The counter surfaces to the frontend so operators can see "N
 				// items couldn't be checked" rather than silently getting a
 				// smaller result set with no clue that completeness suffered.
 				siblingFetchErrors++;
-				log.warn(
-					{ err, libraryCacheId: row.id, hash, quiInstanceId: quiInstance.id },
-					"cross-seed discovery: sibling fetch failed for item",
-				);
 			}
 		}
 	});
 	await Promise.all(workers);
+	if (siblingFetchErrors > 0) {
+		log.warn(
+			{ category: "cross_seed_sibling_read_failed", count: siblingFetchErrors },
+			"Cross-seed discovery sibling reads failed",
+		);
+	}
 
 	// Sort items by title within the batch for stable display ordering.
 	items.sort((a, b) => a.title.localeCompare(b.title));
@@ -238,6 +232,7 @@ export async function runDiscoveryBatch(
 		exhausted,
 		quiInstanceLabel: quiInstance.label,
 		siblingFetchErrors,
+		torrentInventoryComplete: inventory.complete === true,
 	};
 }
 

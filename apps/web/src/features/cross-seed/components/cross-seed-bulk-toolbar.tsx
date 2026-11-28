@@ -11,7 +11,7 @@ import {
 	RefreshCw,
 	XCircle,
 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "../../../components/ui";
 import { useQuiBulkAction } from "../../../hooks/api/useQui";
@@ -80,6 +80,8 @@ const BULK_ACTIONS: ActionDef[] = [
  */
 export const CrossSeedBulkToolbar = ({ quiInstanceId, selectedItems, onClear }: Props) => {
 	const [pending, setPending] = useState<ActionDef | null>(null);
+	const [isSubmitting, setIsSubmitting] = useState(false);
+	const batchInFlight = useRef(false);
 	const mutation = useQuiBulkAction();
 
 	// Group by qbit instance. Items without `primary` shouldn't reach this
@@ -110,53 +112,60 @@ export const CrossSeedBulkToolbar = ({ quiInstanceId, selectedItems, onClear }: 
 	const overCap = maxPerInstance > QUI_BULK_HASH_CAP;
 
 	const submit = async () => {
-		if (!pending) return;
-		const results: Array<{ qbit: number; qbitName: string; ok: boolean; error?: string }> = [];
+		if (!pending || batchInFlight.current || targetCount === 0 || overCap) return;
+		batchInFlight.current = true;
+		setIsSubmitting(true);
+		try {
+			const results: Array<{ qbit: number; qbitName: string; ok: boolean; error?: string }> = [];
 
-		// Fire one bulk-action POST per qbit instance. Run in parallel —
-		// the audit log records each group separately, so failures stay
-		// scoped to the group that hit them.
-		await Promise.all(
-			Array.from(grouped.entries()).map(async ([qbitInstanceId, group]) => {
-				try {
-					await mutation.mutateAsync({
-						quiInstanceId,
-						qbitInstanceId,
-						action: pending.id,
-						hashes: group.hashes,
-					});
-					results.push({ qbit: qbitInstanceId, qbitName: group.qbitName, ok: true });
-				} catch (err) {
-					results.push({
-						qbit: qbitInstanceId,
-						qbitName: group.qbitName,
-						ok: false,
-						error: getErrorMessage(err),
-					});
-				}
-			}),
-		);
+			// Fire one bulk-action POST per qbit instance. Run in parallel —
+			// the audit log records each group separately, so failures stay
+			// scoped to the group that hit them.
+			await Promise.all(
+				Array.from(grouped.entries()).map(async ([qbitInstanceId, group]) => {
+					try {
+						await mutation.mutateAsync({
+							quiInstanceId,
+							qbitInstanceId,
+							action: pending.id,
+							hashes: group.hashes,
+						});
+						results.push({ qbit: qbitInstanceId, qbitName: group.qbitName, ok: true });
+					} catch (err) {
+						results.push({
+							qbit: qbitInstanceId,
+							qbitName: group.qbitName,
+							ok: false,
+							error: getErrorMessage(err),
+						});
+					}
+				}),
+			);
 
-		const failures = results.filter((r) => !r.ok);
-		if (failures.length === 0) {
-			toast.success(
-				`${pending.label} sent to ${targetCount} torrent${targetCount === 1 ? "" : "s"} in qui`,
-			);
-			onClear();
-		} else if (failures.length === results.length) {
-			toast.error(`${pending.label} failed: ${failures[0]?.error ?? "qui returned an error"}`);
-		} else {
-			const okCount = results.length - failures.length;
-			toast.warning(
-				`${pending.label}: ${okCount} succeeded, ${failures.length} failed (see My Actions for details)`,
-			);
-			onClear();
+			const failures = results.filter((r) => !r.ok);
+			if (failures.length === 0) {
+				toast.success(
+					`${pending.label} sent to ${targetCount} torrent${targetCount === 1 ? "" : "s"} in qui`,
+				);
+				onClear();
+			} else if (failures.length === results.length) {
+				toast.error(`${pending.label} failed: ${failures[0]?.error ?? "qui returned an error"}`);
+			} else {
+				const okCount = results.length - failures.length;
+				toast.warning(
+					`${pending.label}: ${okCount} succeeded, ${failures.length} failed (see My Actions for details)`,
+				);
+				onClear();
+			}
+		} finally {
+			batchInFlight.current = false;
+			setIsSubmitting(false);
+			setPending(null);
 		}
-		setPending(null);
 	};
 
 	const cancel = () => {
-		if (mutation.isPending) return;
+		if (batchInFlight.current) return;
 		setPending(null);
 	};
 
@@ -185,7 +194,7 @@ export const CrossSeedBulkToolbar = ({ quiInstanceId, selectedItems, onClear }: 
 								variant="secondary"
 								size="sm"
 								onClick={() => setPending(action)}
-								disabled={mutation.isPending || targetCount === 0 || overCap}
+								disabled={isSubmitting || targetCount === 0 || overCap}
 								className="h-8 text-xs"
 								aria-label={`${action.label} ${targetCount} selected torrents`}
 							>
@@ -197,7 +206,7 @@ export const CrossSeedBulkToolbar = ({ quiInstanceId, selectedItems, onClear }: 
 							variant="ghost"
 							size="sm"
 							onClick={onClear}
-							disabled={mutation.isPending}
+							disabled={isSubmitting}
 							className="h-8 text-xs"
 							aria-label="Clear selection"
 						>
@@ -213,7 +222,7 @@ export const CrossSeedBulkToolbar = ({ quiInstanceId, selectedItems, onClear }: 
 					action={pending}
 					targetCount={targetCount}
 					groupCount={groupCount}
-					isSubmitting={mutation.isPending}
+					isSubmitting={isSubmitting}
 					onConfirm={submit}
 					onCancel={cancel}
 				/>

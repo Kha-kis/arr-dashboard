@@ -22,7 +22,7 @@ interface SeerrAutoSetupSectionProps {
 	seerrUrl: string;
 	httpAuth?: { username: string; password: string };
 	onApiKeyFetched: (apiKey: string) => void;
-	onTestConnection: () => void;
+	isCurrentDraft: () => boolean;
 	mode: "add" | "edit";
 }
 
@@ -32,16 +32,54 @@ export const SeerrAutoSetupSection = ({
 	seerrUrl,
 	httpAuth,
 	onApiKeyFetched,
-	onTestConnection,
+	isCurrentDraft,
 	mode,
 }: SeerrAutoSetupSectionProps) => {
 	const isEdit = mode === "edit";
 	const { status: plexStatus, tokenRef, startOAuth, cancel: cancelPlex } = usePlexOAuth();
 	const [setupStatus, setSetupStatus] = useState<SetupStatus>("idle");
 	const [error, setError] = useState<string | null>(null);
+	const attemptRef = useRef(0);
+	const pendingOAuthRef = useRef<number | null>(null);
+	const contextRef = useRef({
+		seerrUrl,
+		username: httpAuth?.username,
+		password: httpAuth?.password,
+		mode,
+	});
+	useEffect(() => {
+		const previous = contextRef.current;
+		if (
+			previous.seerrUrl !== seerrUrl ||
+			previous.username !== httpAuth?.username ||
+			previous.password !== httpAuth?.password ||
+			previous.mode !== mode
+		) {
+			contextRef.current = {
+				seerrUrl,
+				username: httpAuth?.username,
+				password: httpAuth?.password,
+				mode,
+			};
+			attemptRef.current += 1;
+			pendingOAuthRef.current = null;
+			cancelPlex();
+			setSetupStatus("idle");
+			setError(null);
+		}
+	}, [seerrUrl, httpAuth?.username, httpAuth?.password, mode, cancelPlex]);
+	useEffect(
+		() => () => {
+			attemptRef.current += 1;
+			pendingOAuthRef.current = null;
+			cancelPlex();
+		},
+		[cancelPlex],
+	);
 
 	const fetchKey = useCallback(
 		async (ref: string) => {
+			const attempt = ++attemptRef.current;
 			if (!seerrUrl.trim()) {
 				setSetupStatus("error");
 				setError("Seerr Base URL was cleared. Please enter a URL and try again.");
@@ -51,15 +89,24 @@ export const SeerrAutoSetupSection = ({
 			setError(null);
 			try {
 				const { apiKey } = await fetchSeerrApiKey(seerrUrl.trim(), ref, httpAuth);
+				if (attemptRef.current !== attempt) return;
+				if (!isCurrentDraft()) {
+					setSetupStatus("idle");
+					return;
+				}
 				onApiKeyFetched(apiKey);
 				setSetupStatus("done");
-				setTimeout(onTestConnection, 100);
 			} catch (err: unknown) {
+				if (attemptRef.current !== attempt) return;
+				if (!isCurrentDraft()) {
+					setSetupStatus("idle");
+					return;
+				}
 				setSetupStatus("error");
 				setError(getErrorMessage(err, "Failed to retrieve Seerr API key"));
 			}
 		},
-		[seerrUrl, httpAuth, onApiKeyFetched, onTestConnection],
+		[seerrUrl, httpAuth, onApiKeyFetched, isCurrentDraft],
 	);
 
 	const handleConnect = useCallback(() => {
@@ -76,6 +123,7 @@ export const SeerrAutoSetupSection = ({
 		}
 
 		// Otherwise, start Plex OAuth — we'll fetch the key after it completes
+		pendingOAuthRef.current = ++attemptRef.current;
 		setSetupStatus("plex-auth");
 		setError(null);
 		startOAuth();
@@ -84,7 +132,13 @@ export const SeerrAutoSetupSection = ({
 	// Bridge Plex OAuth completion → Seerr key fetch
 	const prevTokenRef = useRef<string | null>(null);
 	useEffect(() => {
-		if (tokenRef && tokenRef !== prevTokenRef.current && setupStatus === "plex-auth") {
+		if (
+			tokenRef &&
+			tokenRef !== prevTokenRef.current &&
+			setupStatus === "plex-auth" &&
+			pendingOAuthRef.current === attemptRef.current
+		) {
+			pendingOAuthRef.current = null;
 			prevTokenRef.current = tokenRef;
 			fetchKey(tokenRef);
 		}
@@ -103,6 +157,8 @@ export const SeerrAutoSetupSection = ({
 	}, [plexStatus, setupStatus]);
 
 	const handleCancel = useCallback(() => {
+		attemptRef.current += 1;
+		pendingOAuthRef.current = null;
 		cancelPlex();
 		setSetupStatus("idle");
 		setError(null);

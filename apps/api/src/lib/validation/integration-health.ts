@@ -35,6 +35,13 @@ export interface AllIntegrationHealth {
 	resetAt: string | null;
 }
 
+type HealthNotifyFn = (payload: {
+	eventType: string;
+	title: string;
+	body: string;
+	metadata: Record<string, string>;
+}) => void | Promise<void>;
+
 // ============================================================================
 // Registry
 // ============================================================================
@@ -49,25 +56,13 @@ function computeState(consecutiveFailures: number): HealthState {
 class IntegrationHealthRegistry {
 	private readonly data = new Map<string, IntegrationHealth>();
 	private _resetAt: string | null = null;
-	private _notifyFn:
-		| ((payload: {
-				eventType: string;
-				title: string;
-				body: string;
-				metadata: Record<string, string>;
-		  }) => void)
-		| null = null;
+	private _notifyFn: HealthNotifyFn | null = null;
 	private readonly _lastNotifiedAt = new Map<string, number>();
+	private readonly _pendingNotifications = new Map<string, object>();
+	private readonly _retryAfter = new Map<string, number>();
 
 	/** Set a callback for health degradation notifications */
-	setNotifyFn(
-		fn: (payload: {
-			eventType: string;
-			title: string;
-			body: string;
-			metadata: Record<string, string>;
-		}) => void,
-	): void {
+	setNotifyFn(fn: HealthNotifyFn): void {
 		this._notifyFn = fn;
 	}
 
@@ -116,9 +111,11 @@ class IntegrationHealthRegistry {
 
 		health.state = computeState(health.consecutiveFailures);
 
-		// Notify on state degradation
+		// Retry rejected submissions on a later failed validation, without
+		// repeating accepted alerts merely because a source remains unhealthy.
 		if (
-			previousState === "healthy" &&
+			isAllRejection &&
+			(previousState === "healthy" || this._retryAfter.has(integration)) &&
 			(health.state === "degraded" || health.state === "failing")
 		) {
 			this.maybeNotify(integration, health);
@@ -155,30 +152,48 @@ class IntegrationHealthRegistry {
 		this._resetAt = new Date().toISOString();
 		this.data.clear();
 		this._lastNotifiedAt.clear();
+		this._pendingNotifications.clear();
+		this._retryAfter.clear();
 	}
 
 	// ============================================================================
 	// Private Helpers
 	// ============================================================================
 
-	/** Send notification if not throttled (max 1 per integration per hour) */
+	/** Throttle accepted submissions for one hour; failed admission retries after one minute. */
 	private maybeNotify(integration: string, health: IntegrationHealth): void {
-		if (!this._notifyFn) return;
+		if (!this._notifyFn || this._pendingNotifications.has(integration)) return;
 
 		const now = Date.now();
 		const lastNotified = this._lastNotifiedAt.get(integration);
 		const THROTTLE_MS = 60 * 60 * 1000; // 1 hour
 
-		if (lastNotified && now - lastNotified < THROTTLE_MS) return;
+		if (lastNotified !== undefined && now - lastNotified < THROTTLE_MS) return;
+		const retryAfter = this._retryAfter.get(integration);
+		if (retryAfter !== undefined && now < retryAfter) return;
 
-		this._lastNotifiedAt.set(integration, now);
+		// Reserve before invoking the callback, including synchronous re-entry.
+		// A reset invalidates the token so an obsolete completion cannot rewrite new state.
+		const token = {};
+		this._pendingNotifications.set(integration, token);
+		const accepted = () => {
+			if (this._pendingNotifications.get(integration) !== token) return;
+			this._pendingNotifications.delete(integration);
+			this._retryAfter.delete(integration);
+			this._lastNotifiedAt.set(integration, Date.now());
+		};
+		const rejected = () => {
+			if (this._pendingNotifications.get(integration) !== token) return;
+			this._pendingNotifications.delete(integration);
+			this._retryAfter.set(integration, Date.now() + 60_000);
+		};
 
 		const affectedCategories = Object.entries(health.categories)
 			.filter(([, s]) => s.rejected > 0)
 			.map(([cat]) => cat)
 			.join(", ");
 
-		this._notifyFn({
+		const payload = {
 			eventType: "VALIDATION_HEALTH_DEGRADED",
 			title: `Validation health degraded: ${integration}`,
 			body: `Integration "${integration}" has ${health.consecutiveFailures} consecutive validation failure(s). State: ${health.state}.`,
@@ -187,7 +202,16 @@ class IntegrationHealthRegistry {
 				failureCount: String(health.consecutiveFailures),
 				affectedCategories: affectedCategories || "unknown",
 			},
-		});
+		};
+		try {
+			const submission = this._notifyFn(payload);
+			if (submission === undefined) accepted();
+			else void Promise.resolve(submission).then(accepted, rejected);
+		} catch {
+			// Alert rejection must not turn already recorded validation evidence
+			// into a provider failure or prevent the refresh from continuing.
+			rejected();
+		}
 	}
 }
 

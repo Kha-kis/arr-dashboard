@@ -168,7 +168,7 @@ describe("runQuiTorrentStateSync SQLite scale behavior", () => {
 				arrItemId: index,
 				itemType: "movie" as const,
 				title: `Movie ${index}`,
-				infoHash: `hash-${index}`,
+				infoHash: index.toString(16).padStart(40, "0"),
 				torrentState: "paused",
 				torrentRatio: 0,
 				torrentSyncedAt: oldGeneration,
@@ -185,7 +185,7 @@ describe("runQuiTorrentStateSync SQLite scale behavior", () => {
 				relativePath: `episode-${index}.mkv`,
 				path: `/media/episode-${index}.mkv`,
 				size: BigInt(1),
-				infoHash: `hash-${index + 15_000}`,
+				infoHash: (index + 15_000).toString(16).padStart(40, "0"),
 				torrentState: "paused",
 				torrentRatio: 0,
 				torrentSyncedAt: oldGeneration,
@@ -198,7 +198,7 @@ describe("runQuiTorrentStateSync SQLite scale behavior", () => {
 		mockCreateQuiClient.mockReturnValue({
 			listTorrentInventory: vi.fn().mockResolvedValue({
 				torrents: Array.from({ length: 15_000 }, (_, index) => ({
-					hash: `HASH-${index}`,
+					hash: index.toString(16).padStart(40, "0").toUpperCase(),
 					state: "uploading",
 					ratio: 1,
 				})),

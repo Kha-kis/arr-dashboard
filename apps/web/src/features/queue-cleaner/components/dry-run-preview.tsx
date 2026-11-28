@@ -35,6 +35,7 @@ interface EnhancedDryRunPreviewProps {
 
 const ACTION_COLORS: Record<string, typeof DEFAULT_RULE_COLOR> = {
 	remove: SEMANTIC_COLORS.error,
+	import: SEMANTIC_COLORS.info,
 	warn: SEMANTIC_COLORS.warning,
 	skip: DEFAULT_RULE_COLOR,
 	whitelist: SEMANTIC_COLORS.success,
@@ -42,7 +43,8 @@ const ACTION_COLORS: Record<string, typeof DEFAULT_RULE_COLOR> = {
 
 // Action priority for determining group action (worst action takes precedence)
 const ACTION_PRIORITY: Record<string, number> = {
-	remove: 4,
+	remove: 5,
+	import: 4,
 	warn: 3,
 	skip: 2,
 	whitelist: 1,
@@ -52,7 +54,7 @@ const ACTION_PRIORITY: Record<string, number> = {
 interface ItemGroup {
 	downloadId: string;
 	items: EnhancedPreviewItem[];
-	worstAction: "remove" | "warn" | "skip" | "whitelist";
+	worstAction: EnhancedPreviewItem["action"];
 	dominantRule: string;
 }
 
@@ -88,7 +90,7 @@ function groupItemsByDownload(items: EnhancedPreviewItem[]): (EnhancedPreviewIte
 					const worstPriority = ACTION_PRIORITY[worst] ?? 0;
 					return currentPriority > worstPriority ? item.action : worst;
 				},
-				"whitelist" as "remove" | "warn" | "skip" | "whitelist",
+				"whitelist" as EnhancedPreviewItem["action"],
 			);
 
 			// Find dominant rule (most common)
@@ -162,6 +164,7 @@ export const EnhancedDryRunPreview = ({
 	// Categorize items by action
 	const itemsByAction = {
 		remove: result.previewItems.filter((i) => i.action === "remove"),
+		import: result.previewItems.filter((i) => i.action === "import"),
 		warn: result.previewItems.filter((i) => i.action === "warn"),
 		skip: result.previewItems.filter(
 			(i) => i.action === "skip" && i.rule !== "healthy" && i.rule !== "too_young",
@@ -262,7 +265,7 @@ export const EnhancedDryRunPreview = ({
 					</div>
 
 					{/* Preview Summary */}
-					<div className="grid grid-cols-3 gap-2 mb-4">
+					<div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
 						<div
 							className="rounded-lg p-3 text-center"
 							style={{
@@ -274,6 +277,18 @@ export const EnhancedDryRunPreview = ({
 								{result.wouldRemove}
 							</div>
 							<div className="text-xs text-muted-foreground">Would Remove</div>
+						</div>
+						<div
+							className="rounded-lg p-3 text-center"
+							style={{
+								backgroundColor: SEMANTIC_COLORS.info.bg,
+								border: `1px solid ${SEMANTIC_COLORS.info.border}`,
+							}}
+						>
+							<div className="text-2xl font-bold" style={{ color: SEMANTIC_COLORS.info.text }}>
+								{result.wouldImport}
+							</div>
+							<div className="text-xs text-muted-foreground">Would Attempt Import</div>
 						</div>
 						<div
 							className="rounded-lg p-3 text-center"
@@ -300,6 +315,12 @@ export const EnhancedDryRunPreview = ({
 							<div className="text-xs text-muted-foreground">Would Keep</div>
 						</div>
 					</div>
+					{result.wouldImport > 0 && (
+						<p className="text-xs text-muted-foreground mb-4">
+							Import attempts retain their source. Current candidates and safety evidence are
+							rechecked before submission; acceptance does not prove file completion.
+						</p>
+					)}
 
 					{/* Rule Breakdown Bar */}
 					{totalRules > 0 && (
@@ -340,6 +361,17 @@ export const EnhancedDryRunPreview = ({
 					)}
 
 					{/* Items by Action */}
+					{itemsByAction.import.length > 0 && (
+						<ItemSection
+							title="Would Attempt Import"
+							icon={Download}
+							items={itemsByAction.import}
+							color={SEMANTIC_COLORS.info.text}
+							expandedItems={expandedItems}
+							onToggle={toggleExpand}
+							incognitoMode={incognitoMode}
+						/>
+					)}
 					{itemsByAction.remove.length > 0 && (
 						<ItemSection
 							title="Would Remove"
@@ -361,6 +393,19 @@ export const EnhancedDryRunPreview = ({
 							expandedItems={expandedItems}
 							onToggle={toggleExpand}
 							incognitoMode={incognitoMode}
+						/>
+					)}
+
+					{itemsByAction.skip.length > 0 && (
+						<ItemSection
+							title="Would Keep"
+							icon={Shield}
+							items={itemsByAction.skip}
+							color={DEFAULT_RULE_COLOR.text}
+							expandedItems={expandedItems}
+							onToggle={toggleExpand}
+							incognitoMode={incognitoMode}
+							defaultCollapsed
 						/>
 					)}
 
@@ -412,7 +457,7 @@ export const EnhancedDryRunPreview = ({
 						<Button variant="secondary" onClick={onClose}>
 							Close
 						</Button>
-						{result.wouldRemove > 0 && result.instanceReachable && (
+						{(result.wouldRemove > 0 || result.wouldImport > 0) && result.instanceReachable && (
 							<Button
 								variant="secondary"
 								onClick={() => void handleRunClean()}
@@ -558,7 +603,7 @@ const PreviewItemRow = ({
 							border: `1px solid ${actionColor.border}`,
 						}}
 					>
-						{item.action}
+						{item.action === "import" ? "Import attempt" : item.action}
 					</span>
 				</div>
 			</button>
@@ -665,7 +710,7 @@ const GroupedItemRow = ({
 							border: `1px solid ${actionColor.border}`,
 						}}
 					>
-						{group.worstAction}
+						{group.worstAction === "import" ? "Import attempt" : group.worstAction}
 					</span>
 				</div>
 			</button>

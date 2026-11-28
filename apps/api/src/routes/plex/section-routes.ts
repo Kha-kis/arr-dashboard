@@ -1,64 +1,34 @@
 /**
  * Plex Section Routes
  *
- * Returns distinct library sections from PlexCache for use in cleanup rule filtering.
+ * Returns the independently verified published section catalog for display.
  */
 
-import type { PlexSectionsResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
-import {
-	hasAuthoritativeSelectedPlexEvidence,
-	summarizePlexEvidence,
-} from "../../lib/plex/plex-authority-service.js";
-import { PlexAuthorityService } from "../../lib/plex/plex-authority-service.js";
-import { mapToSections } from "./lib/section-helpers.js";
+import { withIsolatedRuntimePrismaBulkReadClient } from "../../lib/backup/restore-runtime-client.js";
+import { loadPlexSectionCatalog } from "../../lib/plex/plex-section-catalog.js";
 
 export async function registerSectionRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	/**
 	 * GET /api/plex/sections
 	 *
-	 * Returns distinct (sectionId, sectionTitle, mediaType) tuples from PlexCache,
-	 * scoped to the current user's Plex instances.
+	 * Cache-only read scoped to the current user's enabled Plex instances.
+	 * Canonical watch/mapping evidence remains separate from catalog availability.
 	 */
 	app.get("/", async (request, reply) => {
 		const userId = request.currentUser!.id;
 
-		const evidence = await new PlexAuthorityService({
-			prisma: app.prisma,
-			encryptor: app.encryptor,
-			log: request.log,
-		}).readUserSelected({
-			userId,
-			selection: { kind: "authority-only" },
-			domains: [],
-		});
-		const summary = summarizePlexEvidence(evidence);
-		if (!hasAuthoritativeSelectedPlexEvidence(evidence)) {
+		const catalog = await withIsolatedRuntimePrismaBulkReadClient(
+			app.prisma,
+			(prisma) => loadPlexSectionCatalog(prisma, { userId }),
+			{ lease: "phase" },
+		);
+		if (!catalog.available) {
 			return reply.status(503).send({
 				error: "Plex cache evidence is unavailable",
-				evidence: summary,
+				...catalog.response,
 			});
 		}
-		const publishedSections = evidence.flatMap((entry) =>
-			entry.sections.map((section) => ({
-				...section,
-				instanceId: entry.instanceId,
-				instanceName: entry.instanceName,
-			})),
-		);
-		const instanceMap = new Map(
-			publishedSections.map((section) => [section.instanceId, section.instanceName]),
-		);
-		const sections = mapToSections(
-			publishedSections.map((section) => ({
-				instanceId: section.instanceId,
-				sectionId: section.key,
-				sectionTitle: section.title,
-				mediaType: section.type === "show" ? "series" : "movie",
-			})),
-			instanceMap,
-		);
-
-		return reply.send({ sections, evidence: summary } satisfies PlexSectionsResponse);
+		return reply.send(catalog.response);
 	});
 }

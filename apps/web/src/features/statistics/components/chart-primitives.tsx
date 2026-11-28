@@ -10,32 +10,57 @@
 // ============================================================================
 
 interface SparklineProps {
-	data: number[];
+	data: Array<number | null>;
 	width?: number;
 	height?: number;
 	color: string;
 	fillColor?: string;
+	label?: string;
 }
 
-export const Sparkline = ({ data, width = 280, height = 60, color, fillColor }: SparklineProps) => {
+export const Sparkline = ({
+	data,
+	width = 280,
+	height = 60,
+	color,
+	fillColor,
+	label = "Trend of recorded observations",
+}: SparklineProps) => {
 	if (data.length < 2) return null;
-	const max = Math.max(...data, 1);
-	const min = Math.min(...data, 0);
+	const known = data.filter((value): value is number => value !== null && Number.isFinite(value));
+	if (known.length === 0) return null;
+	const max = Math.max(...known, 1);
+	const min = Math.min(...known, 0);
 	const range = max - min || 1;
 	const padY = 4;
 	const usableH = height - padY * 2;
 
-	const points = data.map((v, i) => {
+	const segments: Array<Array<{ x: number; y: number }>> = [];
+	let current: Array<{ x: number; y: number }> = [];
+	for (const [i, v] of data.entries()) {
+		if (v === null || !Number.isFinite(v)) {
+			if (current.length > 0) segments.push(current);
+			current = [];
+			continue;
+		}
 		const x = (i / (data.length - 1)) * width;
 		const y = padY + usableH - ((v - min) / range) * usableH;
-		return `${x},${y}`;
-	});
-
-	const linePath = `M${points.join(" L")}`;
-	const areaPath = `${linePath} L${width},${height} L0,${height} Z`;
+		current.push({ x, y });
+	}
+	if (current.length > 0) segments.push(current);
+	const paths = segments.map((points) => `M${points.map(({ x, y }) => `${x},${y}`).join(" L")}`);
+	const linePath = paths.join(" ");
+	const areaPath = paths
+		.map((path, i) => {
+			const points = segments[i]!;
+			return `${path} L${points[points.length - 1]!.x},${height} L${points[0]!.x},${height} Z`;
+		})
+		.join(" ");
 
 	return (
 		<svg
+			role="img"
+			aria-label={`${label}; gaps indicate unknown data`}
 			width="100%"
 			height={height}
 			viewBox={`0 0 ${width} ${height}`}
@@ -51,12 +76,10 @@ export const Sparkline = ({ data, width = 280, height = 60, color, fillColor }: 
 				strokeLinecap="round"
 				strokeLinejoin="round"
 			/>
-			<circle
-				cx={Number(points[points.length - 1]?.split(",")[0])}
-				cy={Number(points[points.length - 1]?.split(",")[1])}
-				r={3}
-				fill={color}
-			/>
+			{segments.map((points) => {
+				const end = points[points.length - 1]!;
+				return <circle key={end.x} cx={end.x} cy={end.y} r={3} fill={color} />;
+			})}
 		</svg>
 	);
 };

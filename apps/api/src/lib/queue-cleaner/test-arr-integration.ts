@@ -9,7 +9,9 @@
  *   RADARR_URL, RADARR_API_KEY
  *   LIDARR_URL, LIDARR_API_KEY
  */
+
 import { getErrorMessage } from "../utils/error-message.js";
+import { reportDiagnostic } from "./diagnostic-output.js";
 
 // ============================================================================
 // CONFIGURATION - Edit these or use environment variables
@@ -242,77 +244,30 @@ async function testInstance(instance: ArrInstance): Promise<TestResult> {
 }
 
 function printResult(result: TestResult) {
-	const emoji =
-		result.instance.service === "sonarr"
-			? "📺"
-			: result.instance.service === "radarr"
-				? "🎬"
-				: result.instance.service === "lidarr"
-					? "🎵"
-					: "📚";
-
-	console.log(`\n${"═".repeat(70)}`);
-	console.log(`${emoji} ${result.instance.name} (${result.instance.url})`);
-	console.log("═".repeat(70));
-
-	if (!result.success) {
-		console.log(`   ❌ Error: ${result.error}`);
-		return;
-	}
-
-	console.log(`   📋 Total queue items: ${result.totalItems}`);
-
-	// State breakdown
-	if (result.stateBreakdown.size > 0) {
-		console.log("\n   📊 State Breakdown:");
-		for (const [state, count] of result.stateBreakdown) {
-			const stateEmoji =
-				state === "importPending"
-					? "⏳"
-					: state === "importBlocked"
-						? "🚫"
-						: state === "importFailed"
-							? "❌"
-							: state === "downloading"
-								? "⬇️"
-								: "📦";
-			console.log(`      ${stateEmoji} ${state}: ${count}`);
-		}
-	}
-
-	// Auto-import summary
-	console.log("\n   🔍 Auto-Import Analysis:");
-	console.log(`      Import Pending: ${result.importPendingCount}`);
-	console.log(`      Import Blocked: ${result.importBlockedCount}`);
-	console.log(`      Import Failed:  ${result.importFailedCount}`);
-	console.log(`      ✨ Auto-Import Eligible: ${result.autoImportEligible}`);
-
-	// Show eligible items
-	const eligibleItems = result.items.filter((i) => i.autoImportEligible);
-	if (eligibleItems.length > 0) {
-		console.log("\n   ✨ Auto-Import Eligible Items:");
-		for (const item of eligibleItems) {
-			console.log(`      • ${item.title.substring(0, 50)}...`);
-			if (item.statusMessages.length > 0) {
-				console.log(`        Status: ${item.statusMessages[0]}`);
-			}
-		}
-	}
-
-	// Show pending/blocked items that are NOT eligible (first 3)
-	const notEligibleItems = result.items.filter(
-		(i) => !i.autoImportEligible && (i.state === "importPending" || i.state === "importBlocked"),
-	);
-	if (notEligibleItems.length > 0) {
-		console.log(`\n   ⚠️  Pending/Blocked but NOT eligible (${notEligibleItems.length} items):`);
-		for (const item of notEligibleItems.slice(0, 3)) {
-			console.log(`      • ${item.title.substring(0, 50)}...`);
-			console.log(`        Reason: ${item.autoImportReason}`);
-		}
-		if (notEligibleItems.length > 3) {
-			console.log(`      ... and ${notEligibleItems.length - 3} more`);
-		}
-	}
+	reportDiagnostic("arr-integration", "queue-summary", {
+		provider: result.instance.service,
+		success: result.success,
+		...(result.success
+			? {
+					totalItems: result.totalItems,
+					pendingItems: result.importPendingCount,
+					blockedItems: result.importBlockedCount,
+					failedItems: result.importFailedCount,
+					downloadingItems: result.stateBreakdown.get("downloading") ?? 0,
+					otherItems: [...result.stateBreakdown.entries()]
+						.filter(
+							([state]) =>
+								!["importPending", "importBlocked", "importFailed", "downloading"].includes(state),
+						)
+						.reduce((count, [, value]) => count + value, 0),
+					eligibleItems: result.autoImportEligible,
+					ineligibleItems: result.items.filter(
+						(i) =>
+							!i.autoImportEligible && (i.state === "importPending" || i.state === "importBlocked"),
+					).length,
+				}
+			: {}),
+	});
 }
 
 // ============================================================================
@@ -320,34 +275,19 @@ function printResult(result: TestResult) {
 // ============================================================================
 
 async function main() {
-	console.log("🔍 ARR Queue Cleaner Auto-Import Integration Test");
-	console.log("═".repeat(70));
-	console.log("Testing auto-import eligibility across all configured instances...\n");
-
+	reportDiagnostic("arr-integration", "started");
 	const results: TestResult[] = [];
 
 	for (const instance of INSTANCES) {
-		process.stdout.write(`Testing ${instance.name}... `);
 		const result = await testInstance(instance);
 		results.push(result);
-		console.log(result.success ? "✅" : `❌ ${result.error}`);
 	}
-
-	// Print detailed results
-	for (const result of results) {
-		printResult(result);
-	}
-
-	// Summary
-	console.log(`\n${"═".repeat(70)}`);
-	console.log("📈 OVERALL SUMMARY");
-	console.log("═".repeat(70));
+	for (const result of results) printResult(result);
 
 	let totalEligible = 0;
 	let totalPending = 0;
 	let totalBlocked = 0;
 	let totalFailed = 0;
-
 	for (const result of results) {
 		if (result.success) {
 			totalEligible += result.autoImportEligible;
@@ -356,27 +296,14 @@ async function main() {
 			totalFailed += result.importFailedCount;
 		}
 	}
-
-	console.log(`   Instances tested: ${results.filter((r) => r.success).length}/${results.length}`);
-	console.log(`   Total importPending: ${totalPending}`);
-	console.log(`   Total importBlocked: ${totalBlocked}`);
-	console.log(`   Total importFailed: ${totalFailed}`);
-	console.log(`   ✨ Total auto-import eligible: ${totalEligible}`);
-	console.log("═".repeat(70));
-
-	if (totalEligible > 0) {
-		console.log("\n✅ Found items eligible for auto-import!");
-		console.log("   The auto-import feature would attempt to import these automatically.");
-	} else if (totalPending + totalBlocked > 0) {
-		console.log("\n⚠️  Found pending/blocked items but none match safe patterns.");
-		console.log("   These items don't have status messages indicating safe auto-import.");
-	} else if (totalFailed > 0) {
-		console.log("\n❌ Only found failed imports.");
-		console.log("   Auto-import targets pending/blocked states, not failed.");
-		console.log("   Failed items need the 'Failed Downloads' cleanup rule instead.");
-	} else {
-		console.log("\n✅ No import issues in any queue!");
-	}
+	reportDiagnostic("arr-integration", "complete", {
+		instances: results.length,
+		successfulInstances: results.filter((r) => r.success).length,
+		pendingItems: totalPending,
+		blockedItems: totalBlocked,
+		failedItems: totalFailed,
+		eligibleItems: totalEligible,
+	});
 }
 
-main().catch(console.error);
+main().catch(() => reportDiagnostic("arr-integration", "provider-failed"));

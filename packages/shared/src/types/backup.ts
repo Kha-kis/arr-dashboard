@@ -42,22 +42,56 @@ export type CreateBackupResponse = z.infer<typeof createBackupResponseSchema>;
 // Restore backup request (from uploaded file)
 // Max 50 MB base64 (~37.5 MB decoded) — prevents memory exhaustion on upload.
 // For larger backups, use the restore-from-file endpoint instead.
-const MAX_BACKUP_UPLOAD_SIZE = 50 * 1024 * 1024;
-export const restoreBackupRequestSchema = z.object({
-	backupData: z.string().max(MAX_BACKUP_UPLOAD_SIZE), // Base64 encoded backup JSON
+export const MAX_BACKUP_UPLOAD_SIZE = 50 * 1024 * 1024;
+export const MAX_RESTORE_PASSWORD_LENGTH = 1024;
+export const RESTORE_UPLOAD_BODY_LIMIT = MAX_BACKUP_UPLOAD_SIZE + 65536;
+const restorePasswordSchema = z.string().min(1).max(MAX_RESTORE_PASSWORD_LENGTH);
+export const restoreBackupRequestSchema = z.strictObject({
+	backupData: z.string().min(1).max(MAX_BACKUP_UPLOAD_SIZE), // Base64 encoded encrypted envelope
+	password: restorePasswordSchema.optional(),
 });
 
 export type RestoreBackupRequest = z.infer<typeof restoreBackupRequestSchema>;
 
-// Restore backup response
-export const restoreBackupResponseSchema = z.object({
-	success: z.boolean(),
-	message: z.string(),
-	restoredAt: z.string(),
-	metadata: backupMetadataSchema,
-});
+// Terminal publication proof, not a generic transport-success acknowledgement.
+// An automatic restart is requested, never certified complete by this response.
+const restoreResultFields = {
+	restoreId: z.uuid(),
+	restartRequired: z.literal(true),
+	restart: z.enum(["automatic-requested", "manual-required"]),
+};
+export const restoreBackupResponseSchema = z.discriminatedUnion("outcome", [
+	z.strictObject({
+		...restoreResultFields,
+		outcome: z.literal("committed"),
+		success: z.literal(true),
+		reason: z.null(),
+	}),
+	z.strictObject({
+		...restoreResultFields,
+		outcome: z.literal("not-committed"),
+		success: z.literal(false),
+		reason: z.literal("state-changed"),
+	}),
+	z.strictObject({
+		...restoreResultFields,
+		outcome: z.literal("unavailable"),
+		success: z.literal(false),
+		reason: z.enum(["ownership-unavailable", "closure-unverified", "commit-unknown"]),
+		restart: z.literal("manual-required"),
+	}),
+]);
 
 export type RestoreBackupResponse = z.infer<typeof restoreBackupResponseSchema>;
+
+// Latest positive evidence only. Absence or mismatch cannot establish rollback.
+export const restoreStatusResponseSchema = z.strictObject({
+	latestCommitted: z
+		.strictObject({ restoreId: z.uuid(), committedAt: z.iso.datetime() })
+		.nullable(),
+});
+
+export type RestoreStatusResponse = z.infer<typeof restoreStatusResponseSchema>;
 
 // List backups response
 export const listBackupsResponseSchema = z.object({
@@ -67,14 +101,15 @@ export const listBackupsResponseSchema = z.object({
 export type ListBackupsResponse = z.infer<typeof listBackupsResponseSchema>;
 
 // Restore backup from filesystem request
-export const restoreBackupFromFileRequestSchema = z.object({
-	id: z.string(), // Backup ID to restore from filesystem
+export const restoreBackupFromFileRequestSchema = z.strictObject({
+	id: z.string().regex(/^[a-f0-9]{24}$/), // Existing installation-local backup ID
+	password: restorePasswordSchema.optional(),
 });
 
 export type RestoreBackupFromFileRequest = z.infer<typeof restoreBackupFromFileRequestSchema>;
 
 // Backup structure (internal, not exposed via API)
-export type BackupFormatVersion = "1.0" | "1.1" | "1.2";
+export type BackupFormatVersion = "1.0" | "1.1" | "1.2" | "1.3" | "1.4" | "1.5" | "1.6";
 
 export interface BackupData {
 	version: BackupFormatVersion;
@@ -128,10 +163,24 @@ export interface BackupData {
 		notificationSubscription?: unknown[];
 		notificationRule?: unknown[];
 		notificationAggregationConfig?: unknown[];
+		/** Uncapped accepted work; both collections are required in format 1.6. */
+		notificationOutboxEvents?: unknown[];
+		notificationOutboxDeliveries?: unknown[];
 		autoTagRule?: unknown[];
 		labelSyncRule?: unknown[];
 		/** Durable Jellyfin/Emby desired-state history (optional for legacy files). */
 		labelSyncMutationAttempts?: unknown[];
+		// Complete safety evidence is mandatory at runtime in formats 1.3 and 1.4.
+		// Optional properties retain unknown coverage in older backup formats.
+		arrImportOperations?: unknown[];
+		arrImportFileProofs?: unknown[];
+		arrImportSourceClaims?: unknown[];
+		queueCleanerImportReceipts?: unknown[];
+		quiActionClaims?: unknown[];
+		quiActionLogs?: unknown[];
+		/** Complete uncapped Grab safety state is mandatory in format 1.5. */
+		searchGrabAttempts?: unknown[];
+		searchGrabClaims?: unknown[];
 		queueCleanerConfig?: unknown[];
 		libraryCleanupConfig?: unknown[];
 		libraryCleanupRule?: unknown[];

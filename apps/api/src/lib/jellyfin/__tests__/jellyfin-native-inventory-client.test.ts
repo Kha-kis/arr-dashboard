@@ -274,10 +274,10 @@ describe("JellyfinClient native library inventory", () => {
 			"fetch",
 			vi
 				.fn()
-				.mockImplementationOnce(() => pages[0])
-				.mockImplementationOnce(() => pages[1])
-				.mockImplementationOnce(() => pages[0])
-				.mockImplementationOnce(() => pages[1]),
+				.mockImplementationOnce(async () => pages[0])
+				.mockImplementationOnce(async () => pages[1])
+				.mockImplementationOnce(async () => pages[0])
+				.mockImplementationOnce(async () => pages[1]),
 		);
 		const client = new JellyfinClient("http://jellyfin.test", "api-key", log);
 

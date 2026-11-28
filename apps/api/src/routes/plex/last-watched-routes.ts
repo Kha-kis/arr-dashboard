@@ -6,11 +6,12 @@
  * `last_watched`. Distinct from /analytics/history, which is event-level.
  */
 
-import type { TopMediaResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
+import { readSessionSnapshotPages } from "../../lib/statistics/session-snapshot-pages.js";
 import { validateRequest } from "../../lib/utils/validate.js";
-import { aggregateLastWatched } from "./lib/top-media-helpers.js";
+import { activityCollectionMeasurement } from "./lib/activity-collection-helpers.js";
+import { createTopMediaAccumulator } from "./lib/top-media-helpers.js";
 
 const lastWatchedQuery = z.object({
 	mediaType: z.enum(["movie", "series", "music"]),
@@ -35,33 +36,22 @@ export async function registerLastWatchedRoutes(app: FastifyInstance, _opts: Fas
 		const { mediaType, days, limit } = validateRequest(lastWatchedQuery, request.query);
 		const userId = request.currentUser!.id;
 
-		const plexInstances = await app.prisma.serviceInstance.findMany({
-			where: { userId, service: "PLEX", enabled: true },
-			select: { id: true },
-		});
-
-		if (plexInstances.length === 0) {
-			const empty: TopMediaResponse = { items: [] };
-			return reply.send(empty);
-		}
-
 		const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-		// `last-watched` is a "most recent activity" feed — when the take cap is
-		// hit (heavy users with >20k snapshots in the cutoff window), `asc` would
-		// silently drop the recent rows the panel exists to surface.
-		const snapshots = await app.prisma.sessionSnapshot.findMany({
-			where: {
-				instanceId: { in: plexInstances.map((i) => i.id) },
-				capturedAt: { gte: cutoff },
+		const accumulator = createTopMediaAccumulator(mediaType);
+		const read = await readSessionSnapshotPages(
+			app.prisma,
+			{
+				userId,
+				services: ["PLEX"],
+				cutoff,
+				onPage: (page) => accumulator.addBatch(page),
 			},
-			select: { capturedAt: true, sessionsJson: true },
-			orderBy: { capturedAt: "desc" },
-			take: 20000,
-		});
+			"reverse-chronological",
+		);
 
-		const { parseFailures, totalSnapshots, failedPreviews, ...response } = aggregateLastWatched(
-			snapshots,
-			{ mediaType, limit },
+		const { parseFailures, totalSnapshots, failedPreviews, ...response } = accumulator.getResult(
+			"last-watched",
+			limit,
 		);
 		if (parseFailures > 0) {
 			request.log.warn(
@@ -69,6 +59,6 @@ export async function registerLastWatchedRoutes(app: FastifyInstance, _opts: Fas
 				"Session snapshot JSON parse failures detected",
 			);
 		}
-		return reply.send(response);
+		return reply.send({ ...response, measurement: activityCollectionMeasurement(read) });
 	});
 }

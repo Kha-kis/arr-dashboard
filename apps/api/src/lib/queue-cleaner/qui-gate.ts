@@ -6,28 +6,26 @@
  * assumption: qui (or a human operating qui) is already acting, and a strike
  * from arr-dashboard would be either redundant or actively interfering.
  *
- * Gate predicate: a fresh `LibraryCache.torrentState` in {"paused", "error"},
- * or unavailable/stale evidence for an otherwise correlated hash while qUI is
+ * Gate predicate: a current complete qUI publication state in {"paused", "error"},
+ * or unavailable/stale independent inventory evidence while qUI is
  * enabled. The latter fails closed so an incomplete multi-qUI sync cannot
  * silently disable protection.
  *
- * No-op when the user has no qui instance configured — `torrentState` stays
- * NULL across rows, the predicate never matches, and the original strike
+ * Complete inventory absence is usable without a Library correlation row.
+ * No-op when the user has no enabled qui instance configured; the original strike
  * behavior is preserved exactly.
  */
 
 import type { PrismaClient } from "../prisma.js";
+import { readQuiTorrentObservations } from "../qui/torrent-observation-repository.js";
 
 /** qui torrent states that mean "qui or human-via-qui is already acting". */
 const GATED_STATES = new Set(["paused", "error"]);
 
-/** Three scheduler intervals (10m each) before cached qUI evidence is stale. */
-const QUI_EVIDENCE_FRESHNESS_MS = 30 * 60 * 1000;
-
 export type QuiAwareGateReason = "paused_or_error" | "evidence_unavailable";
 
 /** qBit info hashes are 40-hex (SHA-1) or 64-hex (SHA-256), lowercase canonical. */
-const HASH_RE = /^[a-f0-9]{40,64}$/;
+const HASH_RE = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
 
 /**
  * Normalize a raw *arr `downloadId` to the canonical lowercase-hex form used
@@ -64,8 +62,8 @@ export function partitionByGatedHashes(
 /**
  * Resolve the set of item IDs whose torrent qui considers gated (paused/error).
  *
- * @param prisma  Prisma client (used to query LibraryCache scoped to userId)
- * @param userId  Owner of the LibraryCache rows (AGENTS.md ownership invariant)
+ * @param prisma  Prisma client for the independent owned publication reader
+ * @param userId  Owner of the current qUI topology and observation generation
  * @param hashesByItemId  Map of *arr queueItemId → normalized lowercase hash
  *                        for every matched item the caller wants to consider
  *
@@ -81,52 +79,15 @@ export async function resolveQuiAwareGateReasons(
 		return new Map();
 	}
 
-	const enabledQui = await prisma.serviceInstance.findFirst({
-		where: { userId, service: "QUI", enabled: true },
-		select: { id: true },
-	});
-	if (!enabledQui) return new Map();
-
 	const uniqueHashes = Array.from(new Set(hashesByItemId.values()));
-	// Ownership flows through the parent ServiceInstance — `LibraryCache` has
-	// no direct `userId` column. An earlier version of this gate queried
-	// `where: { userId, ... }` directly, which raised `PrismaClientValidationError`
-	// at runtime; the route wraps this call in a non-fatal try/catch so the
-	// error was silent and `quiAwareMode` was effectively inert in production.
-	// Filter via the relation instead.
-	const rows = await prisma.libraryCache.findMany({
-		where: {
-			instance: { userId },
-			infoHash: { in: uniqueHashes },
-		},
-		select: { infoHash: true, torrentState: true, torrentSyncedAt: true },
-	});
-
-	const reasonByHash = new Map<string, QuiAwareGateReason>();
-	const hashesWithFreshEvidence = new Set<string>();
-	const freshnessCutoff = now.getTime() - QUI_EVIDENCE_FRESHNESS_MS;
-	for (const row of rows) {
-		if (!row.infoHash) continue;
-		const hash = row.infoHash.toLowerCase();
-		if (!row.torrentSyncedAt || row.torrentSyncedAt.getTime() < freshnessCutoff) {
-			reasonByHash.set(hash, "evidence_unavailable");
-			continue;
-		}
-		hashesWithFreshEvidence.add(hash);
-		if (GATED_STATES.has(row.torrentState ?? "") && !reasonByHash.has(hash)) {
-			reasonByHash.set(hash, "paused_or_error");
-		}
-	}
-	for (const hash of uniqueHashes) {
-		if (!hashesWithFreshEvidence.has(hash) && !reasonByHash.has(hash)) {
-			reasonByHash.set(hash, "evidence_unavailable");
-		}
-	}
-
+	const publication = await readQuiTorrentObservations(prisma, userId, uniqueHashes, now);
+	if (publication.status === "not_configured") return new Map();
 	const reasons = new Map<string, QuiAwareGateReason>();
 	for (const [itemId, hash] of hashesByItemId) {
-		const reason = reasonByHash.get(hash);
-		if (reason) reasons.set(itemId, reason);
+		if (publication.status === "unavailable" || publication.rows.get(hash)?.state === "unknown")
+			reasons.set(itemId, "evidence_unavailable");
+		else if (GATED_STATES.has(publication.rows.get(hash)?.state ?? ""))
+			reasons.set(itemId, "paused_or_error");
 	}
 	return reasons;
 }

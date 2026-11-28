@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+import { fetchInternalApi } from "@/lib/fetch-internal-api";
 
 const SESSION_COOKIE_NAME = process.env.NEXT_PUBLIC_SESSION_COOKIE_NAME ?? "arr_session";
 const PUBLIC_PATHS = new Set(["/login", "/setup", "/favicon.ico", "/robots.txt", "/sitemap.xml"]);
@@ -49,7 +50,7 @@ async function validateSession(request: NextRequest): Promise<boolean> {
 async function validateSessionAgainstApi(sessionToken: string): Promise<boolean> {
 	try {
 		const apiHost = process.env.API_HOST || "http://localhost:3001";
-		const response = await fetch(`${apiHost}/auth/me`, {
+		const response = await fetchInternalApi(`${apiHost}/auth/me`, {
 			method: "GET",
 			headers: {
 				Cookie: `${SESSION_COOKIE_NAME}=${sessionToken}`,
@@ -89,8 +90,13 @@ function clearSessionAndRedirect(request: NextRequest, targetPath: string): Next
 export async function proxy(request: NextRequest) {
 	const { pathname } = request.nextUrl;
 
-	// Skip proxy for API/auth/health routes — handled by rewrites or route handlers
-	if (pathname.startsWith("/api/") || pathname.startsWith("/auth/") || pathname === "/health") {
+	// Skip proxy for API/auth and unauthenticated probe routes.
+	if (
+		pathname.startsWith("/api/") ||
+		pathname.startsWith("/auth/") ||
+		pathname === "/health" ||
+		pathname === "/live"
+	) {
 		return NextResponse.next();
 	}
 

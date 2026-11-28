@@ -1,23 +1,23 @@
 import type { ServiceInstanceSummary } from "@arr/shared";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
 	useCreateServiceMutation,
 	useDeleteServiceMutation,
+	useReplaceServiceIdentityMutation,
 	useTestConnectionBeforeAdd,
 	useTestServiceConnection,
 	useUpdateServiceMutation,
-	useReplaceServiceIdentityMutation,
 	useVerifyServiceIdentityMutation,
 } from "../../../hooks/api/useServiceMutations";
+import { ApiError } from "../../../lib/api-client/base";
 import {
 	inspectServiceIdentity,
 	type ServiceIdentityCandidate,
 	type UpdateServicePayload,
 } from "../../../lib/api-client/services";
-import { ApiError } from "../../../lib/api-client/base";
 import { getErrorMessage } from "../../../lib/error-utils";
-import { supportsHttpBasicAuth, type ServiceFormState } from "../lib/settings-utils";
+import { type ServiceFormState, supportsHttpBasicAuth } from "../lib/settings-utils";
 
 export type IdentityFlow = {
 	instanceId: string;
@@ -53,10 +53,24 @@ function getIdentityConflict(error: unknown) {
 	};
 }
 
+function sameConnectionDraft(left: ServiceFormState, right: ServiceFormState) {
+	return (
+		left.service === right.service &&
+		left.baseUrl === right.baseUrl &&
+		left.apiKey === right.apiKey &&
+		left.httpAuthEnabled === right.httpAuthEnabled &&
+		left.httpAuthUsername === right.httpAuthUsername &&
+		left.httpAuthPassword === right.httpAuthPassword
+	);
+}
+
 /**
  * Hook for managing service instances
  */
-export const useServicesManagement = () => {
+export const useServicesManagement = (currentForm?: {
+	formState: ServiceFormState;
+	selectedServiceId?: string;
+}) => {
 	const createServiceMutation = useCreateServiceMutation();
 	const updateServiceMutation = useUpdateServiceMutation();
 	const deleteServiceMutation = useDeleteServiceMutation();
@@ -80,6 +94,29 @@ export const useServicesManagement = () => {
 		error?: string;
 		details?: string;
 	} | null>(null);
+	const [testedForm, setTestedForm] = useState<{
+		formState: ServiceFormState;
+		selectedServiceId?: string;
+	} | null>(null);
+	const formTestSequence = useRef(0);
+	const identitySequence = useRef(0);
+	useEffect(
+		() => () => {
+			formTestSequence.current += 1;
+			identitySequence.current += 1;
+		},
+		[],
+	);
+	// Connection evidence survives label/tag edits, but never a different target.
+	const formTestIsCurrent =
+		!currentForm ||
+		(testedForm !== null &&
+			testedForm.selectedServiceId === currentForm.selectedServiceId &&
+			sameConnectionDraft(testedForm.formState, currentForm.formState));
+	const dismissIdentityFlow = () => {
+		identitySequence.current += 1;
+		setIdentityFlow(null);
+	};
 
 	const handleSubmit = async (
 		formState: ServiceFormState,
@@ -149,6 +186,7 @@ export const useServicesManagement = () => {
 			return;
 		}
 
+		const identityRequest = ++identitySequence.current;
 		let identityReplacementPayload: UpdateServicePayload | undefined;
 		try {
 			if (selectedServiceForEdit) {
@@ -168,6 +206,7 @@ export const useServicesManagement = () => {
 
 			resetForm(basePayload.service);
 		} catch (error) {
+			if (identityRequest !== identitySequence.current) return;
 			const conflict = getIdentityConflict(error);
 			if (conflict?.candidate && identityReplacementPayload && selectedServiceForEdit) {
 				setIdentityFlow({
@@ -264,6 +303,13 @@ export const useServicesManagement = () => {
 		formState: ServiceFormState,
 		selectedService?: ServiceInstanceSummary | null,
 	) => {
+		const sequence = ++formTestSequence.current;
+		const isCurrentRequest = () => sequence === formTestSequence.current;
+		const publishResult = (result: NonNullable<typeof formTestResult>) => {
+			if (isCurrentRequest()) setFormTestResult(result);
+		};
+		setTestedForm({ formState, selectedServiceId: selectedService?.id });
+		setTestingFormConnection(false);
 		const canUseSavedApiKey = Boolean(
 			selectedService &&
 				!formState.apiKey &&
@@ -271,7 +317,7 @@ export const useServicesManagement = () => {
 				formState.baseUrl.trim() === selectedService.baseUrl,
 		);
 		if (!formState.baseUrl || (!formState.apiKey && !canUseSavedApiKey)) {
-			setFormTestResult({
+			publishResult({
 				success: false,
 				message: "Base URL and API Key are required to test unsaved connection details",
 			});
@@ -285,7 +331,7 @@ export const useServicesManagement = () => {
 			const username = formState.httpAuthUsername.trim();
 			const password = formState.httpAuthPassword;
 			if (formState.httpAuthEnabled && (username || password) && (!username || !password)) {
-				setFormTestResult({
+				publishResult({
 					success: false,
 					message: "Enter both HTTP Basic Auth fields to test unsaved credentials",
 				});
@@ -302,14 +348,14 @@ export const useServicesManagement = () => {
 				} else if (selectedService.hasHttpAuth) {
 					savedTestInput = selectedService.id;
 				} else {
-					setFormTestResult({
+					publishResult({
 						success: false,
 						message: "Enter both HTTP Basic Auth fields to test unsaved credentials",
 					});
 					return;
 				}
 				const result = await testServiceConnectionMutation.mutateAsync(savedTestInput);
-				setFormTestResult({
+				publishResult({
 					success: result.success,
 					message: result.success
 						? (result.message ?? "Connection successful")
@@ -321,7 +367,7 @@ export const useServicesManagement = () => {
 				return;
 			}
 			if (formState.httpAuthEnabled && (!username || !password)) {
-				setFormTestResult({
+				publishResult({
 					success: false,
 					message: "Enter both HTTP Basic Auth fields to test unsaved credentials",
 				});
@@ -338,13 +384,13 @@ export const useServicesManagement = () => {
 			});
 
 			if (result.success) {
-				setFormTestResult({
+				publishResult({
 					success: true,
 					message: result.message ?? "Connection successful",
 					version: result.version,
 				});
 			} else {
-				setFormTestResult({
+				publishResult({
 					success: false,
 					message: result.error ?? "Connection failed",
 					error: result.error,
@@ -352,25 +398,42 @@ export const useServicesManagement = () => {
 				});
 			}
 		} catch (error: unknown) {
-			setFormTestResult({
+			publishResult({
 				success: false,
 				message: getErrorMessage(error, "Connection test failed"),
 			});
 		} finally {
-			setTestingFormConnection(false);
+			if (isCurrentRequest()) setTestingFormConnection(false);
 		}
 	};
 
-	const resetFormTestResult = () => setFormTestResult(null);
+	const resetFormTestResult = () => {
+		formTestSequence.current += 1;
+		setTestedForm(null);
+		setTestingFormConnection(false);
+		setFormTestResult(null);
+	};
 
 	const inspectIdentity = async (instance: ServiceInstanceSummary) => {
+		const request = ++identitySequence.current;
+		const priorFlow = identityFlow?.instanceId === instance.id ? identityFlow : null;
+		// An earlier candidate cannot authorize confirmation during a new inspection.
+		setIdentityFlow(
+			priorFlow
+				? {
+						...priorFlow,
+						requiresReinspection: true,
+						message: "Inspect the provider again before confirming.",
+					}
+				: null,
+		);
 		try {
-			const priorFlow = identityFlow?.instanceId === instance.id ? identityFlow : null;
 			const stagedReplacementCandidate =
 				priorFlow?.mode === "replace" && priorFlow.requiresReinspection
 					? priorFlow.replacementPayload
 					: undefined;
 			const inspection = await inspectServiceIdentity(instance.id, stagedReplacementCandidate);
+			if (request !== identitySequence.current) return;
 			setIdentityFlow({
 				instanceId: instance.id,
 				mode: priorFlow?.mode ?? (instance.identity.status === "mismatch" ? "replace" : "verify"),
@@ -385,12 +448,14 @@ export const useServicesManagement = () => {
 						: "Confirm this provider identity to verify the saved connection.",
 			});
 		} catch (error) {
+			if (request !== identitySequence.current) return;
 			toast.error(getErrorMessage(error, "Unable to inspect provider identity"));
 		}
 	};
 
 	const confirmIdentity = async () => {
 		if (!identityFlow || identityFlow.requiresReinspection) return;
+		const request = ++identitySequence.current;
 		const confirmation = {
 			confirmationDigest: identityFlow.candidate.confirmationDigest,
 			expectedConnectionGeneration: identityFlow.connectionGeneration,
@@ -406,8 +471,9 @@ export const useServicesManagement = () => {
 			} else {
 				await verifyIdentityMutation.mutateAsync({ id: identityFlow.instanceId, ...confirmation });
 			}
-			setIdentityFlow(null);
+			if (request === identitySequence.current) setIdentityFlow(null);
 		} catch (error) {
+			if (request !== identitySequence.current) return;
 			const conflict = getIdentityConflict(error);
 			if (conflict) {
 				setIdentityFlow((current) =>
@@ -439,12 +505,12 @@ export const useServicesManagement = () => {
 		identityFlow,
 		inspectIdentity,
 		confirmIdentity,
-		dismissIdentityFlow: () => setIdentityFlow(null),
+		dismissIdentityFlow,
 		deleteServiceMutation,
 		testingConnection,
 		testResult,
-		testingFormConnection,
-		formTestResult,
+		testingFormConnection: formTestIsCurrent && testingFormConnection,
+		formTestResult: formTestIsCurrent ? formTestResult : null,
 		handleSubmit,
 		handleDeleteService,
 		toggleDefault,

@@ -1,19 +1,13 @@
 "use client";
 
 import type { BackupFileInfo } from "@arr/shared";
-import { AlertCircle, Archive, Download, FileText, Loader2, Trash2 } from "lucide-react";
-import {
-	PremiumEmptyState,
-	PremiumSection,
-	PremiumTable,
-	PremiumTableHeader,
-	PremiumTableRow,
-	StatusBadge,
-} from "../../../components/layout";
+import { AlertCircle, Archive, Download, FileText, Loader2, RotateCcw, Trash2 } from "lucide-react";
+import { PremiumEmptyState, PremiumSection, StatusBadge } from "../../../components/layout";
 import { Button, toast } from "../../../components/ui";
 import { useBackups, useDeleteBackup, useDownloadBackup } from "../../../hooks/api/useBackup";
 import { getErrorMessage } from "../../../lib/error-utils";
 import { formatBytes } from "../../../lib/format-utils";
+import { useIncognitoMode } from "../../../lib/incognito";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
 const formatDate = (dateString: string) => {
@@ -33,7 +27,14 @@ const getTypeStatus = (type: string): "success" | "info" | "warning" | "default"
 	}
 };
 
-export const BackupListSection = () => {
+export const BackupListSection = ({
+	onRestore,
+	disabled = false,
+}: {
+	onRestore?: (id: string) => void;
+	disabled?: boolean;
+}) => {
+	const [incognito] = useIncognitoMode();
 	const { data: backupsData, isLoading: backupsLoading, error: backupsError } = useBackups();
 	const deleteBackupMutation = useDeleteBackup();
 	const downloadBackupMutation = useDownloadBackup();
@@ -68,7 +69,7 @@ export const BackupListSection = () => {
 	return (
 		<PremiumSection
 			title="Available Backups"
-			description={`${backups.length} backup${backups.length !== 1 ? "s" : ""} stored on the system; restore is temporarily unavailable`}
+			description={`${backups.length} backup${backups.length !== 1 ? "s" : ""} stored on the system. Select a backup below, then confirm in Restore backup.`}
 			icon={Archive}
 		>
 			{backupsLoading ? (
@@ -85,7 +86,7 @@ export const BackupListSection = () => {
 					}}
 				>
 					<AlertCircle className="h-4 w-4" />
-					Failed to load backups: {backupsError.message}
+					Failed to load backups. Check availability before selecting a stored backup.
 				</div>
 			) : backups.length === 0 ? (
 				<PremiumEmptyState
@@ -94,72 +95,68 @@ export const BackupListSection = () => {
 					description="Create a backup above to get started"
 				/>
 			) : (
-				<PremiumTable>
-					<PremiumTableHeader>
-						<tr>
-							<th className="py-3 px-4 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
-								Type
-							</th>
-							<th className="py-3 px-4 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
-								Filename
-							</th>
-							<th className="py-3 px-4 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
-								Date
-							</th>
-							<th className="py-3 px-4 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
-								Size
-							</th>
-							<th className="py-3 px-4 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">
-								Actions
-							</th>
-						</tr>
-					</PremiumTableHeader>
-					<tbody>
-						{backups.map((backup) => (
-							<PremiumTableRow key={backup.id}>
-								<td className="py-3 px-4">
-									<StatusBadge status={getTypeStatus(backup.type)}>
-										{backup.type.charAt(0).toUpperCase() + backup.type.slice(1)}
-									</StatusBadge>
-								</td>
-								<td className="py-3 px-4">
-									<span className="text-sm text-muted-foreground">{backup.filename}</span>
-								</td>
-								<td className="py-3 px-4">
-									<span className="text-sm text-muted-foreground">
-										{formatDate(backup.timestamp)}
-									</span>
-								</td>
-								<td className="py-3 px-4">
-									<span className="text-sm text-muted-foreground">{formatBytes(backup.size)}</span>
-								</td>
-								<td className="py-3 px-4">
-									<div className="flex items-center justify-end gap-2">
-										<Button
-											variant="secondary"
-											size="sm"
-											onClick={() => handleDownloadBackup(backup)}
-											className="gap-1 border-border/50 bg-card/50"
-										>
-											<Download className="h-3.5 w-3.5" />
-											<span className="hidden sm:inline">Download</span>
-										</Button>
-										<Button
-											variant="danger"
-											size="sm"
-											onClick={() => handleDeleteBackup(backup)}
-											disabled={deleteBackupMutation.isPending}
-											className="gap-1"
-										>
-											<Trash2 className="h-3.5 w-3.5" />
-											<span className="hidden sm:inline">Delete</span>
-										</Button>
-									</div>
-								</td>
-							</PremiumTableRow>
-						))}
-					</tbody>
-				</PremiumTable>
+				<ul className="grid min-w-0 gap-3 xl:grid-cols-2" aria-label="Available backups">
+					{backups.map((backup) => (
+						<li
+							key={backup.id}
+							className="min-w-0 space-y-3 rounded-xl border border-border/50 bg-card/30 p-4"
+						>
+							<div className="flex flex-wrap items-center gap-2">
+								<StatusBadge status={getTypeStatus(backup.type)}>
+									{backup.type.charAt(0).toUpperCase() + backup.type.slice(1)}
+								</StatusBadge>
+							</div>
+							<p className="break-all text-sm text-muted-foreground">
+								{incognito ? "Encrypted backup" : backup.filename}
+							</p>
+							<div className="flex flex-wrap gap-3">
+								<span className="text-sm text-muted-foreground">
+									{formatDate(backup.timestamp)}
+								</span>
+								<span className="text-sm text-muted-foreground">{formatBytes(backup.size)}</span>
+							</div>
+							<div className="flex flex-wrap items-center gap-2">
+								{onRestore ? (
+									<Button
+										type="button"
+										variant="secondary"
+										size="sm"
+										disabled={disabled}
+										aria-label="Select backup for restore"
+										onClick={() => onRestore(backup.id)}
+									>
+										<RotateCcw className="h-3.5 w-3.5" />
+										Select for restore
+									</Button>
+								) : null}
+								<Button
+									type="button"
+									aria-label="Download backup"
+									disabled={disabled || downloadBackupMutation.isPending}
+									variant="secondary"
+									size="sm"
+									onClick={() => handleDownloadBackup(backup)}
+									className="gap-1 border-border/50 bg-card/50"
+								>
+									<Download className="h-3.5 w-3.5" />
+									<span>Download</span>
+								</Button>
+								<Button
+									type="button"
+									aria-label="Delete backup"
+									variant="danger"
+									size="sm"
+									onClick={() => handleDeleteBackup(backup)}
+									disabled={disabled || deleteBackupMutation.isPending}
+									className="gap-1"
+								>
+									<Trash2 className="h-3.5 w-3.5" />
+									<span>Delete</span>
+								</Button>
+							</div>
+						</li>
+					))}
+				</ul>
 			)}
 		</PremiumSection>
 	);
