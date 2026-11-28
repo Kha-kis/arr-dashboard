@@ -857,13 +857,11 @@ class QueueCleanerScheduler {
 			}
 		} catch (error) {
 			const durationMs = Date.now() - startTime;
-			const underlyingMessage = getErrorMessage(error, "Unknown error");
 			const message = exceededReportingDeadline
 				? "Queue clean settled without a confirmed result after the " +
 					String(MAX_CLEAN_DURATION_MS / 1000) +
-					"-second reporting deadline. Some provider actions may have completed; review the upstream queue before retrying. Underlying error: " +
-					underlyingMessage
-				: underlyingMessage;
+					"-second reporting deadline. Some provider actions may have completed; review the upstream queue before retrying."
+				: getErrorMessage(error, "Unknown error");
 			const contentionDiagnostics = queueCleanerSqliteDiagnosticsFrom(error);
 			if (contentionDiagnostics)
 				log.error(contentionDiagnostics, "Queue Cleaner SQLite transaction failed");
@@ -883,16 +881,24 @@ class QueueCleanerScheduler {
 						completedAt: new Date(),
 					},
 				});
-			} catch (reportingError) {
+			} catch {
 				log.error(
-					{ err: reportingError, executionError: error, instanceId, logId: logEntry.id },
+					{ contentionDiagnostics, instanceId, logId: logEntry.id },
 					"Queue Cleaner result could not be confirmed or written; preserving its original Activity row",
 				);
 				return;
 			}
 
-			if (!contentionDiagnostics)
-				log.error({ err: error, instanceLabel: config.instance.label }, "Queue cleaner error");
+			if (!contentionDiagnostics) {
+				if (exceededReportingDeadline) {
+					log.error(
+						{ instanceId },
+						"Queue cleaner settled after reporting deadline without a confirmed result",
+					);
+				} else {
+					log.error({ err: error, instanceLabel: config.instance.label }, "Queue cleaner error");
+				}
+			}
 
 			if (failureLog.count !== 1) return;
 

@@ -29,8 +29,7 @@ vi.mock("../../lib/queue-cleaner/cleaner-executor.js", () => ({
 }));
 const RESULT_FAILURE = "Synthetic result transaction interrupted";
 const DEADLINE_RESULT_FAILURE =
-	"Queue clean settled without a confirmed result after the 300-second reporting deadline. Some provider actions may have completed; review the upstream queue before retrying. Underlying error: " +
-	RESULT_FAILURE;
+	"Queue clean settled without a confirmed result after the 300-second reporting deadline. Some provider actions may have completed; review the upstream queue before retrying.";
 type Origin = "manual" | "scheduled";
 type Outcome = "removed" | "warned" | "both" | "throw" | "empty";
 type Phase =
@@ -899,6 +898,8 @@ describe("Queue Cleaner accepted notification handoff", () => {
 				itemsCleaned: 0,
 				message: expect.stringContaining("do not retry while this run settles"),
 			});
+			expect(pendingRows.jobs[0]?.message).not.toContain("synthetic provider outcome unavailable");
+			expect(f.pendingMessages.join("\n")).not.toContain("synthetic provider outcome unavailable");
 			expect(f.sent).toEqual([]);
 			expect(f.outcomes).toEqual([]);
 			await expect(f.manual()).resolves.toMatchObject({ triggered: false });
@@ -925,7 +926,10 @@ describe("Queue Cleaner accepted notification handoff", () => {
 			} else {
 				await assertPersisted(f, ["QUEUE_ITEMS_REMOVED"], ["sent"], "success");
 			}
-			expect((await f.outcome()).jobs).toHaveLength(1);
+			const settled = await f.outcome();
+			expect(settled.jobs).toHaveLength(1);
+			if (settlement === "before-commit")
+				expect(settled.jobs[0]?.message).not.toContain(RESULT_FAILURE);
 			expect(f.pendingMessages).toHaveLength(1);
 			const closing = await f.closePending();
 			await closing.promise;
@@ -1029,9 +1033,12 @@ describe("Queue Cleaner accepted notification handoff", () => {
 		expect(f.sent.map((item) => item.eventType)).toEqual(["QUEUE_ITEMS_REMOVED"]);
 		await assertPersisted(f, ["QUEUE_ITEMS_REMOVED"], ["sent"]);
 	});
-	it("retains raw executor ownership after timeout and hands off failure during drain", async () => {
+	it("retains raw executor ownership after timeout and hands off settled success during drain", async () => {
 		const gate = deferred();
-		const f = await boot({ hold: { phase: "executor", gate: gate.promise } });
+		const f = await boot({
+			outcome: "removed",
+			hold: { phase: "executor", gate: gate.promise },
+		});
 		await f.start();
 		expect(await f.waitUntilHeld()).toBe(true);
 		const closing = await f.closePending();
@@ -1039,38 +1046,32 @@ describe("Queue Cleaner accepted notification handoff", () => {
 		expect(f.outcomes).toEqual([]);
 		expect(f.counts.executor).toBe(1);
 		await vi.advanceTimersByTimeAsync(1);
-		expect(await waitForNative(() => f.outcomes.length === 1 && f.counts.subscription === 1)).toBe(
-			true,
-		);
+		expect(await waitForNative(() => f.pendingMessages.length === 1)).toBe(true);
 		expect(f.sent).toEqual([]);
-		expect(f.outcomes).toEqual(["error"]);
+		expect(f.outcomes).toEqual([]);
 		expect(closing.settled()).toBe(false);
 		expect(() => f.scheduler.initialize(f.app)).toThrow(/shutting down/);
 		gate.resolve();
 		await closing.promise;
 		expect(f.counts.executor).toBe(1);
-		await assertPersisted(
-			f,
-			["QUEUE_CLEANER_FAILED"],
-			["ready"],
-			"error",
-			`Queue clean timed out after ${MAX_CLEAN_DURATION_MS / 1000} seconds`,
-		);
+		await assertPersisted(f, ["QUEUE_ITEMS_REMOVED"], ["ready"], "success");
+		expect(f.sent).toEqual([]);
 		expect(f.state.afterTeardown).toBe(0);
 	});
-	it("does not overlap an uncancelled executor after its timeout and cooldown expire", async () => {
+	it("does not overlap an uncancelled executor after its deadline and cooldown expire", async () => {
 		const gate = deferred();
-		const f = await boot({ hold: { phase: "executor", gate: gate.promise } });
+		const f = await boot({
+			outcome: "removed",
+			hold: { phase: "executor", gate: gate.promise },
+		});
 		await f.start();
 		expect(await f.waitUntilHeld()).toBe(true);
 		await vi.advanceTimersByTimeAsync(MAX_CLEAN_DURATION_MS - 1);
 		expect(f.outcomes).toEqual([]);
 		expect(f.counts.executor).toBe(1);
 		await vi.advanceTimersByTimeAsync(1);
-		expect(await waitForNative(() => f.outcomes.length === 1 && f.counts.subscription === 1)).toBe(
-			true,
-		);
-		expect(f.outcomes).toEqual(["error"]);
+		expect(await waitForNative(() => f.pendingMessages.length === 1)).toBe(true);
+		expect(f.outcomes).toEqual([]);
 		vi.setSystemTime(new Date(Date.now() + MANUAL_CLEAN_COOLDOWN_MINS * 60_000 + 1));
 		await expect(f.manual()).resolves.toMatchObject({
 			triggered: false,
@@ -1083,13 +1084,7 @@ describe("Queue Cleaner accepted notification handoff", () => {
 		gate.resolve();
 		await f.idle();
 		await expect(withCleanupMaintenanceGuard(async () => "released")).resolves.toBe("released");
-		await assertPersisted(
-			f,
-			["QUEUE_CLEANER_FAILED"],
-			["sent"],
-			"error",
-			`Queue clean timed out after ${MAX_CLEAN_DURATION_MS / 1000} seconds`,
-		);
+		await assertPersisted(f, ["QUEUE_ITEMS_REMOVED"], ["sent"], "success");
 	});
 	it("retains the maintenance barrier through accepted handoff, then releases it", async () => {
 		const gate = deferred();

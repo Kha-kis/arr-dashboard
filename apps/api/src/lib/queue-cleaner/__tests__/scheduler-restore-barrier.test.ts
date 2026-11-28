@@ -415,10 +415,14 @@ describe("queue cleaner background restore barrier", () => {
 				expect(terminalMessage).toContain("Some provider actions may have completed"),
 			);
 			expect(terminalMessage).toContain("review the upstream queue before retrying");
+			expect(terminalMessage).not.toContain("synthetic provider outcome unavailable");
 			expect(terminalData).toMatchObject({ status: "error", completedAt: expect.any(Date) });
 			expect(notify).toHaveBeenCalledTimes(1);
 			expect(notify).toHaveBeenCalledWith(
-				expect.objectContaining({ eventType: "QUEUE_CLEANER_FAILED" }),
+				expect.objectContaining({
+					eventType: "QUEUE_CLEANER_FAILED",
+					body: expect.not.stringContaining("synthetic provider outcome unavailable"),
+				}),
 				expect.any(Object),
 			);
 			expect(mocks.executeQueueCleaner).toHaveBeenCalledTimes(1);
