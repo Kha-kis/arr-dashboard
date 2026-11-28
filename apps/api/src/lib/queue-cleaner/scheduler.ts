@@ -736,7 +736,11 @@ class QueueCleanerScheduler {
 					}
 				} catch (warningError) {
 					log.error(
-						{ err: warningError, instanceId, logId: logEntry.id },
+						{
+							contentionDiagnostics: queueCleanerSqliteDiagnosticsFrom(warningError),
+							instanceId,
+							logId: logEntry.id,
+						},
 						"Queue Cleaner exceeded its reporting deadline but could not persist the pending warning",
 					);
 				}
