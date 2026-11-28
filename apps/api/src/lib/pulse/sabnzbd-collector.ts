@@ -8,6 +8,7 @@
 import type { PulseItem } from "@arr/shared";
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 import { asRecord, sabCall, text } from "../sabnzbd/client.js";
+import { getStoredHttpAuthHeaders } from "../services/http-auth.js";
 
 export async function collectSabnzbdSignals(
 	app: FastifyInstance,
@@ -34,7 +35,8 @@ export async function collectSabnzbdSignals(
 				severity: "critical",
 				category: "health",
 				title: `${instance.label}: configuration error`,
-				detail: "The saved SABnzbd API key could not be read. Re-save it under Settings \u2192 Services.",
+				detail:
+					"The saved SABnzbd API key could not be read. Re-save it under Settings \u2192 Services.",
 				actionUrl: "/settings",
 				actionLabel: "Re-save credentials",
 				source: "sabnzbd",
@@ -44,16 +46,15 @@ export async function collectSabnzbdSignals(
 		}
 
 		try {
+			const headers = getStoredHttpAuthHeaders(app.encryptor, instance);
 			const [warningBody, historyBody] = await Promise.all([
-				sabCall(instance.baseUrl, apiKey, { mode: "warnings" }),
-				sabCall(instance.baseUrl, apiKey, { mode: "history", limit: "20" }),
+				sabCall(instance.baseUrl, apiKey, { mode: "warnings" }, { headers }),
+				sabCall(instance.baseUrl, apiKey, { mode: "history", limit: "20" }, { headers }),
 			]);
 			const warnings = asRecord(warningBody).warnings;
 			const warningList = Array.isArray(warnings) ? warnings : [];
 			if (warningList.length > 0) {
-				const first = warningList[0];
-				const sample =
-					typeof first === "string" ? first : text(asRecord(first).text) || "SABnzbd reported a warning";
+				const sample = "SABnzbd reported an active warning.";
 				items.push({
 					id: `sabnzbd-warnings-${instance.id}`,
 					severity: "warning",
@@ -72,13 +73,12 @@ export async function collectSabnzbdSignals(
 				return status === "failed" || status.includes("fail");
 			});
 			if (failed.length > 0) {
-				const name = text(asRecord(failed[0]).name) || text(asRecord(failed[0]).filename);
 				items.push({
 					id: `sabnzbd-failed-${instance.id}`,
 					severity: "warning",
 					category: "operations",
 					title: `${failed.length} recent SABnzbd job${failed.length === 1 ? "" : "s"} failed`,
-					detail: name || "A download in recent history failed.",
+					detail: "A recent download was marked failed by SABnzbd.",
 					actionUrl: "/sabnzbd-activity",
 					actionLabel: "Review history",
 					source: "sabnzbd",

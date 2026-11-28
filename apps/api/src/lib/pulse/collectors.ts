@@ -35,11 +35,11 @@ import {
 	isReadarrClient,
 	isSonarrClient,
 } from "../arr/client-helpers.js";
-import { QuiApiError, QuiInstanceUnreachableError } from "../errors.js";
 import {
 	withIsolatedRuntimePrismaBulkReadClient,
 	withIsolatedRuntimePrismaReadClient,
 } from "../backup/restore-runtime-client.js";
+import { QuiApiError, QuiInstanceUnreachableError } from "../errors.js";
 import type { JellyfinCacheHealthInstance } from "../jellyfin/jellyfin-cache-health.js";
 import {
 	DEFAULT_JELLYFIN_CACHE_HEALTH_MAX_AGE_MS,
@@ -69,6 +69,7 @@ import {
 import { createTautulliClient } from "../tautulli/tautulli-client.js";
 import { readOwnedTautulliObservation } from "../tautulli/tautulli-observation-repository.js";
 import { integrationHealth } from "../validation/integration-health.js";
+import { collectSabnzbdSignals } from "./sabnzbd-collector.js";
 
 // ============================================================================
 // Helpers
@@ -1903,4 +1904,5 @@ export const pulseCollectors: Collector[] = [
 	collectSchedulerHealth,
 	collectCleanupOpportunities,
 	collectQuiSignals,
+	collectSabnzbdSignals,
 ];

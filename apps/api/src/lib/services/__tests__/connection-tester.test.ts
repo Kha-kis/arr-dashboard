@@ -233,4 +233,49 @@ describe("testServiceConnection provider probes (#465, #976)", () => {
 		expect(result.error).toMatch(/authentication failed/i);
 		expect(fetchSpy).toHaveBeenCalledTimes(1);
 	});
+	it("tests SABnzbd credentials through a bounded authenticated queue request", async () => {
+		fetchSpy.mockResolvedValueOnce(
+			jsonResponse({
+				queue: { slots: [], version: "5.1.3", noofslots: 0, noofslots_total: 0 },
+			}),
+		);
+
+		const result = await testServiceConnection("http://sab:8080/base/", "synthetic-key", "sabnzbd");
+
+		expect(result.success).toBe(true);
+		expect(result.version).toBe("5.1.3");
+		expect(fetchSpy).toHaveBeenCalledTimes(1);
+		const [input, options] = fetchSpy.mock.calls[0]!;
+		const requestUrl = new URL(String(input));
+		expect(requestUrl.pathname).toBe("/base/api");
+		expect(requestUrl.searchParams.get("mode")).toBe("queue");
+		expect(requestUrl.searchParams.get("apikey")).toBe("synthetic-key");
+		expect(requestUrl.searchParams.get("limit")).toBe("1");
+		expect(options?.redirect).toBe("error");
+	});
+
+	it("uses the supplied proxy Basic Auth only on the exact SABnzbd request and refuses redirects", async () => {
+		fetchSpy.mockResolvedValueOnce(jsonResponse({ queue: { slots: [], noofslots: 0 } }));
+		await testServiceConnection("http://sab:8080/base/", "synthetic-key", "sabnzbd", {
+			username: "proxy-user",
+			password: "proxy-pass",
+		});
+		const [input, options] = fetchSpy.mock.calls[0]!;
+		expect(new URL(String(input)).origin).toBe("http://sab:8080");
+		expect(new Headers(options?.headers).get("authorization")).toBe(
+			`Basic ${Buffer.from("proxy-user:proxy-pass").toString("base64")}`,
+		);
+		expect(options?.redirect).toBe("error");
+	});
+
+	it("reports invalid SABnzbd keys without exposing provider response text", async () => {
+		fetchSpy.mockResolvedValueOnce(jsonResponse({ error: "API Key Incorrect: synthetic-key" }));
+
+		const result = await testServiceConnection("http://sab:8080", "synthetic-key", "sabnzbd");
+
+		expect(result.success).toBe(false);
+		expect(result.error).toBe("Authentication failed");
+		expect(result.details).not.toContain("synthetic-key");
+		expect(fetchSpy).toHaveBeenCalledTimes(1);
+	});
 });

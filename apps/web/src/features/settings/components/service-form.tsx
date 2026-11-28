@@ -226,7 +226,7 @@ export const ServiceForm = ({
 											: undefined
 									}
 								>
-									{service}
+									{service === "sabnzbd" ? "SABnzbd" : service}
 								</button>
 							))}
 						</div>
@@ -621,6 +621,7 @@ const COMPANION_PORTS: Record<string, number> = {
 	jellyfin: 8096,
 	emby: 8096,
 	qui: 7476,
+	sabnzbd: 8080,
 };
 
 /**

@@ -75,6 +75,28 @@ rather than publishing truncated totals. The single-user
 
 ## Per-group route detail
 
+## SABnzbd Routes (/api/sabnzbd) — internal
+
+| Method | Route | Auth | Purpose |
+|--------|-------|------|---------|
+| GET | /api/sabnzbd | Yes | Owner-scoped bounded queue, recent history, warning and category observations across configured instances |
+| GET | /api/sabnzbd/:id/history | Yes | Owner-scoped bounded history page; reports partial coverage when more records remain |
+| GET | /api/sabnzbd/:id/correlation | Yes | On-demand read-only match using exact configured endpoint, unique client name, opaque job ID and typed media identity |
+| POST | /api/sabnzbd/:id/pause or /resume | Yes | Explicit global queue pause/resume; reports verified or unconfirmed outcome |
+| POST | /api/sabnzbd/:id/jobs/:jobId | Yes | Revalidates exact live job identity before pause, resume, priority, category or confirmed removal; removal always preserves downloaded files |
+| POST | /api/sabnzbd/:id/history/:jobId/retry | Yes | Revalidates one failed history item and accepts only a distinct replacement identity confirmed in the queue |
+| POST | /api/sabnzbd/:id/history/:jobId/remove | Yes | Requires explicit confirmation and removes only the exact history record, without deleting files |
+
+SABnzbd reads use its authenticated JSON API and refuse redirects because the
+provider requires its API key in the query string. Saved optional reverse-proxy
+Basic Auth is decrypted only for the same configured destination request. Provider response fields are
+allowlisted, bounded, and projected without provider paths or raw stage logs.
+Partial or unavailable reads remain explicit; an empty list is not inferred
+from a malformed or failed response. Mutation targets are resolved again from
+the live owner-scoped provider state before a command, and uncertain writes are
+reported without replaying the command.
+
+
 ## Authentication Routes (`/auth`)
 
 | Method | Route | Auth | Purpose |

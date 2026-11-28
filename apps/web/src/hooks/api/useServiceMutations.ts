@@ -183,7 +183,8 @@ export const useTestConnectionBeforeAdd = () => {
 				| "plex"
 				| "jellyfin"
 				| "emby"
-				| "qui";
+				| "qui"
+				| "sabnzbd";
 			httpAuth?: { username: string; password: string };
 		}
 	>({

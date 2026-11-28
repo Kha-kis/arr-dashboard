@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "../../../lib/api-client/base";
+import { POLLING_ACTIVE, POLLING_STANDARD } from "../../../lib/polling-intervals";
 
 export type SabLibrary = {
 	service: "sonarr" | "radarr";
@@ -59,6 +60,8 @@ export type SabInstance = {
 	categories: string[];
 	queue: SabJob[];
 	history: SabHistoryItem[];
+	queueCoverage: "complete" | "partial" | "unavailable";
+	historyCoverage: "complete" | "partial" | "unavailable";
 	warnings: Array<{ text: string }>;
 	attention: SabAttention[];
 	error?: string;
@@ -69,34 +72,81 @@ export type SabOverview = {
 	instances: SabInstance[];
 };
 
+export type SabCorrelation = {
+	coverage: "complete" | "partial";
+	matches: Record<string, SabLibrary>;
+};
+
 export const sabKeys = {
 	overview: ["sabnzbd", "overview"] as const,
+	history: (instanceId: string, start: number) =>
+		["sabnzbd", "history", instanceId, start] as const,
 };
+
+export type SabHistoryPage = {
+	items: SabHistoryItem[];
+	start: number;
+	limit: number;
+	total: number;
+	coverage: "complete" | "partial";
+};
+
+export function useSabHistory(instanceId: string, start: number) {
+	return useQuery({
+		queryKey: sabKeys.history(instanceId, start),
+		queryFn: () =>
+			apiRequest<SabHistoryPage>(
+				`/api/sabnzbd/${encodeURIComponent(instanceId)}/history?start=${start}&limit=20`,
+			),
+		enabled: Boolean(instanceId),
+		refetchInterval: POLLING_STANDARD,
+	});
+}
+
+export function useSabCorrelation(instanceId: string) {
+	return useQuery({
+		queryKey: ["sabnzbd", "correlation", instanceId],
+		queryFn: () =>
+			apiRequest<SabCorrelation>(`/api/sabnzbd/${encodeURIComponent(instanceId)}/correlation`),
+		enabled: Boolean(instanceId),
+		refetchInterval: false,
+	});
+}
 
 export function useSabOverview() {
 	return useQuery({
 		queryKey: sabKeys.overview,
 		queryFn: () => apiRequest<SabOverview>("/api/sabnzbd"),
-		refetchInterval: 5000,
+		refetchInterval: POLLING_ACTIVE,
 	});
 }
+
+export type SabActionResult = {
+	outcome: "verified" | "unconfirmed" | "refused";
+	message: string;
+	replacementId?: string;
+};
 
 export type SabJobAction = {
 	instanceId: string;
 	nzoId: string;
-	action: "pause" | "resume" | "delete" | "retry" | "priority" | "category";
+	action: "pause" | "resume" | "delete" | "priority" | "category";
 	priority?: "-1" | "0" | "1" | "2";
 	category?: string;
+	confirmed?: boolean;
 };
 
 export function useSabJobAction() {
 	const queryClient = useQueryClient();
 	return useMutation({
-		mutationFn: ({ instanceId, nzoId, action, priority, category }: SabJobAction) =>
-			apiRequest(`/api/sabnzbd/${instanceId}/jobs/${encodeURIComponent(nzoId)}`, {
-				method: "POST",
-				json: { action, priority, category },
-			}),
+		mutationFn: ({ instanceId, nzoId, action, priority, category, confirmed }: SabJobAction) =>
+			apiRequest<SabActionResult>(
+				`/api/sabnzbd/${encodeURIComponent(instanceId)}/jobs/${encodeURIComponent(nzoId)}`,
+				{
+					method: "POST",
+					json: { action, priority, category, confirmed },
+				},
+			),
 		onSuccess: () => queryClient.invalidateQueries({ queryKey: sabKeys.overview }),
 	});
 }
@@ -105,8 +155,36 @@ export function useSabGlobalAction() {
 	const queryClient = useQueryClient();
 	return useMutation({
 		mutationFn: ({ id, action }: { id: string; action: "pause" | "resume" }) =>
-			apiRequest(`/api/sabnzbd/${id}/${action}`, { method: "POST" }),
+			apiRequest<SabActionResult>(`/api/sabnzbd/${encodeURIComponent(id)}/${action}`, {
+				method: "POST",
+			}),
 		onSuccess: () => queryClient.invalidateQueries({ queryKey: sabKeys.overview }),
+	});
+}
+
+export function useSabHistoryAction() {
+	const queryClient = useQueryClient();
+	return useMutation({
+		mutationFn: ({
+			instanceId,
+			nzoId,
+			action,
+		}: {
+			instanceId: string;
+			nzoId: string;
+			action: "retry" | "remove";
+		}) =>
+			apiRequest<SabActionResult>(
+				`/api/sabnzbd/${encodeURIComponent(instanceId)}/history/${encodeURIComponent(nzoId)}/${action}`,
+				{
+					method: "POST",
+					...(action === "remove" ? { json: { confirmed: true } } : {}),
+				},
+			),
+		onSuccess: (_result, variables) => {
+			queryClient.invalidateQueries({ queryKey: sabKeys.overview });
+			queryClient.invalidateQueries({ queryKey: ["sabnzbd", "history", variables.instanceId] });
+		},
 	});
 }
 

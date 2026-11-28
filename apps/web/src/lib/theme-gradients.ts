@@ -335,7 +335,8 @@ export type ServiceType =
 	| "plex"
 	| "jellyfin"
 	| "emby"
-	| "qui";
+	| "qui"
+	| "sabnzbd";
 
 /**
  * Service-specific gradients for visual distinction
@@ -403,6 +404,11 @@ export const SERVICE_GRADIENTS: Record<ServiceType, ServiceGradient> = {
 		from: "#0891b2", // cyan-600 (deeper than Sonarr's cyan-500)
 		to: "#1e40af", // blue-700 (download / infrastructure tone)
 		glow: "rgba(8, 145, 178, 0.4)",
+	},
+	sabnzbd: {
+		from: "#f59e0b",
+		to: "#ef4444",
+		glow: "rgba(245, 158, 11, 0.35)",
 	},
 };
 
