@@ -27,6 +27,7 @@ vi.mock("../../lib/queue-cleaner/cleaner-executor.js", () => ({
 	executeQueueCleaner: executors.clean,
 	executeEnhancedPreview: executors.preview,
 }));
+const RESULT_FAILURE = "Synthetic result transaction interrupted";
 type Origin = "manual" | "scheduled";
 type Outcome = "removed" | "warned" | "both" | "throw" | "empty";
 type Phase =
@@ -81,6 +82,7 @@ async function boot(
 		origin?: Origin;
 		outcome?: Outcome;
 		dryRun?: boolean;
+		resultFailure?: "before-commit" | "after-commit";
 		operation?: "dry-run" | "preview";
 		stale?: boolean;
 		hold?: { phase: Phase; gate: Promise<void>; reject?: boolean };
@@ -277,14 +279,27 @@ async function boot(
 		owned.logs.push({ id: row.id, instanceId: id, userId: owner });
 		return row;
 	});
-	const update = logModel.update.bind(logModel);
-	const jobWrites: { update: AwaitOnly<typeof logModel.update> } = logModel;
-	vi.spyOn(jobWrites, "update").mockImplementation(async (args) => {
+	vi.spyOn(logModel, "update");
+	const updateMany = logModel.updateMany.bind(logModel);
+	const jobWrites: { updateMany: AwaitOnly<typeof logModel.updateMany> } = logModel;
+	vi.spyOn(jobWrites, "updateMany").mockImplementation(async (args) => {
+		// Startup reaping batches existing running rows. A failed run targets only its own row.
+		if (typeof args.where?.id !== "string") return updateMany(args);
+
 		expect(owned.logs.map((row) => row.id)).toContain(args.where.id);
-		const row = await update(args);
-		outcomes.push(row.status);
-		await pause("result");
-		return row;
+		expect(args.where).toEqual({
+			id: args.where.id,
+			instanceId: id,
+			status: "running",
+			completedAt: null,
+		});
+		expect(args.data.status).toBe("error");
+		const result = await updateMany(args);
+		if (result.count === 1) {
+			outcomes.push("error");
+			await pause("result");
+		}
+		return result;
 	});
 	const subscriptionRead = prisma.notificationSubscription.findMany.bind(
 		prisma.notificationSubscription,
@@ -302,13 +317,15 @@ async function boot(
 		return rows;
 	});
 	const transaction = prisma.$transaction.bind(prisma);
-	vi.spyOn(prisma, "$transaction").mockImplementation(async (operation, transactionOptions) =>
-		transaction(async (tx) => {
+	vi.spyOn(prisma, "$transaction").mockImplementation(async (operation, transactionOptions) => {
+		let wroteRunResult = false;
+		const result = await transaction(async (tx) => {
 			const resultWrite = tx.queueCleanerLog.update.bind(tx.queueCleanerLog);
 			const results: { update: AwaitOnly<typeof tx.queueCleanerLog.update> } = tx.queueCleanerLog;
 			vi.spyOn(results, "update").mockImplementation(async (args) => {
 				expect(owned.logs.map((row) => row.id)).toContain(args.where.id);
 				const row = await resultWrite(args);
+				wroteRunResult = true;
 				outcomes.push(row.status);
 				await pause("result");
 				return row;
@@ -341,9 +358,17 @@ async function boot(
 				if (args.data.lastSendResult !== undefined) await pause("channel");
 				return row;
 			});
-			return operation(tx);
-		}, transactionOptions),
-	);
+			const value = await operation(tx);
+			if (wroteRunResult && options.resultFailure === "before-commit") {
+				throw new Error(RESULT_FAILURE);
+			}
+			return value;
+		}, transactionOptions);
+		if (wroteRunResult && options.resultFailure === "after-commit") {
+			throw new Error(RESULT_FAILURE);
+		}
+		return result;
+	});
 	const result = {
 		itemsCleaned: options.outcome === "removed" || options.outcome === "both" ? 1 : 0,
 		itemsWarned: options.outcome === "warned" || options.outcome === "both" ? 1 : 0,
@@ -816,6 +841,25 @@ describe("Queue Cleaner accepted notification handoff", () => {
 		await expect(withCleanupMaintenanceGuard(async () => "released")).resolves.toBe("released");
 	});
 
+	it.each(["before-commit", "after-commit"] as const)(
+		"keeps the native Activity result accurate when result settlement fails %s",
+		async (resultFailure) => {
+			const f = await boot({ outcome: "removed", resultFailure });
+			await f.start();
+			await f.idle();
+			const committed = resultFailure === "after-commit";
+			await assertPersisted(
+				f,
+				committed ? [] : ["QUEUE_CLEANER_FAILED"],
+				committed ? [] : ["sent"],
+				committed ? "success" : "error",
+				RESULT_FAILURE,
+			);
+			expect((await f.outcome()).jobs).toHaveLength(1);
+			expect(f.counts.executor).toBe(1);
+		},
+	);
+
 	for (const origin of ["manual", "scheduled"] as const) {
 		for (const [outcome, events] of [
 			["removed", ["QUEUE_ITEMS_REMOVED"]],
@@ -1091,6 +1135,7 @@ describe("Queue Cleaner accepted notification handoff", () => {
 			else expect(result).toEqual(f.preview);
 			expect(f.logModel.create).not.toHaveBeenCalled();
 			expect(f.logModel.update).not.toHaveBeenCalled();
+			expect(f.logModel.updateMany).not.toHaveBeenCalled();
 			expect(vi.mocked(f.prisma.$transaction).mock.calls.length).toBe(writesBefore);
 			expect(await f.outcome()).toEqual(before);
 			expect(f.prisma.queueCleanerStrike.deleteMany).not.toHaveBeenCalled();
