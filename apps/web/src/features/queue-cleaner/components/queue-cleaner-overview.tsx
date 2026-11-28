@@ -11,7 +11,7 @@ import {
 	Trash2,
 	Zap,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
 	PremiumEmptyState,
 	PremiumSection,
@@ -22,10 +22,10 @@ import {
 import { Button, toast } from "../../../components/ui";
 import { getErrorMessage } from "../../../lib/error-utils";
 import { getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
-import { POST_CLEAN_REFRESH_DELAY_MS } from "../lib/constants";
 import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useEnhancedPreview } from "../hooks/useDryRun";
 import { useManualClean } from "../hooks/useManualClean";
+import { POST_CLEAN_REFRESH_DELAY_MS } from "../lib/constants";
 import type { InstanceCleanerStatus, QueueCleanerStatus } from "../lib/queue-cleaner-types";
 import { EnhancedDryRunPreview } from "./dry-run-preview";
 
@@ -120,13 +120,34 @@ const InstanceStatusCard = ({ instance, onRefresh, animationDelay }: InstanceSta
 		useEnhancedPreview();
 	const [showPreview, setShowPreview] = useState(false);
 	const isCleanPending = isTriggering || isRunningClean;
+	const refreshTimeoutsRef = useRef(new Set<ReturnType<typeof setTimeout>>());
+	const mountedRef = useRef(false);
+
+	useEffect(() => {
+		mountedRef.current = true;
+		return () => {
+			mountedRef.current = false;
+			for (const timeout of refreshTimeoutsRef.current) clearTimeout(timeout);
+			refreshTimeoutsRef.current.clear();
+		};
+	}, []);
+
+	const scheduleRefresh = () => {
+		if (!mountedRef.current) return;
+		let timeout: ReturnType<typeof setTimeout>;
+		timeout = setTimeout(() => {
+			refreshTimeoutsRef.current.delete(timeout);
+			void onRefresh();
+		}, POST_CLEAN_REFRESH_DELAY_MS);
+		refreshTimeoutsRef.current.add(timeout);
+	};
 
 	const handleManualClean = async () => {
 		if (isCleanPending) return;
 		try {
 			const result = await triggerClean(instance.instanceId);
 			toast.success(result.message);
-			setTimeout(() => void onRefresh(), POST_CLEAN_REFRESH_DELAY_MS);
+			scheduleRefresh();
 		} catch (error) {
 			if (isCooldownError(error)) {
 				toast.warning((error as Error).message);
@@ -148,7 +169,7 @@ const InstanceStatusCard = ({ instance, onRefresh, animationDelay }: InstanceSta
 	const handleRunClean = async () => {
 		if (isCleanPending) throw new Error("A clean request is already pending");
 		await runClean(instance.instanceId);
-		setTimeout(() => void onRefresh(), POST_CLEAN_REFRESH_DELAY_MS);
+		scheduleRefresh();
 	};
 
 	const lastRunDate = instance.lastRunAt ? new Date(instance.lastRunAt) : null;

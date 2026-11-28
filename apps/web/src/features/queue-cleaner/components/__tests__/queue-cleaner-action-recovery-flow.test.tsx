@@ -7,8 +7,10 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 import { Toaster, toast } from "../../../../components/ui/toast";
 import { IncognitoProvider } from "../../../../contexts/IncognitoContext";
 import { ColorThemeProvider } from "../../../../providers/color-theme-provider";
+import { POST_CLEAN_REFRESH_DELAY_MS } from "../../lib/constants";
 import type { QueueCleanerLog, QueueCleanerStatus } from "../../lib/queue-cleaner-types";
 import { QueueCleanerClient } from "../queue-cleaner-client";
+import { QueueCleanerOverview } from "../queue-cleaner-overview";
 
 type Request = { url: string; method: string; body: unknown };
 const initialStatus: QueueCleanerStatus = {
@@ -223,6 +225,26 @@ function show() {
 		),
 	};
 }
+function showOverview(onRefresh: () => void) {
+	const client = new QueryClient({
+		defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+	});
+	clients.push(client);
+	return {
+		client,
+		...render(
+			<QueryClientProvider client={client}>
+				<ColorThemeProvider>
+					<IncognitoProvider>
+						<QueueCleanerOverview status={initialStatus} onRefresh={onRefresh} />
+						<Toaster />
+					</IncognitoProvider>
+				</ColorThemeProvider>
+			</QueryClientProvider>,
+		),
+	};
+}
+
 async function chosen(name: "Preview" | "Run Now") {
 	const buttons = await screen.findAllByRole("button", { name });
 	expect(buttons).toHaveLength(2);
@@ -230,6 +252,56 @@ async function chosen(name: "Preview" | "Run Now") {
 }
 
 describe("maintained Queue Cleaner action and current readback", () => {
+	it.each(["after action success", "while action is pending"] as const)(
+		"does not issue a delayed status refresh after overview unmount (%s)",
+		async (lifecycle) => {
+			const onRefresh = vi.fn();
+			const view = showOverview(onRefresh);
+			const button = await chosen("Run Now");
+			if (lifecycle === "while action is pending") triggerGate = deferred();
+			const nativeSetTimeout = globalThis.setTimeout;
+			const nativeClearTimeout = globalThis.clearTimeout;
+			const refreshHandle = {} as ReturnType<typeof setTimeout>;
+			let refreshCallback: (() => void) | undefined;
+			let refreshCanceled = false;
+			const scheduleTimeout = (...args: Parameters<typeof globalThis.setTimeout>) => {
+				const [handler, delay] = args;
+				if (delay === POST_CLEAN_REFRESH_DELAY_MS) {
+					refreshCallback = () => handler();
+					return refreshHandle;
+				}
+				return nativeSetTimeout(...args);
+			};
+			vi.spyOn(globalThis, "setTimeout").mockImplementation(
+				scheduleTimeout as typeof globalThis.setTimeout,
+			);
+			vi.spyOn(globalThis, "clearTimeout").mockImplementation((handle) => {
+				if (handle === refreshHandle) refreshCanceled = true;
+				else nativeClearTimeout(handle);
+			});
+			try {
+				fireEvent.click(button);
+				if (lifecycle === "while action is pending") {
+					await waitFor(() => expect(triggers()).toHaveLength(1));
+					view.unmount();
+					triggerGate!.release();
+					await act(async () => {
+						await Promise.allSettled([...active]);
+					});
+					expect(refreshCallback).toBeUndefined();
+				} else {
+					await screen.findByText("Queue clean started");
+					view.unmount();
+					expect(refreshCallback).toBeTypeOf("function");
+					if (!refreshCanceled) refreshCallback?.();
+					expect(refreshCanceled).toBe(true);
+				}
+				expect(onRefresh).not.toHaveBeenCalled();
+			} finally {
+				vi.restoreAllMocks();
+			}
+		},
+	);
 	// Catches same-name source selection errors and use of preview item IDs as trigger authority.
 	it("K1 preview chooses the exact source and keeps conditional import/removal/retention distinct before ordinary trigger", async () => {
 		show();
