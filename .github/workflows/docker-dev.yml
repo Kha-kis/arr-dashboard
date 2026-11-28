@@ -10,11 +10,18 @@ on:
       - main
   # Or manually trigger from Actions tab
   workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact current main source SHA (40 lowercase hex characters)
+        required: true
+        type: string
 
-# Cancel in-progress runs when a new run is triggered
+# One writer for both registries, independent of event/ref. Do not interrupt writes.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: dev-image-registry-publication
+  cancel-in-progress: false
+
+permissions: {}
 
 env:
   DOCKERHUB_IMAGE: khak1s/arr-dashboard
@@ -25,15 +32,36 @@ jobs:
     name: Build & Push Dev Image
     runs-on: ubuntu-latest
     # Only run if CI passed (workflow_run fires on any completion)
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.repository == 'Kha-kis/arr-dashboard' && github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success') }}
     permissions:
       contents: read
+      actions: read  # Refuse other active dev writers, including older workflow revisions
       packages: write
       security-events: write  # For Trivy sarif upload
 
     steps:
-      - name: Checkout repository
+      - name: Checkout trusted workflow guards
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+
+      - name: Select exact source and record dev alias baseline
+        id: identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B scripts/dev_image.py prepare
+
+      - name: Checkout exact build source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.identity.outputs.source }}
+          persist-credentials: false
+
+      - name: Require clean exact current main before build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B scripts/dev_image.py assert-source
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -51,11 +79,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Generate dev tag
-        id: dev-tag
-        run: echo "tag=dev-$(date +%Y%m%d-%H%M%S)-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
-
-      - name: Build and push dev image (amd64 only)
+      - name: Build and push run-specific dev image (amd64 only)
+        id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
@@ -65,25 +90,29 @@ jobs:
           sbom: true
           build-args: |
             VERSION=dev
-            COMMIT_SHA=${{ github.sha }}
-            BUILD_DATE=${{ github.event.workflow_run.head_commit.timestamp || github.event.repository.updated_at }}
+            COMMIT_SHA=${{ steps.identity.outputs.source }}
+            BUILD_DATE=${{ steps.identity.outputs.date }}
           tags: |
-            ${{ env.DOCKERHUB_IMAGE }}:dev
-            ${{ env.DOCKERHUB_IMAGE }}:${{ steps.dev-tag.outputs.tag }}
-            ${{ env.GHCR_IMAGE }}:dev
-            ${{ env.GHCR_IMAGE }}:${{ steps.dev-tag.outputs.tag }}
+            ${{ env.DOCKERHUB_IMAGE }}:${{ steps.identity.outputs.tag }}
+            ${{ env.GHCR_IMAGE }}:${{ steps.identity.outputs.tag }}
           cache-from: type=registry,ref=${{ env.DOCKERHUB_IMAGE }}:buildcache-linux-amd64
           cache-to: type=registry,ref=${{ env.DOCKERHUB_IMAGE }}:buildcache-linux-amd64,mode=max
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ${{ env.DOCKERHUB_IMAGE }}:dev
+          image-ref: ${{ env.DOCKERHUB_IMAGE }}@${{ steps.build.outputs.digest }}
           format: 'sarif'
           output: 'trivy-results.sarif'
           severity: 'CRITICAL,HIGH'
           # Default 5m timed out analyzing @prisma/config@7.8.0 (run 25082617155)
           timeout: '20m'
+
+      - name: Guard and publish exact digest to dev aliases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_DIGEST: ${{ steps.build.outputs.digest }}
+        run: python3 -B scripts/dev_image.py publish
 
       - name: Upload Trivy scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
