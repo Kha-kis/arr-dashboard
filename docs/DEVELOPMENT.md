@@ -1,12 +1,113 @@
 # Development Reference
 
-## Quick Start
+## Isolated development setup
+
+Start from a clean checkout or task worktree with Node.js 22 and the pnpm
+version declared by the root package manager field. Run the native test
+harness on Linux or WSL using a private, writable Linux filesystem for
+temporary files. Install or activate tools through your existing environment
+manager. The repository setup command only installs the frozen dependencies.
 
 ```bash
-pnpm install && pnpm run dev  # API (3001) + Web (3000)
+node --version
+pnpm --version
+docker compose version
+pnpm run setup:worktree
+pnpm --filter @arr/shared build
+pnpm --filter @arr/api exec vitest run src/config/env.test.ts --maxWorkers=1
+pnpm --filter @arr/api run test:node
+pnpm --filter @arr/api run test:properties
+CI=1 pnpm exec playwright test --list --project chromium
 ```
 
-Requirements: Node.js 22+ and pnpm 10+.
+The opt-in provider properties use fast-check 3.23.2. They run 300 generated
+cases per property with seed 20261127. Replay a failure by setting
+`FC_SEED=<seed> FC_PATH=<path>` and passing `-t '<failing property name>'`
+to the property command. Keep the failure's seed and minimized replay path in
+the qualification record.
+
+The browser discovery command lists tests in the CI Chromium project
+without starting an app or creating browser sessions.
+
+The full native gate needs a local Docker daemon and access to the repository's
+pinned PostgreSQL fixture image. The harness owns its disposable database,
+native actors, and loopback-only connection details. Keep live database URLs,
+service credentials, and production mounts outside the checkout. Building
+the shared package first gives test and typecheck commands its current output.
+
+On a private development host, `pnpm run dev` starts the workspace watchers
+on the default web and API ports (3000 and 3001). For a loopback-only source
+smoke, reserve both ports and run these commands in separate terminals from
+the repository root. The temporary directory holds a fresh SQLite database,
+logs, and generated local secrets.
+
+```bash
+dev_data=$(mktemp -d)
+DATABASE_URL="file:$dev_data/dev.db" LOG_DIR="$dev_data/logs" \
+  API_HOST=127.0.0.1 API_PORT=3001 TRASH_UPDATE_SCHEDULER_ENABLED=false \
+  pnpm --filter @arr/api exec tsx src/index.ts
+
+# In another terminal, set the web rewrite origin and bind the listener.
+API_HOST=http://127.0.0.1:3001 NEXT_TELEMETRY_DISABLED=1 \
+  pnpm --filter @arr/web exec next dev -H 127.0.0.1 -p 3000 --webpack
+```
+
+Check `http://127.0.0.1:3001/health` and open `http://127.0.0.1:3000/setup`.
+Stop the owned processes before cleaning up the disposable data. Use a
+dedicated persistent SQLite mount or a disposable PostgreSQL database when
+running a container. Inspect settings before starting a provider-enabled
+fixture.
+
+For the existing floating integration stack, inspect
+`docker compose -f e2e/integration/docker-compose.yml config --quiet` and
+reserve its fixed container names and published ports before
+`pnpm run e2e:integration:up`. Run one stack at a time on an isolated Docker
+host. Use `pnpm run e2e:integration` for its browser tests and
+`pnpm run e2e:integration:down` only for the disposable stack you started.
+Keep provider credentials and .env.services, browser auth state, logs, and
+traces private. The default Chromium project needs a running test app and
+isolated auth data. Use `pnpm exec playwright show-trace <trace.zip>` to inspect
+a captured run.
+
+### Verify a change
+
+1. Reproduce the failure in a disposable fixture at the original deadline.
+   Save the first failure and compare the exact base and candidate with the
+   same inputs before retrying a flaky check.
+2. Run the narrow focused test or native phase that matches the changed
+   path. A direct Vitest run is appropriate for ordinary unit tests.
+3. Run `pnpm run validate:pr` once on the coherent patch. Serialize complete
+   native runs on a single host. For a resource-constrained local run,
+   `ARR_API_TEST_WORKERS=1 pnpm run validate:pr` limits SQLite workers without
+   changing deadlines or test selections.
+4. Record the exact source and tree, commands, outcomes, fixture versions,
+   independent review, and required hosted checks. Preserve original
+   attempts beside any targeted rerun. Use the repository review contract
+   and the project's authorized Spec Kit records for engineering evidence.
+
+If a native test stalls in setup, inspect the owned actor and database
+receipts, Docker health, temporary filesystem, free ports, and worker
+overlap. Preserve evidence when a child process or cleanup is uncertain.
+For rollback, stop only the owned test stack and remove its worktree through
+the same workspace tool after saving relevant evidence.
+
+### Assistant tools
+
+Use the existing authenticated GitHub connection for exact refs, hosted
+checks, and pull requests. Keep assignment approvals and progress in the
+maintainer's existing Google Drive workspace. Use the installed skills for
+systematic debugging, test-driven correction, independent review, worktree
+isolation, and verification before completion.
+
+Use Context7 for public version-specific dependency documentation and
+Firecrawl for bounded research on public upstream contracts. Verify exact
+versions against the lockfile and primary upstream documentation. Send only
+public lookup terms. Use the repository's Playwright CLI and traces for
+repeatable browser evidence. An optional browser MCP can add interactive
+inspection if already available in the authorized environment. Confirm the
+actual connection and available operations before using any plugin on a
+workspace. Design, project tracking, and telemetry integrations require their
+own task-specific scope.
 
 ## Critical Rules
 
