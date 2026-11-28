@@ -307,9 +307,20 @@ describe.each<Kind>(["hunting", "queue-cleaner"])("%s terminal shutdown", (kind)
 			(kind === "hunting" ? MAX_HUNT_DURATION_MS : MAX_CLEAN_DURATION_MS) + 1,
 		);
 		const failureWrite = kind === "hunting" ? fixture.logModel.update : fixture.logModel.updateMany;
-		expect(failureWrite).toHaveBeenCalledWith(
-			expect.objectContaining({ data: expect.objectContaining({ status: "error" }) }),
-		);
+		if (kind === "hunting") {
+			expect(failureWrite).toHaveBeenCalledWith(
+				expect.objectContaining({ data: expect.objectContaining({ status: "error" }) }),
+			);
+		} else {
+			expect(failureWrite).toHaveBeenCalledWith(
+				expect.objectContaining({
+					where: expect.objectContaining({ status: "running", completedAt: null }),
+					data: expect.objectContaining({
+						message: expect.stringContaining("do not retry while this run settles"),
+					}),
+				}),
+			);
+		}
 		const closing = fixture.close();
 		await settle();
 		expect(closing.settled()).toBe(false);
@@ -318,6 +329,16 @@ describe.each<Kind>(["hunting", "queue-cleaner"])("%s terminal shutdown", (kind)
 		// Rejection is genuine settlement too; no late unhandled rejection or false success.
 		execution.reject(new Error("Synthetic late executor failure"));
 		await closing.promise;
+		if (kind === "queue-cleaner")
+			expect(failureWrite).toHaveBeenCalledWith(
+				expect.objectContaining({
+					where: expect.objectContaining({ status: "running", completedAt: null }),
+					data: expect.objectContaining({
+						status: "error",
+						message: expect.stringContaining("Some provider actions may have completed"),
+					}),
+				}),
+			);
 	});
 
 	it("finishes a pending scheduled lookup without admitting its next executor", async () => {
