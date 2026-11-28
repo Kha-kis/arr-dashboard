@@ -126,12 +126,16 @@ async function fixture(service: (typeof services)[number] = services[1]) {
 		...service.media,
 	};
 	const queueReads = vi.fn().mockResolvedValue(item);
-	if (client instanceof LidarrClient) {
+	if (client instanceof ReadarrClient) {
+		vi.spyOn(client.queue, "getById").mockImplementation(queueReads);
+	} else {
 		vi.spyOn(client.queue, "get").mockImplementation(
 			async () =>
 				({ page: 1, pageSize: 1000, totalRecords: 1, records: [await queueReads()] }) as never,
 		);
-	} else vi.spyOn(client.queue, "getById").mockImplementation(queueReads);
+		if (client instanceof SonarrClient || client instanceof RadarrClient)
+			vi.spyOn(client.queue, "getById").mockRejectedValue(new Error("Unsupported item GET"));
+	}
 	const posts = vi
 		.spyOn(client, "post")
 		.mockImplementation(
@@ -299,18 +303,26 @@ describe("Queue Manual Import durable producer", () => {
 						lastAttemptAt: new Date(),
 					},
 				});
-			if (!duringPreparation) await protect();
-			else
+			let inserted = false;
+			if (!duringPreparation) {
+				await protect();
+				inserted = true;
+			} else {
 				f.queueReads.mockImplementation(async () => {
 					if (
-						await prisma.arrImportOperation.count({
+						!inserted &&
+						(await prisma.arrImportOperation.count({
 							where: { userId: "owner", state: "preparing" },
-						})
-					)
+						}))
+					) {
 						await protect();
+						inserted = true;
+					}
 					return f.item;
 				});
+			}
 			expect((await f.submit()).statusCode).toBe(409);
+			expect(inserted).toBe(true);
 			expect(f.posts).not.toHaveBeenCalled();
 		},
 	);
@@ -343,7 +355,10 @@ describe("Queue Manual Import durable producer", () => {
 	);
 	it("rechecks queue media immediately before submission", async () => {
 		const f = await fixture();
-		f.queueReads.mockResolvedValueOnce(f.item).mockResolvedValue({ ...f.item, movieId: 99 });
+		f.queueReads
+			.mockResolvedValueOnce(f.item)
+			.mockResolvedValueOnce(f.item)
+			.mockResolvedValue({ ...f.item, movieId: 99 });
 		expect((await f.submit()).statusCode).toBe(409);
 		expect(f.posts).not.toHaveBeenCalled();
 		expect(await prisma.arrImportOperation.findFirst({ where: { userId: "owner" } })).toMatchObject(
