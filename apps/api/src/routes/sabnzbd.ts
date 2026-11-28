@@ -475,11 +475,16 @@ export const registerSabnzbdRoutes: FastifyPluginAsync = async (app) => {
 			const statusOk = providerStatusOk(mutationResponse);
 			const readback = asRecord(
 				asRecord(
-					await sabCall(instance.baseUrl, instance.apiKey, {
-						mode: "queue",
-						start: "0",
-						limit: "1",
-					}),
+					await sabCall(
+						instance.baseUrl,
+						instance.apiKey,
+						{
+							mode: "queue",
+							start: "0",
+							limit: "1",
+						},
+						{ headers: instance.requestHeaders },
+					),
 				).queue,
 			);
 			const paused = pausedState(readback);

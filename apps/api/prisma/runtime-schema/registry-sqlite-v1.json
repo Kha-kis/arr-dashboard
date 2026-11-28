@@ -1,6 +1,6 @@
 {
 	"formatVersion": 1,
-	"schemaSourceSha256": "a5362c90c3bf41291f6e6db4d3a3984c29ee6011a93f1af70c7b2fe1e416bb01",
+	"schemaSourceSha256": "ad60db891335853d56c75396a8adf274af96f53f7fe80db0fea5b791699f984e",
 	"applicationModelCount": 101,
 	"registry": {
 		"provider": "sqlite",

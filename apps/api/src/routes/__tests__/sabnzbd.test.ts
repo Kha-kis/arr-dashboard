@@ -28,11 +28,17 @@ async function buildApp(instances = [sabInstance]) {
 	const findFirst = vi
 		.fn()
 		.mockImplementation(async ({ where }: { where: { userId: string; id: string } }) =>
-			where.userId === sabInstance.userId && where.id === sabInstance.id ? sabInstance : null,
+			where.userId === sabInstance.userId
+				? (instances.find((instance) => instance.id === where.id) ?? null)
+				: null,
 		);
 	app.decorate("prisma", { serviceInstance: { findMany, findFirst } } as never);
 	app.decorate("encryptor", {
-		decrypt: vi.fn(() => "synthetic-api-key"),
+		decrypt: vi.fn(({ value }: { value: string }) =>
+			value === "encrypted-http-auth"
+				? JSON.stringify({ v: 1, username: "proxy-user", password: "proxy-password" })
+				: "synthetic-api-key",
+		),
 	} as never);
 	app.addHook("preHandler", async (request) => {
 		Object.assign(request, { currentUser: { id: "owner-1" } });
@@ -45,6 +51,32 @@ describe("SABnzbd read routes", () => {
 	afterEach(() => {
 		vi.restoreAllMocks();
 		vi.unstubAllGlobals();
+	});
+
+	it("keeps proxy Basic authentication on global action readback", async () => {
+		const instance = {
+			...sabInstance,
+			encryptedHttpAuthCredentials: "encrypted-http-auth",
+			httpAuthEncryptionIv: "http-auth-iv",
+		};
+		const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+			const url = new URL(String(input));
+			expect(new Headers(init?.headers).get("authorization")).toBe(
+				`Basic ${Buffer.from("proxy-user:proxy-password").toString("base64")}`,
+			);
+			if (url.searchParams.get("mode") === "pause") return jsonResponse({ status: true });
+			if (url.searchParams.get("mode") === "queue")
+				return jsonResponse({ queue: { paused_all: true, noofslots: 0, slots: [] } });
+			return jsonResponse({ error: "unexpected request" });
+		});
+		vi.stubGlobal("fetch", fetchMock);
+		const { app } = await buildApp([instance]);
+		const response = await app.inject({ method: "POST", url: "/api/sabnzbd/sab-instance-1/pause" });
+		await app.close();
+
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toMatchObject({ outcome: "verified" });
+		expect(fetchMock).toHaveBeenCalledTimes(2);
 	});
 
 	it("returns a bounded safe multi-observation projection for owned instances", async () => {

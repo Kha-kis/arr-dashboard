@@ -1,11 +1,11 @@
 {
 	"formatVersion": 1,
-	"schemaSourceSha256": "a5362c90c3bf41291f6e6db4d3a3984c29ee6011a93f1af70c7b2fe1e416bb01",
+	"schemaSourceSha256": "ad60db891335853d56c75396a8adf274af96f53f7fe80db0fea5b791699f984e",
 	"applicationModelCount": 101,
 	"registry": {
 		"provider": "postgresql",
 		"version": 1,
-		"targetDigest": "217aaacc6dd821d21cc101d593b9f7d9d1b470a3a197a5c04a34f75831dbd81e",
+		"targetDigest": "32de86d9cae10ed0f4046db95168f44ab69f9235092e72a636712e6d8fc4bbbc",
 		"tables": [
 			{
 				"target": {
@@ -560,7 +560,7 @@
 						{ "name": "userId", "type": "TEXT", "nullable": false, "defaultValue": null },
 						{
 							"name": "service",
-							"type": "ENUM:[\"ServiceType\",[\"SONARR\",\"RADARR\",\"PROWLARR\",\"LIDARR\",\"READARR\",\"SEERR\",\"TAUTULLI\",\"PLEX\",\"JELLYFIN\",\"EMBY\",\"QUI\"]]",
+							"type": "ENUM:[\"ServiceType\",[\"SONARR\",\"RADARR\",\"PROWLARR\",\"LIDARR\",\"READARR\",\"SEERR\",\"TAUTULLI\",\"PLEX\",\"JELLYFIN\",\"EMBY\",\"QUI\",\"SABNZBD\"]]",
 							"nullable": false,
 							"defaultValue": null
 						},
@@ -1061,7 +1061,7 @@
 						},
 						{
 							"name": "service",
-							"type": "ENUM:[\"ServiceType\",[\"SONARR\",\"RADARR\",\"PROWLARR\",\"LIDARR\",\"READARR\",\"SEERR\",\"TAUTULLI\",\"PLEX\",\"JELLYFIN\",\"EMBY\",\"QUI\"]]",
+							"type": "ENUM:[\"ServiceType\",[\"SONARR\",\"RADARR\",\"PROWLARR\",\"LIDARR\",\"READARR\",\"SEERR\",\"TAUTULLI\",\"PLEX\",\"JELLYFIN\",\"EMBY\",\"QUI\",\"SABNZBD\"]]",
 							"nullable": false,
 							"defaultValue": null
 						},
@@ -8303,7 +8303,7 @@
 						{ "name": "cfName", "type": "TEXT", "nullable": false, "defaultValue": null },
 						{
 							"name": "serviceType",
-							"type": "ENUM:[\"ServiceType\",[\"SONARR\",\"RADARR\",\"PROWLARR\",\"LIDARR\",\"READARR\",\"SEERR\",\"TAUTULLI\",\"PLEX\",\"JELLYFIN\",\"EMBY\",\"QUI\"]]",
+							"type": "ENUM:[\"ServiceType\",[\"SONARR\",\"RADARR\",\"PROWLARR\",\"LIDARR\",\"READARR\",\"SEERR\",\"TAUTULLI\",\"PLEX\",\"JELLYFIN\",\"EMBY\",\"QUI\",\"SABNZBD\"]]",
 							"nullable": false,
 							"defaultValue": null
 						},
@@ -9052,7 +9052,7 @@
 						{ "name": "id", "type": "TEXT", "nullable": false, "defaultValue": null },
 						{
 							"name": "serviceType",
-							"type": "ENUM:[\"ServiceType\",[\"SONARR\",\"RADARR\",\"PROWLARR\",\"LIDARR\",\"READARR\",\"SEERR\",\"TAUTULLI\",\"PLEX\",\"JELLYFIN\",\"EMBY\",\"QUI\"]]",
+							"type": "ENUM:[\"ServiceType\",[\"SONARR\",\"RADARR\",\"PROWLARR\",\"LIDARR\",\"READARR\",\"SEERR\",\"TAUTULLI\",\"PLEX\",\"JELLYFIN\",\"EMBY\",\"QUI\",\"SABNZBD\"]]",
 							"nullable": false,
 							"defaultValue": null
 						},
@@ -9482,7 +9482,7 @@
 						{ "name": "description", "type": "TEXT", "nullable": true, "defaultValue": null },
 						{
 							"name": "serviceType",
-							"type": "ENUM:[\"ServiceType\",[\"SONARR\",\"RADARR\",\"PROWLARR\",\"LIDARR\",\"READARR\",\"SEERR\",\"TAUTULLI\",\"PLEX\",\"JELLYFIN\",\"EMBY\",\"QUI\"]]",
+							"type": "ENUM:[\"ServiceType\",[\"SONARR\",\"RADARR\",\"PROWLARR\",\"LIDARR\",\"READARR\",\"SEERR\",\"TAUTULLI\",\"PLEX\",\"JELLYFIN\",\"EMBY\",\"QUI\",\"SABNZBD\"]]",
 							"nullable": false,
 							"defaultValue": null
 						},
@@ -9807,6 +9807,7 @@
 		],
 		"orderedAtomIds": [
 			"enum:3b685b8fb8a42a2b356d8c451c192416cbad02516c450f860e638ee424223799",
+			"enum-append:3b685b8fb8a42a2b356d8c451c192416cbad02516c450f860e638ee424223799",
 			"enum:d2f0efeed0e4d47303b1c85d47e877d0290111aa02b1713b1244c55959bfe13f",
 			"enum:59cb10ad9a094d3ee205530e7c0173b63deb0abbeb7f126df99d0a85cd887016",
 			"enum:8b89da38c5dd621da6ad1e039b6efcf277c056779f0c81846eff2e95bb7e3801",
@@ -11540,9 +11541,24 @@
 				"PLEX",
 				"JELLYFIN",
 				"EMBY",
+				"QUI",
+				"SABNZBD"
+			],
+			"createAtom": "enum:3b685b8fb8a42a2b356d8c451c192416cbad02516c450f860e638ee424223799",
+			"previousValues": [
+				"SONARR",
+				"RADARR",
+				"PROWLARR",
+				"LIDARR",
+				"READARR",
+				"SEERR",
+				"TAUTULLI",
+				"PLEX",
+				"JELLYFIN",
+				"EMBY",
 				"QUI"
 			],
-			"createAtom": "enum:3b685b8fb8a42a2b356d8c451c192416cbad02516c450f860e638ee424223799"
+			"appendAtom": "enum-append:3b685b8fb8a42a2b356d8c451c192416cbad02516c450f860e638ee424223799"
 		},
 		{
 			"name": "ProviderIdentityKind",
@@ -11576,8 +11592,16 @@
 			"kind": "enum",
 			"tableName": null,
 			"objectName": "ServiceType",
-			"sql": "CREATE TYPE \"ServiceType\" AS ENUM ('SONARR', 'RADARR', 'PROWLARR', 'LIDARR', 'READARR', 'SEERR', 'TAUTULLI', 'PLEX', 'JELLYFIN', 'EMBY', 'QUI');",
-			"sha256": "307df3568ab5b008b260e85cadb11b72b8d7320a4cbc1855fb51058ed2194857"
+			"sql": "CREATE TYPE \"ServiceType\" AS ENUM ('SONARR', 'RADARR', 'PROWLARR', 'LIDARR', 'READARR', 'SEERR', 'TAUTULLI', 'PLEX', 'JELLYFIN', 'EMBY', 'QUI', 'SABNZBD');",
+			"sha256": "3f88eb009b265e5d327f00b971c710a9b596efd7102bb0b5d69019f9e0a1fddb"
+		},
+		{
+			"id": "enum-append:3b685b8fb8a42a2b356d8c451c192416cbad02516c450f860e638ee424223799",
+			"kind": "enum-append",
+			"tableName": null,
+			"objectName": "ServiceType",
+			"sql": "ALTER TYPE \"ServiceType\" ADD VALUE 'SABNZBD';",
+			"sha256": "b2b35f330ccaa667e138f50a1cf8fe8926e422499aeaa620d1a69c449cf9c161"
 		},
 		{
 			"id": "enum:d2f0efeed0e4d47303b1c85d47e877d0290111aa02b1713b1244c55959bfe13f",
@@ -25108,5 +25132,5 @@
 			"sha256": "fcb23de07ba77082669e52425fd198c6f7ac46314db598894c3a4fff7ee960ab"
 		}
 	],
-	"sqlSha256": "0b22554ffce299c0be5f9b7f2cf6093d2757187e68038683b7f74a15d713fa73"
+	"sqlSha256": "2032c92d144d6f13c28a96a5973a76521c512de15a174cdb1a90a844101a1360"
 }
