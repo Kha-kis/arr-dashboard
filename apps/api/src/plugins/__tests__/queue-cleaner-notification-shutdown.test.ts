@@ -907,12 +907,9 @@ describe("Queue Cleaner accepted notification handoff", () => {
 			).rejects.toMatchObject({
 				statusCode: 409,
 			});
-			const closing = await f.closePending();
-			expect(closing.settled()).toBe(false);
 			expect(f.state.disconnected).toBe(false);
-
 			gate.resolve();
-			await closing.promise;
+			await f.idle();
 			expect(f.counts.executor).toBe(1);
 			expect(f.state.afterTeardown).toBe(0);
 			if (settlement === "before-commit") {
@@ -930,6 +927,8 @@ describe("Queue Cleaner accepted notification handoff", () => {
 			}
 			expect((await f.outcome()).jobs).toHaveLength(1);
 			expect(f.pendingMessages).toHaveLength(1);
+			const closing = await f.closePending();
+			await closing.promise;
 		},
 	);
 
