@@ -635,10 +635,36 @@ class HuntingScheduler {
 							updateData.apiCallsResetAt = new Date(Date.now() + 60 * 60 * 1000);
 						}
 
-						await this.app.prisma.huntConfig.update({
-							where: { id: config.id },
-							data: updateData,
-						});
+						try {
+							await this.app.prisma.huntConfig.update({
+								where: { id: config.id },
+								data: updateData,
+							});
+						} catch (error) {
+							// Hunt Activity is already durable. Keep its result authoritative;
+							// this separate usage write is unconfirmed and must not become HUNT_FAILED.
+							log.error(
+								{ err: error, instanceId, huntType: type },
+								"Hunt result saved, but API usage accounting is unconfirmed",
+							);
+							await this.app.notificationService
+								?.notify(
+									{
+										eventType: "SYSTEM_ERROR",
+										title: "Hunt API usage accounting unconfirmed",
+										body: "The Hunt result was saved, but its API usage count and last run time could not be confirmed.",
+										url: "/hunting",
+										metadata: { subsystem: "hunting", huntType: type },
+									},
+									{ userId: config.instance.userId },
+								)
+								.catch((notifyError) => {
+									log.warn(
+										{ err: notifyError, instanceId, huntType: type },
+										"Failed to report unconfirmed Hunt API usage accounting",
+									);
+								});
+						}
 					}
 				} catch (error) {
 					const durationMs = Date.now() - startTime;
