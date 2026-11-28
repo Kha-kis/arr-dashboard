@@ -66,7 +66,9 @@ describe("SABnzbd read routes", () => {
 			);
 			if (url.searchParams.get("mode") === "pause") return jsonResponse({ status: true });
 			if (url.searchParams.get("mode") === "queue")
-				return jsonResponse({ queue: { paused_all: true, noofslots: 0, slots: [] } });
+				return jsonResponse({
+					queue: { paused: true, paused_all: false, noofslots: 0, slots: [] },
+				});
 			return jsonResponse({ error: "unexpected request" });
 		});
 		vi.stubGlobal("fetch", fetchMock);
@@ -87,7 +89,8 @@ describe("SABnzbd read routes", () => {
 					queue: {
 						version: "5.1.3",
 						status: "Downloading",
-						paused_all: true,
+						paused: true,
+						paused_all: false,
 						speed: "1.2 M",
 						kbpersec: "1228.8",
 						sizeleft: "2.4 GB",
@@ -442,6 +445,21 @@ describe("SABnzbd read routes", () => {
 			url: `/api/sabnzbd/sab-instance-1/jobs/${jobId}`,
 			payload: { action: "delete", confirmed: true },
 		});
+		expect(response.statusCode).toBe(200);
+		expect(response.json()).toMatchObject({ outcome: "verified" });
+		await app.close();
+	});
+
+	it("uses global paused state rather than the distinct paused_all field", async () => {
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce(jsonResponse({ status: true }))
+			.mockResolvedValueOnce(
+				jsonResponse({ queue: { paused: true, paused_all: false, noofslots: 0, slots: [] } }),
+			);
+		vi.stubGlobal("fetch", fetchMock);
+		const { app } = await buildApp();
+		const response = await app.inject({ method: "POST", url: "/api/sabnzbd/sab-instance-1/pause" });
 		expect(response.statusCode).toBe(200);
 		expect(response.json()).toMatchObject({ outcome: "verified" });
 		await app.close();

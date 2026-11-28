@@ -52,7 +52,27 @@ export async function collectSabnzbdSignals(
 				sabCall(instance.baseUrl, apiKey, { mode: "history", limit: "20" }, { headers }),
 			]);
 			const warnings = asRecord(warningBody).warnings;
-			const warningList = Array.isArray(warnings) ? warnings : [];
+			const slots = asRecord(asRecord(historyBody).history).slots;
+			const warningList = Array.isArray(warnings) ? warnings : null;
+			const historyList = Array.isArray(slots) ? slots : null;
+			const warningShapeValid =
+				warningList?.every((warning) => typeof asRecord(warning).text === "string") === true;
+			const historyShapeValid =
+				historyList?.every((slot) => typeof asRecord(slot).status === "string") === true;
+			if (!warningShapeValid || !historyShapeValid) {
+				items.push({
+					id: `sabnzbd-unavailable-${instance.id}`,
+					severity: "warning",
+					category: "health",
+					title: `${instance.label}: status unavailable`,
+					detail: "SABnzbd returned incomplete warning or history data.",
+					actionUrl: "/sabnzbd",
+					actionLabel: "Check connection",
+					source: "sabnzbd",
+					timestamp: now,
+				});
+				continue;
+			}
 			if (warningList.length > 0) {
 				const sample = "SABnzbd reported an active warning.";
 				items.push({
@@ -67,8 +87,7 @@ export async function collectSabnzbdSignals(
 					timestamp: now,
 				});
 			}
-			const slots = asRecord(asRecord(historyBody).history).slots;
-			const failed = (Array.isArray(slots) ? slots : []).filter((slot) => {
+			const failed = historyList.filter((slot) => {
 				const status = text(asRecord(slot).status).toLowerCase();
 				return status === "failed" || status.includes("fail");
 			});

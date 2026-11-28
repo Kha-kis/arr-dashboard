@@ -368,6 +368,24 @@ describe("POST /services", () => {
 		expect(mockInvalidatePulseCache).not.toHaveBeenCalledWith("user-2");
 	});
 
+	it("rejects SABnzbd URLs with query or fragment before persisting credentials", async () => {
+		for (const baseUrl of [
+			"http://sab.example/base?apikey=synthetic-secret",
+			"http://sab.example/base#synthetic-secret",
+		]) {
+			const res = await injectAuthenticated("POST", "/services", {
+				body: {
+					label: "SAB",
+					baseUrl,
+					apiKey: "synthetic-api-key",
+					service: "sabnzbd",
+				},
+			});
+			expect(res.statusCode).toBe(400);
+		}
+		expect(mockPrisma.serviceInstance.create).not.toHaveBeenCalled();
+	});
+
 	it("demotes other instances when isDefault is true", async () => {
 		const res = await injectAuthenticated("POST", "/services", {
 			body: {
@@ -450,6 +468,18 @@ describe("POST /services", () => {
 // ===========================================================================
 
 describe("PUT /services/:id", () => {
+	it.each([
+		"http://sab.example/base?apikey=synthetic-secret",
+		"http://sab.example/base#synthetic-secret",
+	])("rejects SABnzbd query or fragment when updating saved settings", async (baseUrl) => {
+		mockRequireInstance.mockResolvedValue(makeInstance({ service: "SABNZBD" }));
+		mockBuildUpdateData.mockReturnValue({ baseUrl });
+
+		const res = await injectAuthenticated("PUT", "/services/inst-1", { body: { baseUrl } });
+
+		expect(res.statusCode).toBe(400);
+		expect(mockPrisma.serviceInstance.updateMany).not.toHaveBeenCalled();
+	});
 	it("blocks an explicit update while a mutation attempt is pending", async () => {
 		const input = {
 			userId: "user-1",
@@ -1629,6 +1659,36 @@ describe("POST /services/test-connection", () => {
 			expect.objectContaining({ eventType: "SERVICE_CONNECTION_FAILED" }),
 			{ userId: "user-1" },
 		);
+	});
+
+	it.each([
+		"http://sab.example/base?apikey=synthetic-secret",
+		"http://sab.example/base#synthetic-secret",
+	])("rejects SABnzbd query or fragment before connection testing", async (baseUrl) => {
+		const res = await injectAuthenticated("POST", "/services/test-connection", {
+			body: { baseUrl, apiKey: "synthetic-api-key", service: "sabnzbd" },
+		});
+		expect(res.statusCode).toBe(400);
+		expect(mockTestConnection).not.toHaveBeenCalled();
+		expect(app.notificationService.notify).not.toHaveBeenCalled();
+	});
+
+	it("does not persist a SABnzbd base URL in a failed connection notification", async () => {
+		mockTestConnection.mockResolvedValueOnce({ success: false, error: "Could not connect" });
+		const res = await injectAuthenticated("POST", "/services/test-connection", {
+			body: {
+				baseUrl: "http://sab.example/private-service-path",
+				apiKey: "synthetic-api-key",
+				service: "sabnzbd",
+			},
+		});
+		expect(res.statusCode).toBe(200);
+		const call = vi.mocked(app.notificationService.notify).mock.calls[0];
+		expect(JSON.stringify(call)).not.toContain("private-service-path");
+		expect(call?.[0]).toMatchObject({
+			body: "SABnzbd connection test failed.",
+			metadata: { service: "sabnzbd" },
+		});
 	});
 
 	it("calls connection tester with valid http URL", async () => {

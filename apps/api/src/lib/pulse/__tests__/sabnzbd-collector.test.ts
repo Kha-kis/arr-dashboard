@@ -37,7 +37,9 @@ describe("SABnzbd Pulse collector", () => {
 		]);
 		const fetchMock = vi
 			.spyOn(globalThis, "fetch")
-			.mockResolvedValueOnce(json({ warnings: ["secret token /private/path"] }))
+			.mockResolvedValueOnce(
+				json({ warnings: [{ text: "secret token /private/path", type: "WARNING" }] }),
+			)
 			.mockResolvedValueOnce(
 				json({
 					history: { slots: [{ status: "Failed", fail_message: "password /private/path" }] },
@@ -63,4 +65,45 @@ describe("SABnzbd Pulse collector", () => {
 			"1 recent SABnzbd job failed",
 		]);
 	});
+
+	it.each([
+		[{ malformed: "private marker" }, { history: { slots: [] } }],
+		[{ warnings: [] }, { history: { slots: "private marker" } }],
+		[{ warnings: [null] }, { history: { slots: [] } }],
+		[{ warnings: [] }, { history: { slots: [{ fail_message: "private marker" }] } }],
+	])(
+		"emits one bounded unavailable signal for malformed fulfilled envelopes",
+		async (warningBody, historyBody) => {
+			const findMany = vi.fn().mockResolvedValue([
+				{
+					id: "sab-1",
+					userId: "owner-1",
+					label: "Synthetic SAB",
+					baseUrl: "http://sab.local",
+					encryptedApiKey: "ciphertext",
+					encryptionIv: "iv",
+					enabled: true,
+				},
+			]);
+			vi.spyOn(globalThis, "fetch")
+				.mockResolvedValueOnce(json(warningBody))
+				.mockResolvedValueOnce(json(historyBody));
+			const items = await collectSabnzbdSignals(
+				{
+					prisma: { serviceInstance: { findMany } },
+					encryptor: { decrypt: vi.fn().mockReturnValue("api-key") },
+				} as never,
+				"owner-1",
+				log,
+			);
+			expect(items).toHaveLength(1);
+			expect(items[0]).toMatchObject({
+				id: "sabnzbd-unavailable-sab-1",
+				severity: "warning",
+				category: "health",
+				detail: "SABnzbd returned incomplete warning or history data.",
+			});
+			expect(JSON.stringify(items)).not.toMatch(/private marker|api-key/i);
+		},
+	);
 });

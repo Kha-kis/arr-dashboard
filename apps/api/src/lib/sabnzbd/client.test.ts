@@ -46,6 +46,19 @@ describe("SABnzbd API client", () => {
 		expect(init?.redirect).toBe("error");
 	});
 
+	it.each([
+		"http://sab.example/base?apikey=secret",
+		"http://sab.example/base#secret",
+		"http://user:password@sab.example/base",
+		"ftp://sab.example/base",
+	])("rejects unsafe SABnzbd base URL components", async (baseUrl) => {
+		const fetchMock = vi.spyOn(globalThis, "fetch");
+		await expect(sabCall(baseUrl, "secret-api-key", { mode: "queue" })).rejects.toThrow(
+			"SABnzbd URL must be an HTTP(S) address without credentials, query, or fragment",
+		);
+		expect(fetchMock).not.toHaveBeenCalled();
+	});
+
 	it("does not surface credential-bearing fetch errors", async () => {
 		vi.spyOn(globalThis, "fetch").mockRejectedValue(
 			new TypeError("redirect from http://sab/api?apikey=secret-api-key"),

@@ -7,6 +7,23 @@
 export const SABNZBD_REQUEST_TIMEOUT_MS = 8_000;
 export const SABNZBD_MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 
+export function isValidSabnzbdBaseUrl(value: string): boolean {
+	try {
+		const url = new URL(value);
+		return (
+			(url.protocol === "http:" || url.protocol === "https:") &&
+			!url.username &&
+			!url.password &&
+			!url.search &&
+			!url.hash &&
+			!value.includes("?") &&
+			!value.includes("#")
+		);
+	} catch {
+		return false;
+	}
+}
+
 export class SabnzbdClientError extends Error {
 	constructor(
 		readonly category: "network" | "authentication" | "http" | "format" | "response-size",
@@ -24,6 +41,12 @@ export async function sabCall(
 	params: Record<string, string>,
 	options: { headers?: HeadersInit } = {},
 ): Promise<unknown> {
+	if (!isValidSabnzbdBaseUrl(baseUrl)) {
+		throw new SabnzbdClientError(
+			"format",
+			"SABnzbd URL must be an HTTP(S) address without credentials, query, or fragment",
+		);
+	}
 	const url = new URL(`${baseUrl.replace(/\/+$/, "")}/api`);
 	if (!["http:", "https:"].includes(url.protocol)) {
 		throw new Error("SABnzbd URL must use HTTP or HTTPS");

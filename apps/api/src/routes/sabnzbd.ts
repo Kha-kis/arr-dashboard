@@ -114,7 +114,7 @@ function historyItems(value: unknown, maximum = DEFAULT_HISTORY_LIMIT): HistoryI
 
 function queueStats(queueValue: unknown) {
 	const queue = asRecord(queueValue);
-	const pausedValue = queue.paused_all ?? queue.paused;
+	const pausedValue = queue.paused;
 	const parsedSpeed = typeof queue.kbpersec === "number" ? queue.kbpersec : Number(queue.kbpersec);
 	const rawSlotCount = queue.noofslots_total ?? queue.noofslots;
 	const parsedSlotCount = nonNegativeCount(rawSlotCount);
@@ -379,18 +379,10 @@ export const registerSabnzbdRoutes: FastifyPluginAsync = async (app) => {
 		);
 	};
 	const pausedState = (queue: Record<string, unknown>): boolean | null => {
-		const values = [queue.paused_all, queue.paused].filter(
-			(value) => value !== undefined && value !== null,
-		);
-		if (values.length === 0) return null;
-		const parsed = values.map((value) => {
-			if (value === true || value === "true") return true;
-			if (value === false || value === "false") return false;
-			return null;
-		});
-		if (parsed.some((value) => value === null) || parsed.some((value) => value !== parsed[0]))
-			return null;
-		return parsed[0] ?? null;
+		const value = queue.paused;
+		if (value === true || value === "true") return true;
+		if (value === false || value === "false") return false;
+		return null;
 	};
 	const KNOWN_QUEUE_STATUSES = new Set([
 		"queued",
